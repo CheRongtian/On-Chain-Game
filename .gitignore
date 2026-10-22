@@ -1,0 +1,25 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
+__pycache__/
+*.py[cod]
+
+node_modules/
+client/dist/
+*.tsbuildinfo
+
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+build/
+server/arena-server
+
+# Local database files, wallet exports, and private signing material.
+.local/
+secrets/
+*.keystore
+*.pem
+*.md
+!README.md
