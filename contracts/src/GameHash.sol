@@ -98,7 +98,9 @@ library GameHash {
     }
 
     // Game rules validate paths, costs, and battle outcomes before hashing.
+    // Local fixture loops intentionally keep these rejection guards active for every state.
     function validateBattleState(GameTypes.BattleState memory state) internal pure {
+        // forge-lint: disable-next-line(require-revert-in-loop)
         if (state.mapId != GameTypes.MAP_ID) revert IArena.UnknownMap(state.mapId);
         _validateRound(state.round);
         GameTypes.Rules memory rules = GameTypes.defaultRules();
@@ -107,6 +109,7 @@ library GameHash {
         for (; player < 2; ++player) {
             if (state.players[player].energy > rules.maxEnergy) break;
         }
+        // forge-lint: disable-next-line(require-revert-in-loop)
         if (player < 2) revert IArena.InvalidPlayerState(player);
 
         uint8 slot = 0;
@@ -120,15 +123,19 @@ library GameHash {
                     || (unit.hp != 0 && unit.cell >= GameTypes.CELL_COUNT)
             ) break;
         }
+        // forge-lint: disable-next-line(require-revert-in-loop)
         if (slot < GameTypes.UNIT_COUNT) revert IArena.InvalidUnitState(slot);
 
         bool ongoing = state.outcome == GameTypes.Outcome.None;
         if (ongoing != (state.reason == GameTypes.EndReason.None)) {
+            // forge-lint: disable-next-line(require-revert-in-loop)
             revert IArena.InvalidBattleResult();
         }
     }
 
     function _validateRound(uint8 round) private pure {
+        // Round bounds must also reject malformed states during batch fixture checks.
+        // forge-lint: disable-next-line(require-revert-in-loop)
         if (round == 0 || round > GameTypes.MAX_ROUNDS) revert IArena.InvalidRound(round);
     }
 }

@@ -34,6 +34,10 @@ check_contracts() {
     printf 'Checking static map and unit rules offline...\n'
     forge script script/CheckRules.s.sol:CheckRules --use "$compiler" --offline
     printf 'Static rule checks passed.\n'
+
+    printf 'Checking outcomes and fixed state hashes offline...\n'
+    forge script script/CheckResults.s.sol:CheckResults --use "$compiler" --offline
+    printf 'Outcome and state hash checks passed.\n'
 }
 
 check_contracts

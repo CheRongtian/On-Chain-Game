@@ -1,0 +1,745 @@
+{
+  "rulesHash": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+  "results": [
+    {
+      "name": "continue_before_limits",
+      "state": {
+        "mapId": 1,
+        "round": 19,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedOutcome": 0,
+      "expectedReason": 0
+    },
+    {
+      "name": "eliminate_b_before_points_and_round_limit",
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 12 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 255, "hp": 0 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 255, "hp": 0 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedOutcome": 1,
+      "expectedReason": 1
+    },
+    {
+      "name": "eliminate_a_before_points_and_round_limit",
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 12 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 255, "hp": 0 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 255, "hp": 0 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedOutcome": 2,
+      "expectedReason": 1
+    },
+    {
+      "name": "mutual_elimination_before_points_and_round_limit",
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 12 },
+          { "energy": 2, "victoryPoints": 14 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 255, "hp": 0 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 255, "hp": 0 },
+          { "unitType": 1, "cell": 255, "hp": 0 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 255, "hp": 0 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedOutcome": 3,
+      "expectedReason": 2
+    },
+    {
+      "name": "only_a_reaches_threshold",
+      "state": {
+        "mapId": 1,
+        "round": 10,
+        "players": [
+          { "energy": 2, "victoryPoints": 12 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 255, "hp": 0 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 40, "hp": 1 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedOutcome": 1,
+      "expectedReason": 3
+    },
+    {
+      "name": "only_b_reaches_threshold",
+      "state": {
+        "mapId": 1,
+        "round": 10,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 12 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 255, "hp": 0 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 23, "hp": 1 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedOutcome": 2,
+      "expectedReason": 3
+    },
+    {
+      "name": "both_reach_threshold_a_has_more_points",
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 14 },
+          { "energy": 2, "victoryPoints": 12 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 255, "hp": 0 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 40, "hp": 1 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedOutcome": 1,
+      "expectedReason": 3
+    },
+    {
+      "name": "both_reach_threshold_b_has_more_points",
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 12 },
+          { "energy": 2, "victoryPoints": 14 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 255, "hp": 0 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 23, "hp": 1 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedOutcome": 2,
+      "expectedReason": 3
+    },
+    {
+      "name": "equal_threshold_a_has_more_hp",
+      "state": {
+        "mapId": 1,
+        "round": 10,
+        "players": [
+          { "energy": 2, "victoryPoints": 12 },
+          { "energy": 2, "victoryPoints": 12 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 9 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedOutcome": 1,
+      "expectedReason": 3
+    },
+    {
+      "name": "equal_threshold_b_has_more_hp",
+      "state": {
+        "mapId": 1,
+        "round": 10,
+        "players": [
+          { "energy": 2, "victoryPoints": 12 },
+          { "energy": 2, "victoryPoints": 12 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 9 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedOutcome": 2,
+      "expectedReason": 3
+    },
+    {
+      "name": "equal_threshold_and_hp_draw",
+      "state": {
+        "mapId": 1,
+        "round": 10,
+        "players": [
+          { "energy": 2, "victoryPoints": 12 },
+          { "energy": 2, "victoryPoints": 12 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedOutcome": 3,
+      "expectedReason": 3
+    },
+    {
+      "name": "round_limit_a_has_more_points",
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 8 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 255, "hp": 0 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 40, "hp": 1 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedOutcome": 1,
+      "expectedReason": 4
+    },
+    {
+      "name": "round_limit_b_has_more_points",
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 8 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 255, "hp": 0 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 23, "hp": 1 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedOutcome": 2,
+      "expectedReason": 4
+    },
+    {
+      "name": "round_limit_equal_points_a_has_more_hp",
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 9 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedOutcome": 1,
+      "expectedReason": 4
+    },
+    {
+      "name": "round_limit_equal_points_b_has_more_hp",
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 9 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedOutcome": 2,
+      "expectedReason": 4
+    },
+    {
+      "name": "round_limit_equal_points_and_hp_draw",
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedOutcome": 3,
+      "expectedReason": 4
+    },
+    {
+      "name": "preserve_commit_timeout",
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 9 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 2,
+        "reason": 5
+      },
+      "expectedOutcome": 2,
+      "expectedReason": 5
+    },
+    {
+      "name": "preserve_reveal_timeout_draw",
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 8 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 3,
+        "reason": 6
+      },
+      "expectedOutcome": 3,
+      "expectedReason": 6
+    }
+  ],
+  "hashes": [
+    {
+      "name": "initial",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 1,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedHash": "0x2adaa667c2a262de14c26719625882e10ffcc7874af825bdf849dd2fd65a50de"
+    },
+    {
+      "name": "initial_other_chain",
+      "context": {
+        "chainId": 31338,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 1,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedHash": "0x4081c9729396725c30d856e31f273aa1fcc9e60be6859c7f0c2040e1b934c7d9"
+    },
+    {
+      "name": "initial_other_arena",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x000000000000000000000000000000000000cafe",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 1,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedHash": "0x6f35b206d64fd99b09df17a26806321dd019d315e7f0d42b241f002e4124989f"
+    },
+    {
+      "name": "initial_other_match",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 2
+      },
+      "state": {
+        "mapId": 1,
+        "round": 1,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedHash": "0xb2871962a74e090dec56b02e6746804f75c45457cf9399dc8131ae59720d3a79"
+    },
+    {
+      "name": "continuing_round",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 2,
+        "players": [
+          { "energy": 1, "victoryPoints": 2 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 9, "hp": 10 },
+          { "unitType": 2, "cell": 26, "hp": 6 },
+          { "unitType": 3, "cell": 35, "hp": 5 },
+          { "unitType": 1, "cell": 54, "hp": 10 },
+          { "unitType": 2, "cell": 37, "hp": 6 },
+          { "unitType": 3, "cell": 31, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedHash": "0x17e1334382fed4d1d8d269dd9987e4d57a06adc0d2322054710ab8c32901bc78"
+    },
+    {
+      "name": "canonical_dead_slot",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 4,
+        "players": [
+          { "energy": 5, "victoryPoints": 4 },
+          { "energy": 0, "victoryPoints": 2 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 7 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 40, "hp": 3 },
+          { "unitType": 1, "cell": 55, "hp": 6 },
+          { "unitType": 2, "cell": 39, "hp": 2 },
+          { "unitType": 3, "cell": 23, "hp": 4 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedHash": "0x448383a701d71fb6e1760bb055bc0e652604f2b3785f2e88c5f460ca0854946f"
+    },
+    {
+      "name": "elimination",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 12 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 255, "hp": 0 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 255, "hp": 0 }
+        ],
+        "outcome": 1,
+        "reason": 1
+      },
+      "expectedHash": "0xb0dcb9398414f7aa18189210b32eae47c2aafbfee937b24061f84d6ae10a348c"
+    },
+    {
+      "name": "mutual_elimination",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 12 },
+          { "energy": 2, "victoryPoints": 14 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 255, "hp": 0 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 255, "hp": 0 },
+          { "unitType": 1, "cell": 255, "hp": 0 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 255, "hp": 0 }
+        ],
+        "outcome": 3,
+        "reason": 2
+      },
+      "expectedHash": "0xd6f6d12fd430b8012b742cacb565f15bfb5147bffdb8c9925869294c1a56fd6a"
+    },
+    {
+      "name": "victory_points_draw",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 10,
+        "players": [
+          { "energy": 2, "victoryPoints": 12 },
+          { "energy": 2, "victoryPoints": 12 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 3,
+        "reason": 3
+      },
+      "expectedHash": "0xcda2801d424c62cbe66b9fd226a74ae8f8ada537b06d6dc22bf0f45e2ec9df1a"
+    },
+    {
+      "name": "round_limit_draw",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 3,
+        "reason": 4
+      },
+      "expectedHash": "0x7b90ab1f5d5a07b19d633a70504f10f25b52eda14c79f9b3cfff0fb0fccbd43b"
+    },
+    {
+      "name": "commit_timeout",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 1,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 2,
+        "reason": 5
+      },
+      "expectedHash": "0x79a2455f0f04c78aca228853aedadf539d973539294fdc2e8e476a5a0d8b2102"
+    },
+    {
+      "name": "reveal_timeout_draw",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 1,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 3,
+        "reason": 6
+      },
+      "expectedHash": "0xb2e982b4025d218f2801c9e7af1c81299ae00bfe7662a0ba02857a27525df223"
+    }
+  ]
+}

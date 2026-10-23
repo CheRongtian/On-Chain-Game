@@ -2,7 +2,7 @@
 
 A two-player on-chain tactical game in development. Each player commands three units on an 8x8 board, using hidden orders, simultaneous movement, combat, and objective control.
 
-The current project provides a Vue/TypeScript page, Go command entry, map validation utility, Solidity protocol types and hashes, pure map/unit/action validation, and a deployable Arena with room creation, joining, cancellation, expiry, and state queries. The backend launcher prepares a local chain and a two-account room demonstration. Playable battles, wallet integration, database services, and historical replay are planned.
+The current project provides a Vue/TypeScript page, Go command entry, map validation utility, Solidity protocol types and hashes, pure action validation and outcome rules, shared state/hash vectors, and a deployable Arena with room creation, joining, cancellation, expiry, and state queries. The backend launcher prepares a local chain and a two-account room demonstration. Playable battles, wallet integration, database services, and historical replay are planned.
 
 ## Game design
 
@@ -28,7 +28,7 @@ Commitments cannot be replaced. Invalid reveals can be retried before the deadli
 
 ## Architecture
 
-- **Solidity / Foundry:** authoritative room storage and lifecycle, plus pure static action validation; deterministic battle resolution is planned.
+- **Solidity / Foundry:** authoritative room storage and lifecycle, plus pure action validation and outcome rules; movement, combat, and world updates remain planned.
 - **Go / PostgreSQL:** planned indexing, reorg recovery, independent replay, read APIs, and public phase progression.
 - **Vue 3 / TypeScript / Vite:** the application entry; Phaser 4, wallet integration, and historical replay follow in their implementation stages.
 
@@ -40,11 +40,15 @@ Players sign official writes with their own wallets. Backend services provide co
 
 [MapRules](contracts/src/MapRules.sol) implements coordinate conversion, bitmap queries, orthogonal paths, and wall-blocked straight rays. [UnitRules](contracts/src/UnitRules.sol) validates an entire three-action squad against the round-start snapshot and returns its total skill cost without changing state. It reuses the canonical encoding checks, enforces type-specific actions and ranges, blocks paths through live units' initial cells, requires dead slots to HOLD, and rejects Energy overspending. Shared empty endpoints remain valid at this step; the future resolver will handle movement conflicts. These libraries provide the validation entry for future Reveal and settlement calls.
 
+[ResultRules](contracts/src/ResultRules.sol) evaluates a settlement candidate after damage, deaths, and scoring. Elimination takes priority over Victory Points, followed by the round limit. Points are compared before remaining total HP, with a draw on equality. Before a continuing round is advanced, the candidate's round identifies the round just resolved. The function returns an outcome and reason without changing the candidate, and preserves an existing terminal result, including protocol forfeits. The future resolver will call this library during settlement.
+
 Each action has a kind, target cell, path length, and four path cells. Unused targets are 255; unused path entries are zero. Dead units retain their type and slot, with zero HP and cell 255. Hashes use Keccak-256 over standard ABI encoding. Action commitments bind chain, contract, match, round, player, rules, orders, and salt; generate and retain secrets locally before broadcasting.
 
 The battle hash covers match context, rules, map, round, player resources, all six units, and outcome. Commitments, salts, phase flags, and deadlines are excluded. An ongoing state's round is the next round to resolve; a terminal state retains its final round. Timeout preserves the board and resources while updating the outcome and reason.
 
-The backend launcher builds the contracts with the local compiler. The generated Arena artifact is the ABI source for the current deployment and later frontend/Go integration. Its internal [protocol check](contracts/script/CheckProtocol.s.sol) compares action encoding against Cast, checks commitment context binding, validates the initial state encoding, and checks rejection of noncanonical actions. The [static rule check](contracts/script/CheckRules.s.sol) covers map geometry, initial occupancy, movement limits and blocking, empty and invalid targets, skill restrictions, combined Energy costs, dead slots, and canonical fields. Both run offline. The [room check](contracts/script/CheckArena.s.sol) verifies the deployed demonstration and exercises identity, phase, cancellation, expiry, and exact deadline boundaries in a disposable local fork.
+The [shared state vectors](config/state-vectors.json) contain the frozen rules hash, result candidates with expected outcomes/reasons, and complete hash states with fixed contexts and expected digests. Result candidates use the round being evaluated; hash states already use the next round when play continues. Hash cases cover the initial state, chain/contract/match isolation, a continuing state, canonical death, terminal draws, and protocol timeouts. Expected digests were generated offline using Cast's standard ABI encoder and Keccak-256. Solidity, Go, and TypeScript can consume the same data without relying on a running backend.
+
+The backend launcher builds the contracts with the local compiler. The generated Arena artifact is the ABI source for the current deployment and later frontend/Go integration. Its internal [protocol check](contracts/script/CheckProtocol.s.sol) compares action encoding against Cast, checks commitment context binding, validates the initial state encoding, and checks rejection of noncanonical actions. The [static rule check](contracts/script/CheckRules.s.sol) covers map geometry, initial occupancy, movement limits and blocking, empty and invalid targets, skill restrictions, combined Energy costs, dead slots, and canonical fields. The [result/hash check](contracts/script/CheckResults.s.sol) reads the shared vectors with Foundry's typed JSON parser and compares production outcome/hash functions against the fixed expected values, including the initial-state factory. These checks run offline. The [room check](contracts/script/CheckArena.s.sol) verifies the deployed demonstration and exercises identity, phase, cancellation, expiry, and exact deadline boundaries in a disposable local fork.
 
 ## Local use
 
@@ -73,7 +77,7 @@ Backend:
 ./scripts/run-backend.sh
 ```
 
-The backend launcher builds the contracts, runs the offline protocol encoding and static rule checks, validates the map, starts Anvil, deploys Arena, and creates and joins match 1 with Anvil's first two development accounts. It then checks the room lifecycle and runs the current Go entry. These steps run automatically through this single entry point. Contract compilation uses the local compiler; deployment and room operations use the local RPC.
+The backend launcher builds the contracts, runs the offline protocol, static rule, and result/hash checks, validates the map, starts Anvil, deploys Arena, and creates and joins match 1 with Anvil's first two development accounts. It then checks the room lifecycle and runs the current Go entry. These steps run automatically through this single entry point. Contract compilation uses the local compiler; deployment and room operations use the local RPC.
 
 Keep port 8545 available. Each backend launch starts a fresh in-memory chain at http://127.0.0.1:8545 with chain ID 31337. The launcher prints the Arena address and deployment block. Match 1 ends the demonstration in Commit, with six initialized units and its initial state hash. The compiled Arena artifact provides its callable methods, events, and errors for direct RPC access.
 
