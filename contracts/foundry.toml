@@ -8,6 +8,10 @@ evm_version = "cancun"
 optimizer = true
 optimizer_runs = 200
 
+[lint]
+# Standard ABI hashing and reusable protocol helpers are intentional.
+exclude_lints = ["asm-keccak256", "internal-function-used-once"]
+
 [fmt]
 line_length = 100
 tab_width = 4

@@ -2,11 +2,29 @@
 
 A two-player on-chain tactical game in development. Each player commands three units on an 8x8 board, using hidden orders, simultaneous movement, combat, and objective control.
 
-The current project provides a Vue/TypeScript page, Go command entry, Foundry compilation skeleton, gameplay specifications, and a map validation utility. Playable matches, wallet integration, authoritative battle contracts, database services, and historical replay are planned.
+The current project provides a Vue/TypeScript page, Go command entry, map validation utility, Solidity protocol types, hashing helpers, and an Arena interface. Playable matches, wallet integration, authoritative battle contracts, database services, and historical replay are planned.
 
 ## Game design
 
-The game uses a fixed Guardian/Ranger/Scout squad. Players commit to hidden orders, reveal their orders and random salts, and let Solidity resolve movement, combat, resources, and victory. There is no NFT, token, staking, or real-asset economy. Map geometry, unit actions, scoring, room lifecycle, and submission deadlines are specified; exact byte encoding remains to be finalized.
+The planned game uses a fixed Guardian/Ranger/Scout squad. Players commit to hidden orders, reveal their orders and random salts, and let Solidity resolve movement, combat, resources, and victory. There is no NFT, token, staking, or real-asset economy.
+
+The [map configuration](config/map.json) contains the 8x8 Arena layout, mirrored starting slots, resources, central control cells, ASCII, and bitmaps. Coordinates start at the upper-left corner; `cellId = y * 8 + x`. Each player's three actions follow squad slot order. Slots remain fixed after death, and dead units contribute HOLD.
+
+| Unit | HP | MOVE limit | ATTACK | Special action |
+|---|---:|---:|---|---|
+| Guardian | 10 | 1 step | Orthogonally adjacent cell, damage 2 | SHIELD: 1 Energy; reduce this round's accumulated incoming damage by up to 2 |
+| Ranger | 6 | 2 steps | Straight horizontal/vertical range 1-3, damage 2 | POWER_SHOT: 2 Energy; same targeting rules, damage 3 |
+| Scout | 5 | 3 steps | Orthogonally adjacent cell, damage 1 | DASH: 1 Energy; move up to 4 steps |
+
+Each live unit selects one action. Movement supplies a complete, nonempty orthogonal path, excluding the starting cell. Paths cannot cross obstacles, revisit a cell including their origin, or enter another live unit's starting cell. All moves sharing an endpoint fail; shared intermediate empty cells are allowed. HOLD means staying in place without attacking or spending Energy.
+
+Attacks target cells within the attacker's range at round start. Empty targets are valid. Obstacles block Ranger rays; units do not. After movement, attacks hit only enemies occupying their target cells. Damage is simultaneous, including attacks from units killed that round, and HP cannot fall below zero. SHIELD reduces the Guardian's total accumulated damage once. Combined skill costs must fit the player's round-start Energy and remain spent when a move fails or a shot misses.
+
+Players start with 0 Victory Points and 2 Energy, capped at 5 Energy. After deaths are removed, each occupied resource grants 1 Energy. The sole majority across the four central cells gains 2 Victory Points; equal counts gain none. Outcome priority is elimination, the 12-point threshold, then the 20-round limit. A sole surviving side wins; simultaneous elimination draws. At the point threshold or round limit, compare Victory Points, then surviving HP, then draw.
+
+An unjoined room lasts 24 hours. A different address may join at or before its deadline. The creator may cancel while the room is waiting; anyone may expire it strictly after the deadline. Joining starts round 1. Commit and Reveal each have a 600-second window, opening the next phase as soon as both valid submissions arrive. Submissions are timely at the deadline; timeout finalization requires a later timestamp. One missing submission forfeits; two missing submissions draw, without executing a battle round. Anyone may finalize timeouts or settle a round with both valid reveals.
+
+Commitments cannot be replaced. Invalid reveals can be retried before the deadline using the original committed data. Nonterminal settlement advances the round and opens a new Commit window. Duplicate submissions and writes to terminal matches are rejected. Match rules and map settings remain fixed throughout play. The room lifecycle and battle settlement remain to be implemented.
 
 ## Architecture
 
@@ -16,9 +34,19 @@ The game uses a fixed Guardian/Ranger/Scout squad. Players commit to hidden orde
 
 Players sign official writes with their own wallets. Backend services provide convenience and verification; they cannot override contract state or match outcomes.
 
+## Contract protocol
+
+[GameTypes](contracts/src/GameTypes.sol) defines enums, action/state layouts, fixed rules, map data, and initial battle state. [GameHash](contracts/src/GameHash.sol) implements canonical encoding checks and hashing. [IArena](contracts/src/IArena.sol) defines the shared read/write, event, and error ABI.
+
+Each action has a kind, target cell, path length, and four path cells. Unused targets are 255; unused path entries are zero. Dead units retain their type and slot, with zero HP and cell 255. Hashes use Keccak-256 over standard ABI encoding. Action commitments bind chain, contract, match, round, player, rules, orders, and salt; generate and retain secrets locally before broadcasting.
+
+The battle hash covers match context, rules, map, round, player resources, all six units, and outcome. Commitments, salts, phase flags, and deadlines are excluded. An ongoing state's round is the next round to resolve; a terminal state retains its final round. Timeout preserves the board and resources while updating the outcome and reason.
+
+The Solidity interface is the ABI source for later frontend and Go integration. The backend launcher builds the contracts with the local compiler; the generated interface artifact contains the ABI. Its internal [protocol check](contracts/script/CheckProtocol.s.sol) compares action encoding against Cast, checks commitment context binding, validates the initial state encoding, and checks rejection of noncanonical actions.
+
 ## Local use
 
-The current tool baseline is Node 22.23.2, npm 10.9.8, Go 1.25.3, Foundry 1.8.1, and Solidity 0.8.30. Install these tools before using the startup scripts. Foundry can use a matching local Solidity compiler when automatic downloading is unavailable.
+The current tool baseline is Node 22.23.2, npm 10.9.8, Go 1.25.3, Foundry 1.8.1, and Solidity 0.8.30. Install these tools before using the startup scripts. Keep the previously downloaded Solidity compiler in its existing local tools directory; the backend launcher uses it offline.
 
 Install frontend dependencies once:
 
@@ -43,12 +71,12 @@ Backend:
 ./scripts/run-backend.sh
 ```
 
-The backend launcher first validates the map, then runs the current Go entry. Standard output and error output, including compilation and startup failures, go to a local log in the project root. Each invocation overwrites the previous log, which is excluded from the repository. A map validation failure stops startup. The Go application currently prints its development status and exits; it does not start HTTP, Indexer, or Keeper services.
+The backend launcher builds the contracts, runs the offline protocol encoding checks, validates the map, then runs the current Go entry. These steps run automatically through this single entry point. Standard output and error output, including compilation and startup failures, appear in the terminal and are also written to a local log in the project root. Each invocation overwrites the previous log, which is excluded from the repository. Any failed step stops startup. The Go application currently prints its development status and exits; it does not start HTTP, Indexer, or Keeper services.
 
-The frontend lockfile exists. Use npm ci for subsequent dependency installation. CI and the project LICENSE are deferred by the maintainer. Local docs remain local under the existing ignore rules.
+The frontend lockfile exists. Use npm ci for subsequent dependency installation. CI and the project LICENSE are deferred by the maintainer.
 
 ## Current limits
 
 There are no playable matches, deployed game contracts, or public testnet addresses. The page does not access a wallet, RPC, or database. No automated battle-test or independent security-audit result is claimed. Map geometry validation does not establish game balance.
 
-Detailed design, implementation planning, and development records are maintained locally.
+Detailed design and implementation planning are maintained locally.

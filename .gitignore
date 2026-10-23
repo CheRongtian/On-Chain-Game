@@ -23,4 +23,3 @@ secrets/
 *.pem
 *.md
 !README.md
-docs/

@@ -8,16 +8,15 @@ import (
 )
 
 type mapConfig struct {
-	SchemaVersion int      `json:"schemaVersion"`
-	MapID         int      `json:"mapId"`
-	Name          string   `json:"name"`
-	Width         int      `json:"width"`
-	Height        int      `json:"height"`
-	Obstacles     []int    `json:"obstacles"`
-	Resources     []int    `json:"resources"`
-	ControlZone   []int    `json:"controlZone"`
-	ASCII         []string `json:"ascii"`
-	Spawns        struct {
+	MapID       int      `json:"mapId"`
+	Name        string   `json:"name"`
+	Width       int      `json:"width"`
+	Height      int      `json:"height"`
+	Obstacles   []int    `json:"obstacles"`
+	Resources   []int    `json:"resources"`
+	ControlZone []int    `json:"controlZone"`
+	ASCII       []string `json:"ascii"`
+	Spawns      struct {
 		A []int `json:"A"`
 		B []int `json:"B"`
 	} `json:"spawns"`
@@ -39,7 +38,7 @@ type cellGroup struct {
 }
 
 func main() {
-	mapPath := flag.String("map", "../specs/v1/map.json", "Path to the map configuration")
+	mapPath := flag.String("map", "../config/map.json", "Path to the map configuration")
 	flag.Parse()
 	if err := validateMap(*mapPath); err != nil {
 		fmt.Fprintln(os.Stderr, "Map validation failed:", err)
@@ -56,8 +55,8 @@ func validateMap(path string) error {
 	if err := json.Unmarshal(data, &config); err != nil {
 		return err
 	}
-	if config.SchemaVersion != 1 || config.MapID != 1 || config.Width != 8 || config.Height != 8 {
-		return fmt.Errorf("expected schema 1, map 1, and an 8x8 board")
+	if config.MapID != 1 || config.Width != 8 || config.Height != 8 {
+		return fmt.Errorf("expected map 1 and an 8x8 board")
 	}
 	groups := []cellGroup{
 		{"obstacles", config.Obstacles, config.Bitmaps.Obstacles, '#', 4},

@@ -1,6 +1,5 @@
 {
   "name": "on-chain-tactical-arena-client",
-  "version": "0.0.0",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
