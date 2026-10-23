@@ -5,6 +5,11 @@ project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 exec > >(tee "$project_root/record.log") 2>&1
 
+source "$project_root/scripts/local-chain.sh"
+trap stop_local_chain EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 check_contracts() {
     local compiler="$project_root/.local/bin/solc-0.8.30"
     local actions_domain actions_encoding actions_hash
@@ -32,5 +37,13 @@ check_contracts
 cd "$project_root/server"
 printf 'Validating map...\n'
 go run ./cmd/maptool -map "$project_root/config/map.json"
+
+start_local_chain
+deploy_local_arena
+check_local_arena
+
+cd "$project_root/server"
 printf 'Starting backend...\n'
-exec go run ./cmd/arena-server
+go run ./cmd/arena-server
+printf 'Local Arena is ready. Press Ctrl+C to stop the local chain.\n'
+wait "$local_anvil_pid"

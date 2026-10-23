@@ -2,7 +2,7 @@
 
 A two-player on-chain tactical game in development. Each player commands three units on an 8x8 board, using hidden orders, simultaneous movement, combat, and objective control.
 
-The current project provides a Vue/TypeScript page, Go command entry, map validation utility, Solidity protocol types, hashing helpers, and an Arena interface. Playable matches, wallet integration, authoritative battle contracts, database services, and historical replay are planned.
+The current project provides a Vue/TypeScript page, Go command entry, map validation utility, Solidity protocol types and hashes, and a deployable Arena with room creation, joining, cancellation, expiry, and state queries. The backend launcher prepares a local chain and a two-account room demonstration. Playable battles, wallet integration, database services, and historical replay are planned.
 
 ## Game design
 
@@ -24,11 +24,11 @@ Players start with 0 Victory Points and 2 Energy, capped at 5 Energy. After deat
 
 An unjoined room lasts 24 hours. A different address may join at or before its deadline. The creator may cancel while the room is waiting; anyone may expire it strictly after the deadline. Joining starts round 1. Commit and Reveal each have a 600-second window, opening the next phase as soon as both valid submissions arrive. Submissions are timely at the deadline; timeout finalization requires a later timestamp. One missing submission forfeits; two missing submissions draw, without executing a battle round. Anyone may finalize timeouts or settle a round with both valid reveals.
 
-Commitments cannot be replaced. Invalid reveals can be retried before the deadline using the original committed data. Nonterminal settlement advances the round and opens a new Commit window. Duplicate submissions and writes to terminal matches are rejected. Match rules and map settings remain fixed throughout play. The room lifecycle and battle settlement remain to be implemented.
+Commitments cannot be replaced. Invalid reveals can be retried before the deadline using the original committed data. Nonterminal settlement advances the round and opens a new Commit window. Match rules and map settings remain fixed throughout play. The current contract implements the room lifecycle through joining and entering Commit; action submission, Reveal, timeouts during battle, and round settlement remain to be implemented.
 
 ## Architecture
 
-- **Solidity / Foundry:** planned authoritative state machine and deterministic battle resolution.
+- **Solidity / Foundry:** authoritative room storage and lifecycle; deterministic battle resolution is planned.
 - **Go / PostgreSQL:** planned indexing, reorg recovery, independent replay, read APIs, and public phase progression.
 - **Vue 3 / TypeScript / Vite:** the application entry; Phaser 4, wallet integration, and historical replay follow in their implementation stages.
 
@@ -36,13 +36,13 @@ Players sign official writes with their own wallets. Backend services provide co
 
 ## Contract protocol
 
-[GameTypes](contracts/src/GameTypes.sol) defines enums, action/state layouts, fixed rules, map data, and initial battle state. [GameHash](contracts/src/GameHash.sol) implements canonical encoding checks and hashing. [IArena](contracts/src/IArena.sol) defines the shared read/write, event, and error ABI.
+[Arena](contracts/src/Arena.sol) stores matches and implements room creation, joining, cancellation, expiry, and queries. [GameTypes](contracts/src/GameTypes.sol) defines enums, action/state layouts, fixed rules, map data, and initial battle state. [GameHash](contracts/src/GameHash.sol) implements canonical encoding checks and hashing. [IArena](contracts/src/IArena.sol) declares the shared protocol signatures, events, and errors, including planned round operations.
 
 Each action has a kind, target cell, path length, and four path cells. Unused targets are 255; unused path entries are zero. Dead units retain their type and slot, with zero HP and cell 255. Hashes use Keccak-256 over standard ABI encoding. Action commitments bind chain, contract, match, round, player, rules, orders, and salt; generate and retain secrets locally before broadcasting.
 
 The battle hash covers match context, rules, map, round, player resources, all six units, and outcome. Commitments, salts, phase flags, and deadlines are excluded. An ongoing state's round is the next round to resolve; a terminal state retains its final round. Timeout preserves the board and resources while updating the outcome and reason.
 
-The Solidity interface is the ABI source for later frontend and Go integration. The backend launcher builds the contracts with the local compiler; the generated interface artifact contains the ABI. Its internal [protocol check](contracts/script/CheckProtocol.s.sol) compares action encoding against Cast, checks commitment context binding, validates the initial state encoding, and checks rejection of noncanonical actions.
+The backend launcher builds the contracts with the local compiler. The generated Arena artifact is the ABI source for the current deployment and later frontend/Go integration. Its internal [protocol check](contracts/script/CheckProtocol.s.sol) compares action encoding against Cast, checks commitment context binding, validates the initial state encoding, and checks rejection of noncanonical actions. The [room check](contracts/script/CheckArena.s.sol) verifies the deployed demonstration and exercises identity, phase, cancellation, expiry, and exact deadline boundaries in a disposable local fork.
 
 ## Local use
 
@@ -71,12 +71,16 @@ Backend:
 ./scripts/run-backend.sh
 ```
 
-The backend launcher builds the contracts, runs the offline protocol encoding checks, validates the map, then runs the current Go entry. These steps run automatically through this single entry point. Standard output and error output, including compilation and startup failures, appear in the terminal and are also written to a local log in the project root. Each invocation overwrites the previous log, which is excluded from the repository. Any failed step stops startup. The Go application currently prints its development status and exits; it does not start HTTP, Indexer, or Keeper services.
+The backend launcher builds the contracts, runs the offline protocol encoding checks, validates the map, starts Anvil, deploys Arena, and creates and joins match 1 with Anvil's first two development accounts. It then checks the room lifecycle and runs the current Go entry. These steps run automatically through this single entry point. Contract compilation uses the local compiler; deployment and room operations use the local RPC.
+
+Keep port 8545 available. Each backend launch starts a fresh in-memory chain at http://127.0.0.1:8545 with chain ID 31337. The launcher prints the Arena address and deployment block. Match 1 ends the demonstration in Commit, with six initialized units and its initial state hash. The compiled Arena artifact provides its callable methods, events, and errors for direct RPC access.
+
+Standard output and error output, including compilation and startup failures, appear in the terminal and are also written to a local log in the project root. Each invocation overwrites the previous log, which is excluded from the repository. Any failed step stops startup and shuts down the launcher's Anvil process. The Go application currently prints its development status and exits; it does not start HTTP, Indexer, or Keeper services. The launcher keeps the local chain running until Ctrl+C. Stopping it discards local chain state.
 
 The frontend lockfile exists. Use npm ci for subsequent dependency installation. CI and the project LICENSE are deferred by the maintainer.
 
 ## Current limits
 
-There are no playable matches, deployed game contracts, or public testnet addresses. The page does not access a wallet, RPC, or database. No automated battle-test or independent security-audit result is claimed. Map geometry validation does not establish game balance.
+The local demonstration reaches the first Commit phase; battles and public testnet deployments remain planned. The page does not access a wallet, RPC, or database. No automated battle-test or independent security-audit result is claimed. Map geometry validation does not establish game balance.
 
 Detailed design and implementation planning are maintained locally.
