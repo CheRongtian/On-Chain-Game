@@ -1,54 +1,54 @@
 # On-chain Tactical Arena
 
-一款正在开发中的双人链上策略战棋游戏。双方在 8×8 棋盘上各控制三名单位，通过隐藏指令、同步行动、技能与据点控制争取胜利。
+A two-player on-chain tactical game in development. Each player commands three units on an 8x8 board, using hidden orders, simultaneous movement, combat, and objective control.
 
-目前提供 Vue/TypeScript 页面入口、Go 命令入口及 Foundry 编译骨架。游戏规则、钱包连接、正式对局、数据库服务与历史回放尚未实现，当前不能进行比赛。
+The current project provides a Vue/TypeScript page, Go command entry, Foundry compilation skeleton, gameplay specifications, and a map validation utility. Playable matches, wallet integration, authoritative battle contracts, database services, and historical replay are planned.
 
-## 游戏设计
+## Game design
 
-V1 计划提供 Guardian、Ranger、Scout 三种固定职业。玩家通过钱包提交行动承诺，再揭示指令和随机 Salt，由合约同步结算移动、战斗、资源和胜负。V1 不引入 NFT、代币或真实资产。
+The game uses a fixed Guardian/Ranger/Scout squad. Players commit to hidden orders, reveal their orders and random salts, and let Solidity resolve movement, combat, resources, and victory. There is no NFT, token, staking, or real-asset economy. Map geometry, unit actions, scoring, room lifecycle, and submission deadlines are specified; exact byte encoding remains to be finalized.
 
-## 架构
+## Architecture
 
-- **Solidity / Foundry**：计划实现唯一权威游戏状态机与确定性战斗结算。
-- **Go / PostgreSQL**：计划实现链上索引、重组恢复、独立重演、查询接口与公开阶段推进。
-- **Vue 3 / TypeScript / Vite**：应用入口；后续接入 Phaser 4、钱包及历史回放。
+- **Solidity / Foundry:** planned authoritative state machine and deterministic battle resolution.
+- **Go / PostgreSQL:** planned indexing, reorg recovery, independent replay, read APIs, and public phase progression.
+- **Vue 3 / TypeScript / Vite:** the application entry; Phaser 4, wallet integration, and historical replay follow in their implementation stages.
 
-正式比赛的写入由玩家钱包直接发往合约，后端只提供辅助服务。完整边界见 [ARCHITECTURE](docs/ARCHITECTURE.md)。
+Players sign official writes with their own wallets. Backend services provide convenience and verification; they cannot override contract state or match outcomes.
 
-## 本地运行
+## Local use
 
-当前工具基线为 Node 22.23.2、npm 10.9.8、Go 1.25.3、Foundry 1.8.1 和 Solidity 0.8.30。Solidity 编译器可由 Forge 自动管理；本机采用已下载的本地编译器，准备与构建方式见 [DEVELOPMENT](docs/DEVELOPMENT.md)。
+The current tool baseline is Node 22.23.2, npm 10.9.8, Go 1.25.3, Foundry 1.8.1, and Solidity 0.8.30. Install these tools before using the startup scripts. Foundry can use a matching local Solidity compiler when automatic downloading is unavailable.
 
-首次准备前端依赖：
+Install frontend dependencies once:
 
-```sh
+```
 cd client
 npm install --no-audit --no-fund
 ```
 
-日常启动在项目根目录的两个终端分别执行以下脚本。
+For daily use, run one script in each of two terminals at the project root.
 
-前端：
+Frontend:
 
-```sh
+```
 ./scripts/run-frontend.sh
 ```
 
-打开终端显示的本地页面，默认地址为 `http://127.0.0.1:5173`。目前页面仅说明项目状态。
+Open the local address printed by Vite, normally http://127.0.0.1:5173. The page currently displays the project name and availability notice.
 
-后端：
+Backend:
 
-```sh
+```
 ./scripts/run-backend.sh
 ```
 
-后端启动、编译和运行的标准输出及错误输出统一写入项目根目录的 `record.log`，每次启动覆盖旧内容，日志文件由 `*.log` 忽略规则排除。当前 Go 入口写入状态说明后退出，尚未启动 HTTP、Indexer 或 Keeper。数据库和本地链当前无需启动。
+The backend launcher first validates the map, then runs the current Go entry. Standard output and error output, including compilation and startup failures, go to a local log in the project root. Each invocation overwrites the previous log, which is excluded from the repository. A map validation failure stops startup. The Go application currently prints its development status and exits; it does not start HTTP, Indexer, or Keeper services.
 
-依赖准备、构建与格式检查命令见 [DEVELOPMENT](docs/DEVELOPMENT.md)。`client/package-lock.json` 已由首次安装生成，后续重新安装使用 `npm ci`。当前采用本地手动构建，CI 暂缓。
+The frontend lockfile exists. Use npm ci for subsequent dependency installation. CI and the project LICENSE are deferred by the maintainer. Local docs remain local under the existing ignore rules.
 
-## 当前限制
+## Current limits
 
-尚无可玩的对局、已部署合约或正式测试网地址。页面不会读取钱包、RPC 或数据库。当前也没有自动化游戏测试及安全审计结果。
+There are no playable matches, deployed game contracts, or public testnet addresses. The page does not access a wallet, RPC, or database. No automated battle-test or independent security-audit result is claimed. Map geometry validation does not establish game balance.
 
-原始设计见 [plan.md](plan.md)，阶段任务见 [steps.md](steps.md)。详细开发进度单独记录在 `docs/progress/`。
+Detailed design, implementation planning, and development records are maintained locally.

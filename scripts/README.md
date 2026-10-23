@@ -1,20 +1,19 @@
-# 项目脚本
+# Project Scripts
 
-日常启动统一使用两个脚本，在项目根目录的两个终端分别执行：
+Daily startup uses two scripts, run in separate terminals from the project root:
 
-```sh
+```
 ./scripts/run-frontend.sh
 ```
 
-```sh
+```
 ./scripts/run-backend.sh
 ```
 
-- `run-frontend.sh` 自动定位项目目录，进入 client 后启动 Vite，输出保留在前端终端。
-- `run-backend.sh` 自动定位项目目录，先覆盖根目录的 `record.log`，再进入 server 启动 Go 入口；标准输出、编译错误和运行错误全部写入该日志。
+The frontend script locates the project and starts Vite in client/. Its output remains in that terminal.
 
-两个脚本均可通过绝对路径从其它工作目录调用。前端依赖需在首次启动前安装，脚本不自动安装环境或依赖。当前 Go 入口输出说明后即退出；日志中会保留该说明。
+The backend script locates the project, truncates a local log in the project root, validates [the map configuration](../specs/v1/map.json) with the standard-library Go map utility, and then starts the Go application. All subsequent standard output and error output, including compilation errors, goes to that log. A failed map check prevents application startup. The current application prints a development notice and exits.
 
-后续需要启动的后端组件由后端脚本统一承接，日常启动保持最多两个脚本。ABI 导出、部署等维护脚本在实际需要的阶段另行创建。
+Both scripts can be invoked through their absolute paths from another working directory. Install dependencies before first use; the scripts do not install tools or packages. Future required backend components must use the same backend startup entry, keeping daily startup to these two scripts.
 
-依赖安装与构建命令见 `docs/DEVELOPMENT.md`。
+ABI export and deployment tooling will be introduced with the contract implementation. These launchers currently run only the development entries and map validation.

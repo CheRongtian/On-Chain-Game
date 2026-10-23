@@ -1,14 +1,14 @@
-# V1 协议规范
+# Protocol Specifications
 
-当前尚未冻结精确地图、Action ABI、Hash 编码和 Event 字段。规则冻结以 `plan.md` 第一至第三部分及对应 ADR 为依据。
+Gameplay, map geometry, and lifecycle semantics have been approved. The user supplied successful map-validation output. Action ABI, commitment/hash encoding, event fields, and numeric enum values remain to be finalized.
 
-后续规范统一在开头记录版本、状态、适用 ruleset 和批准 ADR。状态含义：
+The specifications cover:
 
-- **已决定**：已确认的产品/架构边界；变更需要明确决议。
-- **候选**：待审阅的具体参数、字段或算法细节，不能当作已批准协议。
-- **待验证**：需通过运行结果确定的兼容性、平衡或性能指标。
-- **已冻结**：完成审阅并由有效 ADR 记录的精确版本规范。
+- Board geometry, the fixed squad, actions, simultaneous settlement, scoring, and outcomes.
+- Permissions, deadlines, timeouts, and terminal states.
+- 64 explicit semantic examples, including clearly labeled pure comparator fixtures.
+- [Map configuration](map.json): map 1 coordinate sets, ASCII, and 64-bit masks.
 
-M0-S2 负责 `GAME_RULES.md`、`STATE_MACHINE.md` 和确定性案例；M0-S3 负责 `ACTION_ENCODING.md`、`STATE_HASH.md`、`EVENTS_API.md`、`THREAT_MODEL.md`、`GAS_BUDGET.md` 及初始 Golden Vectors。
+Each specification records its scope, approval, and status. Use **Decided** for confirmed product/architecture boundaries; **Candidate** for details awaiting review; **Pending validation** for unmeasured compatibility/balance/performance; and **Frozen** for precise semantics approved by an effective architecture decision.
 
-本文件只规定规范组织方式，不补定地图、时限、出生位置或 ABI。
+Planned specifications cover action encoding, state hashing, public events and APIs, the threat model, gas budgets, and byte-level Golden Vectors. They must preserve the approved gameplay behavior unless a subsequent approved decision explicitly changes it.

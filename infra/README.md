@@ -1,5 +1,5 @@
-# 本地基础设施
+# Local Infrastructure
 
-Docker Compose、PostgreSQL、Go 服务和本地链编排将在对应阶段接入。当前没有可启动的 Compose 配置、测试网部署或服务健康声明。
+Docker Compose, PostgreSQL, Go services, and local-chain orchestration are introduced in the stages that use them. There is no runnable Compose configuration, testnet deployment, or service-health claim yet.
 
-M0-S1 仅需准备三种语言工程，不要求 Docker daemon 或数据库正在运行。
+The foundation does not require a running Docker daemon or database. Daily frontend/backend entry points are in scripts/.

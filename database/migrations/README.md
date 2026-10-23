@@ -1,7 +1,7 @@
-# PostgreSQL 迁移目录
+# PostgreSQL Migrations
 
-当前没有业务表和迁移脚本。V1 的链区块、事件、对局和回合投影在 M3-S2 定义。
+No business tables or migration scripts exist yet. Block, event, match, and round projections are planned for chain indexing.
 
-后续迁移应使用有序文件名，记录适用 schema、事务边界及恢复方式。正式链上比赛数据属于可由规范链重建的投影，数据库不能修改权威胜负。
+Future migrations use ordered filenames and document their schema, transaction boundaries, and recovery procedure. Official match data is a canonical-chain projection that can be rebuilt; the database cannot change an authoritative outcome.
 
-迁移工具与 PostgreSQL 镜像的具体版本在实际接入时固定，当前无需安装或启动数据库。
+Select the migration tool and PostgreSQL image version when database integration begins. This stage does not require installing or starting a database.
