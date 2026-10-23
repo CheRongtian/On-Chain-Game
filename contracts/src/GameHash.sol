@@ -20,12 +20,16 @@ library GameHash {
     }
 
     function hashActions(GameTypes.Action[3] memory actions) internal pure returns (bytes32) {
+        validateActionEncoding(actions);
+        return keccak256(abi.encode(ACTIONS_DOMAIN, actions));
+    }
+
+    function validateActionEncoding(GameTypes.Action[3] memory actions) internal pure {
         uint8 slot = 0;
         for (; slot < GameTypes.SQUAD_SIZE; ++slot) {
             if (!_isCanonicalAction(actions[slot])) break;
         }
         if (slot < GameTypes.SQUAD_SIZE) revert IArena.InvalidActionEncoding(slot);
-        return keccak256(abi.encode(ACTIONS_DOMAIN, actions));
     }
 
     // Clients compute this locally before broadcasting; salt is a fresh random 32-byte value.
@@ -55,7 +59,7 @@ library GameHash {
     function hashBattleState(
         GameTypes.MatchContext memory context, GameTypes.BattleState memory state
     ) internal pure returns (bytes32) {
-        _validateBattleState(state);
+        validateBattleState(state);
         return keccak256(abi.encode(STATE_DOMAIN, context, rulesHash(), state));
     }
 
@@ -94,7 +98,7 @@ library GameHash {
     }
 
     // Game rules validate paths, costs, and battle outcomes before hashing.
-    function _validateBattleState(GameTypes.BattleState memory state) private pure {
+    function validateBattleState(GameTypes.BattleState memory state) internal pure {
         if (state.mapId != GameTypes.MAP_ID) revert IArena.UnknownMap(state.mapId);
         _validateRound(state.round);
         GameTypes.Rules memory rules = GameTypes.defaultRules();

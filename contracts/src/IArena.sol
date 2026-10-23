@@ -6,6 +6,8 @@ import { GameTypes } from "./GameTypes.sol";
 interface IArena {
     error UnknownMatch(uint256 matchId);
     error UnknownMap(uint8 mapId);
+    error InvalidCoordinates(uint8 x, uint8 y);
+    error InvalidCell(uint8 cell);
     error NotPlayer(address caller);
     error NotCreator(address caller);
     error SelfJoin();

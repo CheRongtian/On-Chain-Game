@@ -3,6 +3,7 @@ pragma solidity 0.8.30;
 
 import { GameTypes } from "./GameTypes.sol";
 import { GameHash } from "./GameHash.sol";
+import { MapRules } from "./MapRules.sol";
 import { IArena } from "./IArena.sol";
 
 contract Arena {
@@ -21,7 +22,7 @@ contract Arena {
     }
 
     function createMatch(uint8 mapId) external returns (uint256 matchId) {
-        _requireMap(mapId);
+        MapRules.requireKnownMap(mapId);
         matchId = _nextMatchId++;
         GameTypes.MatchSummary storage summary = _matches[matchId].summary;
         summary.players[0] = msg.sender;
@@ -109,8 +110,7 @@ contract Arena {
     }
 
     function getMap(uint8 mapId) external pure returns (GameTypes.MapConfig memory) {
-        _requireMap(mapId);
-        return GameTypes.defaultMap();
+        return MapRules.getMap(mapId);
     }
 
     function getMatch(uint256 matchId) external view returns (GameTypes.MatchSummary memory) {
@@ -143,10 +143,6 @@ contract Arena {
         if (summary.phase != GameTypes.Phase.WaitingForOpponent) {
             revert IArena.InvalidPhase(GameTypes.Phase.WaitingForOpponent, summary.phase);
         }
-    }
-
-    function _requireMap(uint8 mapId) private pure {
-        if (mapId != GameTypes.MAP_ID) revert IArena.UnknownMap(mapId);
     }
 
     function _deadlineAfter(uint32 duration) private view returns (uint64) {

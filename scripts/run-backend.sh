@@ -30,6 +30,10 @@ check_contracts() {
         --sig 'run(bytes32)' "$actions_hash" \
         --use "$compiler" --offline
     printf 'Protocol encoding checks passed.\n'
+
+    printf 'Checking static map and unit rules offline...\n'
+    forge script script/CheckRules.s.sol:CheckRules --use "$compiler" --offline
+    printf 'Static rule checks passed.\n'
 }
 
 check_contracts
