@@ -4,6 +4,7 @@ pragma solidity 0.8.30;
 import { GameTypes } from "./GameTypes.sol";
 import { GameHash } from "./GameHash.sol";
 import { UnitRules } from "./UnitRules.sol";
+import { BattleResolver } from "./BattleResolver.sol";
 import { IArena } from "./IArena.sol";
 
 library TurnProtocol {
@@ -16,9 +17,9 @@ library TurnProtocol {
         GameTypes.Action[SQUAD_SIZE][2] revealedActions;
     }
 
-    function commit(
-        MatchData storage matchData, uint256 matchId, uint8 round, bytes32 commitment
-    ) internal {
+    function commit(MatchData storage matchData, uint256 matchId, uint8 round, bytes32 commitment)
+        internal
+    {
         uint8 player = _requireSubmission(matchData.summary, round, GameTypes.Phase.Commit);
         GameTypes.RoundStatus storage status = matchData.roundStatus;
         if (status.committed[player]) revert IArena.AlreadyCommitted(msg.sender);
@@ -28,15 +29,20 @@ library TurnProtocol {
         emit IArena.ActionCommitted(matchId, round, msg.sender, commitment);
         if (status.committed[0] && status.committed[1]) {
             _advancePhase(
-                matchData.summary, matchId, GameTypes.Phase.Reveal,
+                matchData.summary,
+                matchId,
+                GameTypes.Phase.Reveal,
                 deadlineAfter(GameTypes.PHASE_DURATION)
             );
         }
     }
 
     function reveal(
-        MatchData storage matchData, uint256 matchId, uint8 round,
-        GameTypes.Action[SQUAD_SIZE] calldata actions, bytes32 salt
+        MatchData storage matchData,
+        uint256 matchId,
+        uint8 round,
+        GameTypes.Action[SQUAD_SIZE] calldata actions,
+        bytes32 salt
     ) internal {
         uint8 player = _requireSubmission(matchData.summary, round, GameTypes.Phase.Reveal);
         GameTypes.RoundStatus storage status = matchData.roundStatus;
@@ -54,27 +60,72 @@ library TurnProtocol {
         }
     }
 
+    function settle(MatchData storage matchData, uint256 matchId, uint8 round) internal {
+        GameTypes.MatchSummary storage summary = matchData.summary;
+        _requirePhase(summary, GameTypes.Phase.Resolvable);
+        _requireRound(summary, round);
+        bytes32 beforeHash = summary.stateHash;
+        (GameTypes.BattleState memory next,) = BattleResolver.resolve(
+            matchData.battle, matchData.revealedActions[0], matchData.revealedActions[1]
+        );
+        storeBattle(matchData.battle, next);
+        summary.round = next.round;
+        summary.outcome = next.outcome;
+        summary.reason = next.reason;
+        summary.stateHash = GameHash.hashBattleState(_context(matchId), next);
+        emit IArena.RoundResolved(
+            matchId, round, beforeHash, summary.stateHash, next.players, next.outcome, next.reason
+        );
+
+        if (next.outcome == GameTypes.Outcome.None) {
+            delete matchData.roundStatus;
+            delete matchData.revealedActions;
+            _advancePhase(
+                summary, matchId, GameTypes.Phase.Commit, deadlineAfter(GameTypes.PHASE_DURATION)
+            );
+        } else {
+            _finishMatch(summary, matchId);
+        }
+    }
+
     function expire(
-        MatchData storage matchData, uint256 matchId, uint8 round,
+        MatchData storage matchData,
+        uint256 matchId,
+        uint8 round,
         GameTypes.Phase expectedPhase
     ) internal {
         GameTypes.MatchSummary storage summary = matchData.summary;
         _requireTimeout(summary, round, expectedPhase);
         GameTypes.Outcome outcome = _timeoutOutcome(matchData.roundStatus, expectedPhase);
         GameTypes.EndReason reason = expectedPhase == GameTypes.Phase.Commit
-            ? GameTypes.EndReason.CommitTimeout : GameTypes.EndReason.RevealTimeout;
+            ? GameTypes.EndReason.CommitTimeout
+            : GameTypes.EndReason.RevealTimeout;
 
         matchData.battle.outcome = outcome;
         matchData.battle.reason = reason;
         summary.outcome = outcome;
         summary.reason = reason;
         summary.stateHash = GameHash.hashBattleState(_context(matchId), matchData.battle);
-        _advancePhase(summary, matchId, GameTypes.Phase.Finished, 0);
+        _finishMatch(summary, matchId);
+    }
 
-        address winner = address(0);
-        if (outcome == GameTypes.Outcome.PlayerA) winner = summary.players[0];
-        else if (outcome == GameTypes.Outcome.PlayerB) winner = summary.players[1];
-        emit IArena.MatchFinished(matchId, round, winner, outcome, reason, summary.stateHash);
+    function storeBattle(
+        GameTypes.BattleState storage destination,
+        GameTypes.BattleState memory source
+    ) internal {
+        destination.mapId = source.mapId;
+        destination.round = source.round;
+        for (uint256 player = 0; player < source.players.length; ++player) {
+            destination.players[player].energy = source.players[player].energy;
+            destination.players[player].victoryPoints = source.players[player].victoryPoints;
+        }
+        for (uint256 slot = 0; slot < GameTypes.UNIT_COUNT; ++slot) {
+            destination.units[slot].unitType = source.units[slot].unitType;
+            destination.units[slot].cell = source.units[slot].cell;
+            destination.units[slot].hp = source.units[slot].hp;
+        }
+        destination.outcome = source.outcome;
+        destination.reason = source.reason;
     }
 
     function deadlineAfter(uint32 duration) internal view returns (uint64) {
@@ -84,7 +135,9 @@ library TurnProtocol {
     }
 
     function _requireSubmission(
-        GameTypes.MatchSummary storage summary, uint8 round, GameTypes.Phase expectedPhase
+        GameTypes.MatchSummary storage summary,
+        uint8 round,
+        GameTypes.Phase expectedPhase
     ) private view returns (uint8 player) {
         _requirePhase(summary, expectedPhase);
         _requireRound(summary, round);
@@ -97,7 +150,9 @@ library TurnProtocol {
     }
 
     function _requireTimeout(
-        GameTypes.MatchSummary storage summary, uint8 round, GameTypes.Phase expectedPhase
+        GameTypes.MatchSummary storage summary,
+        uint8 round,
+        GameTypes.Phase expectedPhase
     ) private view {
         if (expectedPhase != GameTypes.Phase.Commit && expectedPhase != GameTypes.Phase.Reveal) {
             revert IArena.InvalidTimeoutPhase(expectedPhase);
@@ -153,8 +208,20 @@ library TurnProtocol {
         }
     }
 
+    function _finishMatch(GameTypes.MatchSummary storage summary, uint256 matchId) private {
+        _advancePhase(summary, matchId, GameTypes.Phase.Finished, 0);
+        address winner = address(0);
+        if (summary.outcome == GameTypes.Outcome.PlayerA) winner = summary.players[0];
+        else if (summary.outcome == GameTypes.Outcome.PlayerB) winner = summary.players[1];
+        emit IArena.MatchFinished(
+            matchId, summary.round, winner, summary.outcome, summary.reason, summary.stateHash
+        );
+    }
+
     function _advancePhase(
-        GameTypes.MatchSummary storage summary, uint256 matchId, GameTypes.Phase phase,
+        GameTypes.MatchSummary storage summary,
+        uint256 matchId,
+        GameTypes.Phase phase,
         uint64 deadline
     ) private {
         summary.phase = phase;
@@ -163,8 +230,9 @@ library TurnProtocol {
     }
 
     function _context(uint256 matchId) private view returns (GameTypes.MatchContext memory) {
-        return GameTypes.MatchContext({
-            chainId: block.chainid, arena: address(this), matchId: matchId
-        });
+        return
+            GameTypes.MatchContext({
+                chainId: block.chainid, arena: address(this), matchId: matchId
+            });
     }
 }

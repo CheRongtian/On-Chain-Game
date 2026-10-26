@@ -7,7 +7,7 @@ import { MapRules } from "./MapRules.sol";
 import { TurnProtocol } from "./TurnProtocol.sol";
 import { IArena } from "./IArena.sol";
 
-contract Arena {
+contract Arena is IArena {
     bytes32 private immutable RULES_HASH;
     uint256 private _nextMatchId = 1;
     mapping(uint256 => TurnProtocol.MatchData) private _matches;
@@ -16,7 +16,7 @@ contract Arena {
         RULES_HASH = GameHash.rulesHash();
     }
 
-    function createMatch(uint8 mapId) external returns (uint256 matchId) {
+    function createMatch(uint8 mapId) external override returns (uint256 matchId) {
         MapRules.requireKnownMap(mapId);
         matchId = _nextMatchId++;
         GameTypes.MatchSummary storage summary = _matches[matchId].summary;
@@ -32,7 +32,7 @@ contract Arena {
         );
     }
 
-    function joinMatch(uint256 matchId) external {
+    function joinMatch(uint256 matchId) external override {
         TurnProtocol.MatchData storage matchData = _requireMatch(matchId);
         GameTypes.MatchSummary storage summary = matchData.summary;
         _requireWaiting(summary);
@@ -47,20 +47,7 @@ contract Arena {
         GameTypes.MatchContext memory context = GameTypes.MatchContext({
             chainId: block.chainid, arena: address(this), matchId: matchId
         });
-        GameTypes.BattleState storage battle = matchData.battle;
-        battle.mapId = initialState.mapId;
-        battle.round = initialState.round;
-        for (uint256 player = 0; player < initialState.players.length; ++player) {
-            battle.players[player].energy = initialState.players[player].energy;
-            battle.players[player].victoryPoints = initialState.players[player].victoryPoints;
-        }
-        for (uint256 slot = 0; slot < GameTypes.UNIT_COUNT; ++slot) {
-            battle.units[slot].unitType = initialState.units[slot].unitType;
-            battle.units[slot].cell = initialState.units[slot].cell;
-            battle.units[slot].hp = initialState.units[slot].hp;
-        }
-        battle.outcome = initialState.outcome;
-        battle.reason = initialState.reason;
+        TurnProtocol.storeBattle(matchData.battle, initialState);
         summary.players[1] = msg.sender;
         summary.phase = GameTypes.Phase.Commit;
         summary.round = initialState.round;
@@ -74,7 +61,7 @@ contract Arena {
         );
     }
 
-    function cancelUnjoinedMatch(uint256 matchId) external {
+    function cancelUnjoinedMatch(uint256 matchId) external override {
         GameTypes.MatchSummary storage summary = _requireMatch(matchId).summary;
         _requireWaiting(summary);
         if (msg.sender != summary.players[0]) revert IArena.NotCreator(msg.sender);
@@ -83,7 +70,7 @@ contract Arena {
         emit IArena.PhaseAdvanced(matchId, 0, GameTypes.Phase.Cancelled, 0);
     }
 
-    function expireUnjoinedMatch(uint256 matchId) external {
+    function expireUnjoinedMatch(uint256 matchId) external override {
         GameTypes.MatchSummary storage summary = _requireMatch(matchId).summary;
         _requireWaiting(summary);
         // Expiry requires the chain timestamp to pass the room deadline.
@@ -96,43 +83,66 @@ contract Arena {
         emit IArena.PhaseAdvanced(matchId, 0, GameTypes.Phase.Expired, 0);
     }
 
-    function commitActions(uint256 matchId, uint8 round, bytes32 commitment) external {
+    function commitActions(uint256 matchId, uint8 round, bytes32 commitment) external override {
         TurnProtocol.commit(_requireMatch(matchId), matchId, round, commitment);
     }
 
     function revealActions(
-        uint256 matchId, uint8 round, GameTypes.Action[3] calldata actions, bytes32 salt
-    ) external {
+        uint256 matchId,
+        uint8 round,
+        GameTypes.Action[3] calldata actions,
+        bytes32 salt
+    ) external override {
         TurnProtocol.reveal(_requireMatch(matchId), matchId, round, actions, salt);
     }
 
-    function advanceExpiredPhase(
-        uint256 matchId, uint8 round, GameTypes.Phase expectedPhase
-    ) external {
+    function settleRound(uint256 matchId, uint8 round) external override {
+        TurnProtocol.settle(_requireMatch(matchId), matchId, round);
+    }
+
+    function advanceExpiredPhase(uint256 matchId, uint8 round, GameTypes.Phase expectedPhase)
+        external
+        override
+    {
         TurnProtocol.expire(_requireMatch(matchId), matchId, round, expectedPhase);
     }
 
-    function getRules() external pure returns (GameTypes.Rules memory) {
+    function getRules() external pure override returns (GameTypes.Rules memory) {
         return GameTypes.defaultRules();
     }
 
-    function getRulesHash() external view returns (bytes32) {
+    function getRulesHash() external view override returns (bytes32) {
         return RULES_HASH;
     }
 
-    function getMap(uint8 mapId) external pure returns (GameTypes.MapConfig memory) {
+    function getMap(uint8 mapId) external pure override returns (GameTypes.MapConfig memory) {
         return MapRules.getMap(mapId);
     }
 
-    function getMatch(uint256 matchId) external view returns (GameTypes.MatchSummary memory) {
+    function getMatch(uint256 matchId)
+        external
+        view
+        override
+        returns (GameTypes.MatchSummary memory)
+    {
         return _requireMatch(matchId).summary;
     }
 
-    function getBattleState(uint256 matchId) external view returns (GameTypes.BattleState memory) {
+    function getBattleState(uint256 matchId)
+        external
+        view
+        override
+        returns (GameTypes.BattleState memory)
+    {
         return _requireStartedMatch(matchId).battle;
     }
 
-    function getRoundStatus(uint256 matchId) external view returns (GameTypes.RoundStatus memory) {
+    function getRoundStatus(uint256 matchId)
+        external
+        view
+        override
+        returns (GameTypes.RoundStatus memory)
+    {
         return _requireStartedMatch(matchId).roundStatus;
     }
 

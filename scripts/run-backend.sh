@@ -54,6 +54,7 @@ start_local_chain
 deploy_local_arena
 check_local_arena
 check_local_turns
+check_local_matches
 
 cd "$project_root/server"
 printf 'Starting backend...\n'

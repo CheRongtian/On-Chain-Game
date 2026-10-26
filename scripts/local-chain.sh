@@ -138,3 +138,19 @@ check_local_turns() {
         --use "$compiler" --offline
     printf 'Turn protocol checks passed. Local match 1 is Resolvable.\n'
 }
+
+check_local_matches() {
+    local compiler="$project_root/.local/bin/solc-0.8.30"
+
+    printf 'Running complete matches and recording transaction gas...\n'
+    cd "$project_root/server"
+    go run ./cmd/demotool --rpc "$local_rpc_url" --arena "$arena_address" \
+        --output "$project_root/.local/demo"
+
+    printf 'Checking complete match results, settlement events, replay, and state invariants...\n'
+    cd "$project_root/contracts"
+    forge script script/CheckMatches.s.sol:CheckMatches \
+        --sig 'run(address)' "$arena_address" --rpc-url "$local_rpc_url" \
+        --use "$compiler" --offline
+    printf 'Complete match checks passed. Local matches 1-4 are Finished.\n'
+}
