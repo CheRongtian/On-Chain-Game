@@ -1,0 +1,1245 @@
+{
+  "rulesHash": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+  "cases": [
+    {
+      "name": "hold_initial",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 1,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "actionsB": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 2,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedSummary": {
+        "energySpent": [0, 0],
+        "moved": [false, false, false, false, false, false],
+        "damageTaken": [0, 0, 0, 0, 0, 0],
+        "energyGained": [0, 0],
+        "victoryPointsGained": [0, 0]
+      },
+      "expectedHash": "0xa6eae3d65c7fe42306bd61072fe6e35a7a76f538ee3aada78d54606019f14ae2"
+    },
+    {
+      "name": "move_and_control",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 1,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 1, "targetCell": 255, "pathLength": 1, "path": [9, 0, 0, 0] },
+        { "kind": 1, "targetCell": 255, "pathLength": 2, "path": [25, 26, 0, 0] },
+        { "kind": 5, "targetCell": 255, "pathLength": 4, "path": [32, 33, 34, 35] }
+      ],
+      "actionsB": [
+        { "kind": 1, "targetCell": 255, "pathLength": 1, "path": [54, 0, 0, 0] },
+        { "kind": 1, "targetCell": 255, "pathLength": 2, "path": [38, 37, 0, 0] },
+        { "kind": 1, "targetCell": 255, "pathLength": 1, "path": [31, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 2,
+        "players": [
+          { "energy": 1, "victoryPoints": 2 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 9, "hp": 10 },
+          { "unitType": 2, "cell": 26, "hp": 6 },
+          { "unitType": 3, "cell": 35, "hp": 5 },
+          { "unitType": 1, "cell": 54, "hp": 10 },
+          { "unitType": 2, "cell": 37, "hp": 6 },
+          { "unitType": 3, "cell": 31, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedSummary": {
+        "energySpent": [1, 0],
+        "moved": [true, true, true, true, true, true],
+        "damageTaken": [0, 0, 0, 0, 0, 0],
+        "energyGained": [0, 0],
+        "victoryPointsGained": [2, 0]
+      },
+      "expectedHash": "0x17e1334382fed4d1d8d269dd9987e4d57a06adc0d2322054710ab8c32901bc78"
+    },
+    {
+      "name": "shared_endpoint_cancels_all",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 5,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 27, "hp": 6 },
+          { "unitType": 3, "cell": 34, "hp": 5 },
+          { "unitType": 1, "cell": 36, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 1, "targetCell": 255, "pathLength": 1, "path": [35, 0, 0, 0] },
+        { "kind": 5, "targetCell": 255, "pathLength": 1, "path": [35, 0, 0, 0] }
+      ],
+      "actionsB": [
+        { "kind": 1, "targetCell": 255, "pathLength": 1, "path": [35, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 6,
+        "players": [
+          { "energy": 1, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 27, "hp": 6 },
+          { "unitType": 3, "cell": 34, "hp": 5 },
+          { "unitType": 1, "cell": 36, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedSummary": {
+        "energySpent": [1, 0],
+        "moved": [false, false, false, false, false, false],
+        "damageTaken": [0, 0, 0, 0, 0, 0],
+        "energyGained": [0, 0],
+        "victoryPointsGained": [0, 0]
+      },
+      "expectedHash": "0x27b89ff8dbaadc028f5bba322c4c535866db9601c1e8329346d7ced87483a115"
+    },
+    {
+      "name": "shared_intermediate_paths_succeed",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 1,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 1, "targetCell": 255, "pathLength": 2, "path": [32, 33, 0, 0] },
+        { "kind": 1, "targetCell": 255, "pathLength": 3, "path": [32, 33, 34, 0] }
+      ],
+      "actionsB": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 2,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 33, "hp": 6 },
+          { "unitType": 3, "cell": 34, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedSummary": {
+        "energySpent": [0, 0],
+        "moved": [false, true, true, false, false, false],
+        "damageTaken": [0, 0, 0, 0, 0, 0],
+        "energyGained": [0, 0],
+        "victoryPointsGained": [0, 0]
+      },
+      "expectedHash": "0x3d2735b6efe2e30fb7d96382f495b71dc75dd61d4053bb9c9ecfc7171a1d1f93"
+    },
+    {
+      "name": "moving_target_dodges_power_shot",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 6,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 27, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 4, "targetCell": 27, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "actionsB": [
+        { "kind": 1, "targetCell": 255, "pathLength": 1, "path": [28, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 7,
+        "players": [
+          { "energy": 0, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 2 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 28, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedSummary": {
+        "energySpent": [2, 0],
+        "moved": [false, false, false, true, false, false],
+        "damageTaken": [0, 0, 0, 0, 0, 0],
+        "energyGained": [0, 0],
+        "victoryPointsGained": [0, 2]
+      },
+      "expectedHash": "0xa9185be010b4080050fbbc687c5e92f854089d9b50a479c5ef7aef5b6cdfc05e"
+    },
+    {
+      "name": "moving_enemy_enters_attack_cell",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 6,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 28, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 2, "targetCell": 27, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "actionsB": [
+        { "kind": 1, "targetCell": 255, "pathLength": 1, "path": [27, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 7,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 2 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 27, "hp": 8 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedSummary": {
+        "energySpent": [0, 0],
+        "moved": [false, false, false, true, false, false],
+        "damageTaken": [0, 0, 0, 2, 0, 0],
+        "energyGained": [0, 0],
+        "victoryPointsGained": [0, 2]
+      },
+      "expectedHash": "0xd43f638a64374a4acefe3b926ad6ac7207287588e804dd1f27ce06d059914833"
+    },
+    {
+      "name": "units_do_not_block_ranger_ray",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 4,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 0, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 2, "targetCell": 0, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "actionsB": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 5,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 0, "hp": 3 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedSummary": {
+        "energySpent": [0, 0],
+        "moved": [false, false, false, false, false, false],
+        "damageTaken": [0, 0, 0, 0, 0, 2],
+        "energyGained": [0, 0],
+        "victoryPointsGained": [0, 0]
+      },
+      "expectedHash": "0x6371c284645fcd7f6d572df28310973108fb52a8f408ceaafddfe9212667817e"
+    },
+    {
+      "name": "friendly_target_is_not_damaged",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 4,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 9, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 2, "targetCell": 9, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "actionsB": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 5,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 9, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedSummary": {
+        "energySpent": [0, 0],
+        "moved": [false, false, false, false, false, false],
+        "damageTaken": [0, 0, 0, 0, 0, 0],
+        "energyGained": [0, 0],
+        "victoryPointsGained": [0, 0]
+      },
+      "expectedHash": "0x523af2280726d6a05ef74fae83bf9c8956c5d3861e612ae5d08c159dfc44855c"
+    },
+    {
+      "name": "shield_reduces_combined_damage_once",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 8,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 27, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 28, "hp": 10 },
+          { "unitType": 2, "cell": 29, "hp": 6 },
+          { "unitType": 3, "cell": 35, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 3, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "actionsB": [
+        { "kind": 2, "targetCell": 27, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 4, "targetCell": 27, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 2, "targetCell": 27, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 9,
+        "players": [
+          { "energy": 1, "victoryPoints": 0 },
+          { "energy": 0, "victoryPoints": 2 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 27, "hp": 6 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 28, "hp": 10 },
+          { "unitType": 2, "cell": 29, "hp": 6 },
+          { "unitType": 3, "cell": 35, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedSummary": {
+        "energySpent": [1, 2],
+        "moved": [false, false, false, false, false, false],
+        "damageTaken": [4, 0, 0, 0, 0, 0],
+        "energyGained": [0, 0],
+        "victoryPointsGained": [0, 2]
+      },
+      "expectedHash": "0x6ff036e1e8b0528ced51eef434b4e908db12bf53c002009a72b37f76a7ab1965"
+    },
+    {
+      "name": "shield_absorbs_small_hit",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 8,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 27, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 35, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 3, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "actionsB": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 2, "targetCell": 27, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 9,
+        "players": [
+          { "energy": 1, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 27, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 35, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedSummary": {
+        "energySpent": [1, 0],
+        "moved": [false, false, false, false, false, false],
+        "damageTaken": [0, 0, 0, 0, 0, 0],
+        "energyGained": [0, 0],
+        "victoryPointsGained": [0, 0]
+      },
+      "expectedHash": "0x3937ca0e1720a922804cf4f1879b6ce2a24edc9ade9d534f4f6a16f2988dba33"
+    },
+    {
+      "name": "mutual_last_units_die",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 12,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 27, "hp": 2 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 255, "hp": 0 },
+          { "unitType": 1, "cell": 28, "hp": 2 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 255, "hp": 0 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 2, "targetCell": 28, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "actionsB": [
+        { "kind": 2, "targetCell": 27, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 12,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 255, "hp": 0 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 255, "hp": 0 },
+          { "unitType": 1, "cell": 255, "hp": 0 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 255, "hp": 0 }
+        ],
+        "outcome": 3,
+        "reason": 2
+      },
+      "expectedSummary": {
+        "energySpent": [0, 0],
+        "moved": [false, false, false, false, false, false],
+        "damageTaken": [2, 0, 0, 2, 0, 0],
+        "energyGained": [0, 0],
+        "victoryPointsGained": [0, 0]
+      },
+      "expectedHash": "0xd91bc94474188ad01340af817cbc7531e838cbac77c4dc9c364a82d566aef972"
+    },
+    {
+      "name": "power_shot_overkill_elimination",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 9,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 27, "hp": 1 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 255, "hp": 0 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 4, "targetCell": 27, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "actionsB": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 9,
+        "players": [
+          { "energy": 0, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 255, "hp": 0 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 255, "hp": 0 }
+        ],
+        "outcome": 1,
+        "reason": 1
+      },
+      "expectedSummary": {
+        "energySpent": [2, 0],
+        "moved": [false, false, false, false, false, false],
+        "damageTaken": [0, 0, 0, 1, 0, 0],
+        "energyGained": [0, 0],
+        "victoryPointsGained": [0, 0]
+      },
+      "expectedHash": "0x6d584a702e1ebffd1ab1bb3a428527fd6493a3bcdf9ac26c0cad384399c6de54"
+    },
+    {
+      "name": "dead_resource_occupant_has_no_income",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 3,
+        "players": [
+          { "energy": 0, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 18, "hp": 1 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 19, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "actionsB": [
+        { "kind": 2, "targetCell": 18, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 4,
+        "players": [
+          { "energy": 0, "victoryPoints": 0 },
+          { "energy": 2, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 255, "hp": 0 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 19, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedSummary": {
+        "energySpent": [0, 0],
+        "moved": [false, false, false, false, false, false],
+        "damageTaken": [1, 0, 0, 0, 0, 0],
+        "energyGained": [0, 0],
+        "victoryPointsGained": [0, 0]
+      },
+      "expectedHash": "0xdd546fb7e9d073a6e653114a9f1cb9ed9827043a092b95ff8a18c492909a9f85"
+    },
+    {
+      "name": "resources_cap_and_fund_next_round",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 7,
+        "players": [
+          { "energy": 5, "victoryPoints": 0 },
+          { "energy": 5, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 18, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 45, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 3, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "actionsB": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 8,
+        "players": [
+          { "energy": 5, "victoryPoints": 0 },
+          { "energy": 5, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 18, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 45, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedSummary": {
+        "energySpent": [1, 0],
+        "moved": [false, false, false, false, false, false],
+        "damageTaken": [0, 0, 0, 0, 0, 0],
+        "energyGained": [1, 0],
+        "victoryPointsGained": [0, 0]
+      },
+      "expectedHash": "0x388681dd4a3d0e5b2da9dd9eeac144d341a1ea274a4f2d6ee2e76c6a62ab8421"
+    },
+    {
+      "name": "move_onto_resource",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 4,
+        "players": [
+          { "energy": 1, "victoryPoints": 0 },
+          { "energy": 0, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 26, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 1, "targetCell": 255, "pathLength": 1, "path": [18, 0, 0, 0] }
+      ],
+      "actionsB": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 5,
+        "players": [
+          { "energy": 2, "victoryPoints": 0 },
+          { "energy": 0, "victoryPoints": 0 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 18, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedSummary": {
+        "energySpent": [0, 0],
+        "moved": [false, false, true, false, false, false],
+        "damageTaken": [0, 0, 0, 0, 0, 0],
+        "energyGained": [1, 0],
+        "victoryPointsGained": [0, 0]
+      },
+      "expectedHash": "0xdff33688a726dca819ecbc53c180a5ccf6671549aad70d821a5393e9a9ea1106"
+    },
+    {
+      "name": "central_tie_scores_nothing",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 19,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 27, "hp": 10 },
+          { "unitType": 2, "cell": 28, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 35, "hp": 10 },
+          { "unitType": 2, "cell": 36, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "actionsB": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 27, "hp": 10 },
+          { "unitType": 2, "cell": 28, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 35, "hp": 10 },
+          { "unitType": 2, "cell": 36, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "expectedSummary": {
+        "energySpent": [0, 0],
+        "moved": [false, false, false, false, false, false],
+        "damageTaken": [0, 0, 0, 0, 0, 0],
+        "energyGained": [0, 0],
+        "victoryPointsGained": [0, 0]
+      },
+      "expectedHash": "0xebefab444c6bb17ea87ac9875b613a3d9d6f54fa32f35b0b054305dd2362f4a0"
+    },
+    {
+      "name": "control_win_precedes_round_limit",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 34, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 1, "targetCell": 255, "pathLength": 1, "path": [35, 0, 0, 0] }
+      ],
+      "actionsB": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 12 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 35, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 1,
+        "reason": 3
+      },
+      "expectedSummary": {
+        "energySpent": [0, 0],
+        "moved": [false, false, true, false, false, false],
+        "damageTaken": [0, 0, 0, 0, 0, 0],
+        "energyGained": [0, 0],
+        "victoryPointsGained": [2, 0]
+      },
+      "expectedHash": "0x0795842a430c308398fdedd8c5fc3a85a120dd3ddbad6d4d50c6cfda17392f25"
+    },
+    {
+      "name": "elimination_precedes_control_threshold",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 27, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 28, "hp": 1 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 255, "hp": 0 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 2, "targetCell": 28, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "actionsB": [
+        { "kind": 2, "targetCell": 27, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 12 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 27, "hp": 8 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 255, "hp": 0 },
+          { "unitType": 2, "cell": 255, "hp": 0 },
+          { "unitType": 3, "cell": 255, "hp": 0 }
+        ],
+        "outcome": 1,
+        "reason": 1
+      },
+      "expectedSummary": {
+        "energySpent": [0, 0],
+        "moved": [false, false, false, false, false, false],
+        "damageTaken": [2, 0, 0, 1, 0, 0],
+        "energyGained": [0, 0],
+        "victoryPointsGained": [2, 0]
+      },
+      "expectedHash": "0x623122fb3425ceb36750b1b8b8756810b3bd62ae8e0e0986b66b21610e8d632d"
+    },
+    {
+      "name": "round_limit_uses_remaining_hp",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 9 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "actionsB": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 9 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 2,
+        "reason": 4
+      },
+      "expectedSummary": {
+        "energySpent": [0, 0],
+        "moved": [false, false, false, false, false, false],
+        "damageTaken": [0, 0, 0, 0, 0, 0],
+        "energyGained": [0, 0],
+        "victoryPointsGained": [0, 0]
+      },
+      "expectedHash": "0x3ef9bfdaee7427748115f12f4c039f3895b30243ef0d118ab4557fa66857041c"
+    },
+    {
+      "name": "round_limit_draw",
+      "context": {
+        "chainId": 31337,
+        "arena": "0x00000000000000000000000000000000000a11ce",
+        "matchId": 1
+      },
+      "state": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 0,
+        "reason": 0
+      },
+      "actionsA": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "actionsB": [
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] },
+        { "kind": 0, "targetCell": 255, "pathLength": 0, "path": [0, 0, 0, 0] }
+      ],
+      "expectedState": {
+        "mapId": 1,
+        "round": 20,
+        "players": [
+          { "energy": 2, "victoryPoints": 10 },
+          { "energy": 2, "victoryPoints": 10 }
+        ],
+        "units": [
+          { "unitType": 1, "cell": 8, "hp": 10 },
+          { "unitType": 2, "cell": 24, "hp": 6 },
+          { "unitType": 3, "cell": 40, "hp": 5 },
+          { "unitType": 1, "cell": 55, "hp": 10 },
+          { "unitType": 2, "cell": 39, "hp": 6 },
+          { "unitType": 3, "cell": 23, "hp": 5 }
+        ],
+        "outcome": 3,
+        "reason": 4
+      },
+      "expectedSummary": {
+        "energySpent": [0, 0],
+        "moved": [false, false, false, false, false, false],
+        "damageTaken": [0, 0, 0, 0, 0, 0],
+        "energyGained": [0, 0],
+        "victoryPointsGained": [0, 0]
+      },
+      "expectedHash": "0x7b90ab1f5d5a07b19d633a70504f10f25b52eda14c79f9b3cfff0fb0fccbd43b"
+    }
+  ]
+}

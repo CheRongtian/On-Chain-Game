@@ -15,9 +15,11 @@ library UnitRules {
     }
 
     // Validates one complete squad against the round-start snapshot, without mutation.
+    // Batch battle fixtures intentionally retain every production rejection guard.
     function validateActions(
         GameTypes.BattleState memory state, uint8 playerIndex, GameTypes.Action[3] memory actions
     ) internal pure returns (uint8 requiredEnergy) {
+        // forge-lint: disable-next-line(require-revert-in-loop)
         if (playerIndex >= state.players.length) revert IArena.InvalidPlayerState(playerIndex);
         GameHash.validateBattleState(state);
         GameHash.validateActionEncoding(actions);
@@ -33,13 +35,16 @@ library UnitRules {
             requiredEnergy += cost;
             ++unitId;
         }
+        // forge-lint: disable-next-line(require-revert-in-loop)
         if (issue == ActionIssue.Action) revert IArena.InvalidAction(unitId);
+        // forge-lint: disable-next-line(require-revert-in-loop)
         if (issue == ActionIssue.Path) revert IArena.InvalidPath(unitId);
+        // forge-lint: disable-next-line(require-revert-in-loop)
         if (issue == ActionIssue.Target) revert IArena.InvalidTarget(unitId);
-        if (requiredEnergy > state.players[playerIndex].energy) {
-            revert IArena.InsufficientEnergy(
-                playerIndex, requiredEnergy, state.players[playerIndex].energy
-            );
+        uint8 available = state.players[playerIndex].energy;
+        if (requiredEnergy > available) {
+            // forge-lint: disable-next-line(require-revert-in-loop)
+            revert IArena.InsufficientEnergy(playerIndex, requiredEnergy, available);
         }
     }
 
@@ -55,6 +60,8 @@ library UnitRules {
             if (MapRules.contains(blocked, units[slot].cell)) break;
             blocked |= uint64(1) << units[slot].cell;
         }
+        // Reject malformed occupancy even when invoked by a batch fixture loop.
+        // forge-lint: disable-next-line(require-revert-in-loop)
         if (slot < GameTypes.UNIT_COUNT) revert IArena.InvalidUnitState(slot);
     }
 

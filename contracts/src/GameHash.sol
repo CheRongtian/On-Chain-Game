@@ -29,6 +29,8 @@ library GameHash {
         for (; slot < GameTypes.SQUAD_SIZE; ++slot) {
             if (!_isCanonicalAction(actions[slot])) break;
         }
+        // Canonical orders remain mandatory for every state in batch battle fixtures.
+        // forge-lint: disable-next-line(require-revert-in-loop)
         if (slot < GameTypes.SQUAD_SIZE) revert IArena.InvalidActionEncoding(slot);
     }
 

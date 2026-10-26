@@ -38,6 +38,10 @@ check_contracts() {
     printf 'Checking outcomes and fixed state hashes offline...\n'
     forge script script/CheckResults.s.sol:CheckResults --use "$compiler" --offline
     printf 'Outcome and state hash checks passed.\n'
+
+    printf 'Checking synchronous battle resolution offline...\n'
+    forge script script/CheckBattle.s.sol:CheckBattle --use "$compiler" --offline
+    printf 'Battle resolution checks passed.\n'
 }
 
 check_contracts

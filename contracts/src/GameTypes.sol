@@ -97,6 +97,16 @@ library GameTypes {
         EndReason reason;
     }
 
+    // Fixed slot order matches BattleState. Gains are amounts actually credited after caps.
+    // damageTaken is HP actually lost after shielding and the zero-HP floor.
+    struct ResolutionSummary {
+        uint8[2] energySpent;
+        bool[UNIT_COUNT] moved;
+        uint8[UNIT_COUNT] damageTaken;
+        uint8[2] energyGained;
+        uint8[2] victoryPointsGained;
+    }
+
     struct MatchContext {
         uint256 chainId;
         address arena;
