@@ -49,6 +49,7 @@ go run ./cmd/maptool -map "$project_root/config/map.json"
 start_local_chain
 deploy_local_arena
 check_local_arena
+check_local_turns
 
 cd "$project_root/server"
 printf 'Starting backend...\n'

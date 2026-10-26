@@ -12,6 +12,7 @@ interface IArena {
     error NotCreator(address caller);
     error SelfJoin();
     error InvalidPhase(GameTypes.Phase expected, GameTypes.Phase actual);
+    error InvalidTimeoutPhase(GameTypes.Phase phase);
     error InvalidRound(uint8 round);
     error StaleRound(uint8 expected, uint8 actual);
     error DeadlinePassed(uint64 deadline);

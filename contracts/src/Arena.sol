@@ -4,18 +4,13 @@ pragma solidity 0.8.30;
 import { GameTypes } from "./GameTypes.sol";
 import { GameHash } from "./GameHash.sol";
 import { MapRules } from "./MapRules.sol";
+import { TurnProtocol } from "./TurnProtocol.sol";
 import { IArena } from "./IArena.sol";
 
 contract Arena {
-    struct MatchData {
-        GameTypes.MatchSummary summary;
-        GameTypes.BattleState battle;
-        GameTypes.RoundStatus roundStatus;
-    }
-
     bytes32 private immutable RULES_HASH;
     uint256 private _nextMatchId = 1;
-    mapping(uint256 => MatchData) private _matches;
+    mapping(uint256 => TurnProtocol.MatchData) private _matches;
 
     constructor() {
         RULES_HASH = GameHash.rulesHash();
@@ -29,7 +24,7 @@ contract Arena {
         summary.mapId = mapId;
         summary.rulesHash = RULES_HASH;
         summary.phase = GameTypes.Phase.WaitingForOpponent;
-        summary.joinDeadline = _deadlineAfter(GameTypes.ROOM_LIFETIME);
+        summary.joinDeadline = TurnProtocol.deadlineAfter(GameTypes.ROOM_LIFETIME);
 
         emit IArena.MatchCreated(matchId, msg.sender, mapId, RULES_HASH, summary.joinDeadline);
         emit IArena.PhaseAdvanced(
@@ -38,7 +33,7 @@ contract Arena {
     }
 
     function joinMatch(uint256 matchId) external {
-        MatchData storage matchData = _requireMatch(matchId);
+        TurnProtocol.MatchData storage matchData = _requireMatch(matchId);
         GameTypes.MatchSummary storage summary = matchData.summary;
         _requireWaiting(summary);
         if (msg.sender == summary.players[0]) revert IArena.SelfJoin();
@@ -69,7 +64,7 @@ contract Arena {
         summary.players[1] = msg.sender;
         summary.phase = GameTypes.Phase.Commit;
         summary.round = initialState.round;
-        summary.phaseDeadline = _deadlineAfter(GameTypes.PHASE_DURATION);
+        summary.phaseDeadline = TurnProtocol.deadlineAfter(GameTypes.PHASE_DURATION);
         summary.stateHash = GameHash.hashBattleState(context, initialState);
 
         emit IArena.PlayerJoined(matchId, msg.sender);
@@ -101,6 +96,22 @@ contract Arena {
         emit IArena.PhaseAdvanced(matchId, 0, GameTypes.Phase.Expired, 0);
     }
 
+    function commitActions(uint256 matchId, uint8 round, bytes32 commitment) external {
+        TurnProtocol.commit(_requireMatch(matchId), matchId, round, commitment);
+    }
+
+    function revealActions(
+        uint256 matchId, uint8 round, GameTypes.Action[3] calldata actions, bytes32 salt
+    ) external {
+        TurnProtocol.reveal(_requireMatch(matchId), matchId, round, actions, salt);
+    }
+
+    function advanceExpiredPhase(
+        uint256 matchId, uint8 round, GameTypes.Phase expectedPhase
+    ) external {
+        TurnProtocol.expire(_requireMatch(matchId), matchId, round, expectedPhase);
+    }
+
     function getRules() external pure returns (GameTypes.Rules memory) {
         return GameTypes.defaultRules();
     }
@@ -125,7 +136,11 @@ contract Arena {
         return _requireStartedMatch(matchId).roundStatus;
     }
 
-    function _requireMatch(uint256 matchId) private view returns (MatchData storage matchData) {
+    function _requireMatch(uint256 matchId)
+        private
+        view
+        returns (TurnProtocol.MatchData storage matchData)
+    {
         matchData = _matches[matchId];
         if (matchData.summary.players[0] == address(0)) revert IArena.UnknownMatch(matchId);
     }
@@ -133,7 +148,7 @@ contract Arena {
     function _requireStartedMatch(uint256 matchId)
         private
         view
-        returns (MatchData storage matchData)
+        returns (TurnProtocol.MatchData storage matchData)
     {
         matchData = _requireMatch(matchId);
         if (matchData.summary.players[1] == address(0)) revert IArena.BattleNotStarted(matchId);
@@ -143,11 +158,5 @@ contract Arena {
         if (summary.phase != GameTypes.Phase.WaitingForOpponent) {
             revert IArena.InvalidPhase(GameTypes.Phase.WaitingForOpponent, summary.phase);
         }
-    }
-
-    function _deadlineAfter(uint32 duration) private view returns (uint64) {
-        // Supported chain timestamps and protocol durations fit uint64 Unix seconds.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        return uint64(block.timestamp + duration);
     }
 }

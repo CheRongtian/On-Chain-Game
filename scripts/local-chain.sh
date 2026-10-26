@@ -87,3 +87,54 @@ check_local_arena() {
         --use "$compiler" --offline
     printf 'Room lifecycle checks passed. Local match 1 is in Commit.\n'
 }
+
+check_local_turns() {
+    local compiler="$project_root/.local/bin/solc-0.8.30"
+    local orders actions_domain actions_encoding actions_hash rules_hash type_hash
+    local salt_a salt_b encoded commitment_a commitment_b
+
+    # Public HOLD orders and fixed salts are used only for this disposable demonstration.
+    orders='[(0,255,0,[0,0,0,0]),(0,255,0,[0,0,0,0]),(0,255,0,[0,0,0,0])]'
+    printf -v salt_a '0x%064x' 1
+    printf -v salt_b '0x%064x' 2
+    actions_domain="$(cast keccak 'OnChainTacticalArena.Actions')"
+    actions_encoding="$(cast abi-encode \
+        'f(bytes32,(uint8,uint8,uint8,uint8[4])[3])' "$actions_domain" "$orders")"
+    actions_hash="$(cast keccak "$actions_encoding")"
+    rules_hash="$(cast call "$arena_address" 'getRulesHash()(bytes32)' --rpc-url "$local_rpc_url")"
+    type_hash="$(cast keccak \
+        'ActionCommitment((uint256,address,uint256),uint8,address,bytes32,bytes32,bytes32)')"
+    encoded="$(cast abi-encode \
+        'f(bytes32,(uint256,address,uint256),uint8,address,bytes32,bytes32,bytes32)' \
+        "$type_hash" "(31337,$arena_address,1)" 1 "$local_player_a" \
+        "$rules_hash" "$actions_hash" "$salt_a")"
+    commitment_a="$(cast keccak "$encoded")"
+    encoded="$(cast abi-encode \
+        'f(bytes32,(uint256,address,uint256),uint8,address,bytes32,bytes32,bytes32)' \
+        "$type_hash" "(31337,$arena_address,1)" 1 "$local_player_b" \
+        "$rules_hash" "$actions_hash" "$salt_b")"
+    commitment_b="$(cast keccak "$encoded")"
+
+    printf 'Committing orders with both local accounts...\n'
+    cast send "$arena_address" 'commitActions(uint256,uint8,bytes32)' 1 1 "$commitment_a" \
+        --unlocked --from "$local_player_a" --rpc-url "$local_rpc_url"
+    cast send "$arena_address" 'commitActions(uint256,uint8,bytes32)' 1 1 "$commitment_b" \
+        --unlocked --from "$local_player_b" --rpc-url "$local_rpc_url"
+
+    printf 'Revealing the public demonstration orders with both local accounts...\n'
+    cast send "$arena_address" \
+        'revealActions(uint256,uint8,(uint8,uint8,uint8,uint8[4])[3],bytes32)' \
+        1 1 "$orders" "$salt_a" \
+        --unlocked --from "$local_player_a" --rpc-url "$local_rpc_url"
+    cast send "$arena_address" \
+        'revealActions(uint256,uint8,(uint8,uint8,uint8,uint8[4])[3],bytes32)' \
+        1 1 "$orders" "$salt_b" \
+        --unlocked --from "$local_player_b" --rpc-url "$local_rpc_url"
+
+    printf 'Checking turn permissions, privacy, rollback, deadlines, and timeouts...\n'
+    cd "$project_root/contracts"
+    forge script script/CheckTurns.s.sol:CheckTurns \
+        --sig 'run(address)' "$arena_address" --rpc-url "$local_rpc_url" \
+        --use "$compiler" --offline
+    printf 'Turn protocol checks passed. Local match 1 is Resolvable.\n'
+}
