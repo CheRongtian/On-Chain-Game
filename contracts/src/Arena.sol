@@ -23,13 +23,11 @@ contract Arena is IArena {
         summary.players[0] = msg.sender;
         summary.mapId = mapId;
         summary.rulesHash = RULES_HASH;
-        summary.phase = GameTypes.Phase.WaitingForOpponent;
+        summary.phase = GameTypes.Phase.Lobby;
         summary.joinDeadline = TurnProtocol.deadlineAfter(GameTypes.ROOM_LIFETIME);
 
         emit IArena.MatchCreated(matchId, msg.sender, mapId, RULES_HASH, summary.joinDeadline);
-        emit IArena.PhaseAdvanced(
-            matchId, 0, GameTypes.Phase.WaitingForOpponent, summary.joinDeadline
-        );
+        emit IArena.PhaseAdvanced(matchId, 0, GameTypes.Phase.Lobby, summary.joinDeadline);
     }
 
     function joinMatch(uint256 matchId) external override {
@@ -37,7 +35,24 @@ contract Arena is IArena {
         GameTypes.MatchSummary storage summary = matchData.summary;
         _requireWaiting(summary);
         if (msg.sender == summary.players[0]) revert IArena.SelfJoin();
+        if (summary.players[1] != address(0)) revert IArena.RoomFull();
         // Joining is allowed at the deadline, measured using the chain timestamp.
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp > summary.joinDeadline) {
+            revert IArena.DeadlinePassed(summary.joinDeadline);
+        }
+
+        summary.players[1] = msg.sender;
+        emit IArena.PlayerJoined(matchId, msg.sender);
+    }
+
+    function startMatch(uint256 matchId) external override {
+        TurnProtocol.MatchData storage matchData = _requireMatch(matchId);
+        GameTypes.MatchSummary storage summary = matchData.summary;
+        _requireWaiting(summary);
+        if (msg.sender != summary.players[0]) revert IArena.NotCreator(msg.sender);
+        if (summary.players[1] == address(0)) revert IArena.OpponentMissing();
+        // The room must still be valid when its host starts the match.
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp > summary.joinDeadline) {
             revert IArena.DeadlinePassed(summary.joinDeadline);
@@ -48,20 +63,18 @@ contract Arena is IArena {
             chainId: block.chainid, arena: address(this), matchId: matchId
         });
         TurnProtocol.storeBattle(matchData.battle, initialState);
-        summary.players[1] = msg.sender;
         summary.phase = GameTypes.Phase.Commit;
         summary.round = initialState.round;
         summary.phaseDeadline = TurnProtocol.deadlineAfter(GameTypes.PHASE_DURATION);
         summary.stateHash = GameHash.hashBattleState(context, initialState);
 
-        emit IArena.PlayerJoined(matchId, msg.sender);
         emit IArena.MatchStarted(matchId, initialState, summary.stateHash);
         emit IArena.PhaseAdvanced(
             matchId, summary.round, GameTypes.Phase.Commit, summary.phaseDeadline
         );
     }
 
-    function cancelUnjoinedMatch(uint256 matchId) external override {
+    function cancelWaitingMatch(uint256 matchId) external override {
         GameTypes.MatchSummary storage summary = _requireMatch(matchId).summary;
         _requireWaiting(summary);
         if (msg.sender != summary.players[0]) revert IArena.NotCreator(msg.sender);
@@ -70,7 +83,7 @@ contract Arena is IArena {
         emit IArena.PhaseAdvanced(matchId, 0, GameTypes.Phase.Cancelled, 0);
     }
 
-    function expireUnjoinedMatch(uint256 matchId) external override {
+    function expireWaitingMatch(uint256 matchId) external override {
         GameTypes.MatchSummary storage summary = _requireMatch(matchId).summary;
         _requireWaiting(summary);
         // Expiry requires the chain timestamp to pass the room deadline.
@@ -161,12 +174,12 @@ contract Arena is IArena {
         returns (TurnProtocol.MatchData storage matchData)
     {
         matchData = _requireMatch(matchId);
-        if (matchData.summary.players[1] == address(0)) revert IArena.BattleNotStarted(matchId);
+        if (matchData.summary.round == 0) revert IArena.BattleNotStarted(matchId);
     }
 
     function _requireWaiting(GameTypes.MatchSummary storage summary) private view {
-        if (summary.phase != GameTypes.Phase.WaitingForOpponent) {
-            revert IArena.InvalidPhase(GameTypes.Phase.WaitingForOpponent, summary.phase);
+        if (summary.phase != GameTypes.Phase.Lobby) {
+            revert IArena.InvalidPhase(GameTypes.Phase.Lobby, summary.phase);
         }
     }
 }

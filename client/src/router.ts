@@ -7,6 +7,11 @@ export const router = createRouter({
   routes: [
     { path: '/', name: 'lobby', component: LobbyView },
     { path: '/rooms/:matchId', name: 'room', component: RoomView },
+    {
+      path: '/rooms/:matchId/battle',
+      name: 'battlefield',
+      component: () => import('./views/BattleView.vue'),
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior: () => ({ top: 0 }),

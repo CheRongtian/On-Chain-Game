@@ -139,18 +139,18 @@ contract CheckMatches {
         _expectRevert(
             arena,
             abi.encodeCall(Arena.joinMatch, (matchId)),
-            _phaseError(GameTypes.Phase.WaitingForOpponent, GameTypes.Phase.Finished)
+            _phaseError(GameTypes.Phase.Lobby, GameTypes.Phase.Finished)
         );
         VM.prank(PLAYER_A);
         _expectRevert(
             arena,
-            abi.encodeCall(Arena.cancelUnjoinedMatch, (matchId)),
-            _phaseError(GameTypes.Phase.WaitingForOpponent, GameTypes.Phase.Finished)
+            abi.encodeCall(Arena.cancelWaitingMatch, (matchId)),
+            _phaseError(GameTypes.Phase.Lobby, GameTypes.Phase.Finished)
         );
         _expectRevert(
             arena,
-            abi.encodeCall(Arena.expireUnjoinedMatch, (matchId)),
-            _phaseError(GameTypes.Phase.WaitingForOpponent, GameTypes.Phase.Finished)
+            abi.encodeCall(Arena.expireWaitingMatch, (matchId)),
+            _phaseError(GameTypes.Phase.Lobby, GameTypes.Phase.Finished)
         );
         require(_sameBytes(beforeState, _snapshot(arena, matchId)), "Finished match changed");
     }
@@ -161,6 +161,8 @@ contract CheckMatches {
         uint256 matchId = arena.createMatch(GameTypes.MAP_ID);
         VM.prank(PLAYER_B);
         arena.joinMatch(matchId);
+        VM.prank(PLAYER_A);
+        arena.startMatch(matchId);
         GameTypes.BattleState memory replay = _initialFromLogs(VM.getRecordedLogs(), matchId);
         _expectRevert(
             arena,

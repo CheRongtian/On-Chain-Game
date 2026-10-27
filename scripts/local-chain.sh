@@ -76,11 +76,13 @@ deploy_local_arena() {
 check_local_arena() {
     local compiler="$project_root/.local/bin/solc-0.8.30"
 
-    printf 'Creating and joining a match with two local accounts...\n'
+    printf 'Creating a room, joining with another account, and starting as its host...\n'
     cast send "$arena_address" 'createMatch(uint8)' 1 \
         --unlocked --from "$local_player_a" --rpc-url "$local_rpc_url"
     cast send "$arena_address" 'joinMatch(uint256)' 1 \
         --unlocked --from "$local_player_b" --rpc-url "$local_rpc_url"
+    cast send "$arena_address" 'startMatch(uint256)' 1 \
+        --unlocked --from "$local_player_a" --rpc-url "$local_rpc_url"
 
     printf 'Checking room state, permissions, deadlines, and initial state...\n'
     cd "$project_root/contracts"

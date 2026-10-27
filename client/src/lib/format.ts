@@ -38,7 +38,7 @@ export function chainDate(value: bigint): string {
 
 export const phases = [
   'Not started',
-  'Waiting for opponent',
+  'Waiting room',
   'Commit',
   'Reveal',
   'Ready to settle',

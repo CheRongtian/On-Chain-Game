@@ -17,6 +17,7 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "phaser": "4.2.1",
     "pinia": "3.0.4",
     "viem": "2.57.11",
     "vue": "3.5.44",

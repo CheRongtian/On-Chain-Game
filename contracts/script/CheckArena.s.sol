@@ -16,7 +16,7 @@ contract CheckArena {
     function run(address arenaAddress) external returns (uint256 matchId, bytes32 stateHash) {
         Arena arena = Arena(arenaAddress);
         matchId = 1;
-        stateHash = _checkJoinedMatch(arena, matchId);
+        stateHash = _checkStartedMatch(arena, matchId);
         _checkUnknownInputs(arena);
         _checkCancellation(arena);
         _checkJoinDeadline(arena);
@@ -24,7 +24,7 @@ contract CheckArena {
         _checkExpiry(arena);
     }
 
-    function _checkJoinedMatch(Arena arena, uint256 matchId) private view returns (bytes32) {
+    function _checkStartedMatch(Arena arena, uint256 matchId) private view returns (bytes32) {
         GameTypes.MatchSummary memory summary = arena.getMatch(matchId);
         require(
             summary.players[0] == PLAYER_A && summary.players[1] == PLAYER_B,
@@ -32,7 +32,7 @@ contract CheckArena {
         );
         require(
             summary.phase == GameTypes.Phase.Commit && summary.round == 1,
-            "Joining did not open the first Commit phase"
+            "Starting did not open the first Commit phase"
         );
         require(
             summary.mapId == GameTypes.MAP_ID && summary.rulesHash == GameHash.rulesHash()
@@ -80,9 +80,7 @@ contract CheckArena {
             arena,
             abi.encodeCall(Arena.joinMatch, (1)),
             abi.encodeWithSelector(
-                IArena.InvalidPhase.selector,
-                GameTypes.Phase.WaitingForOpponent,
-                GameTypes.Phase.Commit
+                IArena.InvalidPhase.selector, GameTypes.Phase.Lobby, GameTypes.Phase.Commit
             )
         );
     }
@@ -92,8 +90,8 @@ contract CheckArena {
         matchId = arena.createMatch(GameTypes.MAP_ID);
         GameTypes.MatchSummary memory summary = arena.getMatch(matchId);
         require(
-            summary.phase == GameTypes.Phase.WaitingForOpponent
-                && summary.players[0] == PLAYER_A && summary.players[1] == address(0),
+            summary.phase == GameTypes.Phase.Lobby && summary.players[0] == PLAYER_A
+                && summary.players[1] == address(0),
             "Room creation differs"
         );
         require(
@@ -129,11 +127,11 @@ contract CheckArena {
         VM.prank(PLAYER_B);
         _expectRevert(
             arena,
-            abi.encodeCall(Arena.cancelUnjoinedMatch, (matchId)),
+            abi.encodeCall(Arena.cancelWaitingMatch, (matchId)),
             abi.encodeWithSelector(IArena.NotCreator.selector, PLAYER_B)
         );
         VM.prank(PLAYER_A);
-        arena.cancelUnjoinedMatch(matchId);
+        arena.cancelWaitingMatch(matchId);
         _checkClosedRoom(arena, matchId, GameTypes.Phase.Cancelled);
     }
 
@@ -142,7 +140,21 @@ contract CheckArena {
         VM.warp(arena.getMatch(matchId).joinDeadline);
         VM.prank(PLAYER_B);
         arena.joinMatch(matchId);
-        _checkJoinedMatch(arena, matchId);
+        require(arena.getMatch(matchId).round == 0, "Joining started the battle");
+        _expectRevert(
+            arena,
+            abi.encodeCall(Arena.getBattleState, (matchId)),
+            abi.encodeWithSelector(IArena.BattleNotStarted.selector, matchId)
+        );
+        VM.prank(PLAYER_B);
+        _expectRevert(
+            arena,
+            abi.encodeCall(Arena.startMatch, (matchId)),
+            abi.encodeWithSelector(IArena.NotCreator.selector, PLAYER_B)
+        );
+        VM.prank(PLAYER_A);
+        arena.startMatch(matchId);
+        _checkStartedMatch(arena, matchId);
         require(
             arena.getMatch(matchId).phaseDeadline
                 == VM.getBlockTimestamp() + GameTypes.PHASE_DURATION,
@@ -161,7 +173,7 @@ contract CheckArena {
             abi.encodeWithSelector(IArena.DeadlinePassed.selector, deadline)
         );
         VM.prank(PLAYER_A);
-        arena.cancelUnjoinedMatch(matchId);
+        arena.cancelWaitingMatch(matchId);
         _checkClosedRoom(arena, matchId, GameTypes.Phase.Cancelled);
     }
 
@@ -171,19 +183,19 @@ contract CheckArena {
         VM.prank(PLAYER_B);
         _expectRevert(
             arena,
-            abi.encodeCall(Arena.expireUnjoinedMatch, (matchId)),
+            abi.encodeCall(Arena.expireWaitingMatch, (matchId)),
             abi.encodeWithSelector(IArena.DeadlineNotPassed.selector, deadline)
         );
         VM.warp(deadline);
         VM.prank(PLAYER_B);
         _expectRevert(
             arena,
-            abi.encodeCall(Arena.expireUnjoinedMatch, (matchId)),
+            abi.encodeCall(Arena.expireWaitingMatch, (matchId)),
             abi.encodeWithSelector(IArena.DeadlineNotPassed.selector, deadline)
         );
         VM.warp(uint256(deadline) + 1);
         VM.prank(PLAYER_B);
-        arena.expireUnjoinedMatch(matchId);
+        arena.expireWaitingMatch(matchId);
         _checkClosedRoom(arena, matchId, GameTypes.Phase.Expired);
     }
 
@@ -198,17 +210,13 @@ contract CheckArena {
         _expectRevert(
             arena,
             abi.encodeCall(Arena.joinMatch, (matchId)),
-            abi.encodeWithSelector(
-                IArena.InvalidPhase.selector, GameTypes.Phase.WaitingForOpponent, phase
-            )
+            abi.encodeWithSelector(IArena.InvalidPhase.selector, GameTypes.Phase.Lobby, phase)
         );
         VM.prank(PLAYER_A);
         _expectRevert(
             arena,
-            abi.encodeCall(Arena.cancelUnjoinedMatch, (matchId)),
-            abi.encodeWithSelector(
-                IArena.InvalidPhase.selector, GameTypes.Phase.WaitingForOpponent, phase
-            )
+            abi.encodeCall(Arena.cancelWaitingMatch, (matchId)),
+            abi.encodeWithSelector(IArena.InvalidPhase.selector, GameTypes.Phase.Lobby, phase)
         );
     }
 

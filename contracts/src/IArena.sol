@@ -11,6 +11,8 @@ interface IArena {
     error NotPlayer(address caller);
     error NotCreator(address caller);
     error SelfJoin();
+    error RoomFull();
+    error OpponentMissing();
     error InvalidPhase(GameTypes.Phase expected, GameTypes.Phase actual);
     error InvalidTimeoutPhase(GameTypes.Phase phase);
     error InvalidRound(uint8 round);
@@ -45,10 +47,7 @@ interface IArena {
     );
 
     event ActionCommitted(
-        uint256 indexed matchId,
-        uint8 indexed round,
-        address indexed player,
-        bytes32 commitment
+        uint256 indexed matchId, uint8 indexed round, address indexed player, bytes32 commitment
     );
 
     event ActionRevealed(
@@ -62,10 +61,7 @@ interface IArena {
     // Emitted for every phase change, including waiting-room cancellation and expiry.
     // deadline is joinDeadline while waiting, phaseDeadline in Commit/Reveal, otherwise zero.
     event PhaseAdvanced(
-        uint256 indexed matchId,
-        uint8 indexed round,
-        GameTypes.Phase phase,
-        uint64 deadline
+        uint256 indexed matchId, uint8 indexed round, GameTypes.Phase phase, uint64 deadline
     );
 
     // round identifies the settled round.
@@ -90,17 +86,20 @@ interface IArena {
         bytes32 stateHash
     );
 
-    // Match IDs start at 1. Creation enters WaitingForOpponent with round/stateHash zero.
+    // Match IDs start at 1. Creation enters Lobby with round/stateHash zero.
     function createMatch(uint8 mapId) external returns (uint256 matchId);
 
-    // A different player joins at or before joinDeadline, initializing all six slots and round 1.
+    // A different player takes the open seat at or before joinDeadline; the room stays in Lobby.
     function joinMatch(uint256 matchId) external;
 
+    // Only the host can start a full room before expiry, initializing the board and Commit timer.
+    function startMatch(uint256 matchId) external;
+
     // The creator may cancel while waiting, including after the deadline until expiry executes.
-    function cancelUnjoinedMatch(uint256 matchId) external;
+    function cancelWaitingMatch(uint256 matchId) external;
 
     // Anyone may expire a waiting room strictly after joinDeadline.
-    function expireUnjoinedMatch(uint256 matchId) external;
+    function expireWaitingMatch(uint256 matchId) external;
 
     // Only a player may submit once in Commit, at or before the phase deadline.
     // Implementations bind hash context to block.chainid, address(this), and msg.sender.
@@ -109,7 +108,10 @@ interface IArena {
     // Reveal requires the original commitment, canonical orders, and an unexpired Reveal phase.
     // Orders must match round-start units and Energy; dead slots require Hold.
     function revealActions(
-        uint256 matchId, uint8 round, GameTypes.Action[3] calldata actions, bytes32 salt
+        uint256 matchId,
+        uint8 round,
+        GameTypes.Action[3] calldata actions,
+        bytes32 salt
     ) external;
 
     // Anyone may settle Resolvable once; the requested round must still be current.
@@ -117,9 +119,8 @@ interface IArena {
 
     // Anyone may finalize strictly after phaseDeadline in Commit or Reveal.
     // expectedPhase and round must still match; one missing submission forfeits, both draw.
-    function advanceExpiredPhase(
-        uint256 matchId, uint8 round, GameTypes.Phase expectedPhase
-    ) external;
+    function advanceExpiredPhase(uint256 matchId, uint8 round, GameTypes.Phase expectedPhase)
+        external;
 
     function getRules() external view returns (GameTypes.Rules memory);
 
@@ -129,7 +130,7 @@ interface IArena {
 
     function getMatch(uint256 matchId) external view returns (GameTypes.MatchSummary memory);
 
-    // Battle getters reject rooms that have never been joined.
+    // Battle getters reject rooms that have not been started by the host.
     function getBattleState(uint256 matchId) external view returns (GameTypes.BattleState memory);
 
     function getRoundStatus(uint256 matchId) external view returns (GameTypes.RoundStatus memory);

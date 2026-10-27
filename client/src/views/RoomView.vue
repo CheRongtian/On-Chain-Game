@@ -1,237 +1,459 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
-import { RouterLink, useRoute } from 'vue-router';
+import { RouterLink, useRoute, useRouter } from 'vue-router';
 import { zeroAddress } from 'viem';
 import AppIcon from '../components/AppIcon.vue';
-import { readRoom } from '../lib/arena';
+import { readRoom, requireHostStart } from '../lib/arena';
 import type { Room } from '../lib/arena';
 import { errorMessage } from '../lib/errors';
-import { chainDate, outcomes, parseRoomId, phases, reasons } from '../lib/format';
+import { chainDate, parseRoomId, phases, shortAddress } from '../lib/format';
 import { useArenaStore } from '../stores/arena';
 import { useTransactionStore } from '../stores/transaction';
 
 const route = useRoute();
+const router = useRouter();
 const arena = useArenaStore();
 const transaction = useTransactionStore();
-const id = computed(() => parseRoomId(String(route.params.matchId ?? '')));
+const matchId = computed(() => parseRoomId(String(route.params.matchId ?? '')));
 const room = shallowRef<Room>();
-const loading = ref(false);
 const error = ref('');
-const invitationMessage = ref('');
-let requestVersion = 0;
-let timer: ReturnType<typeof setInterval> | undefined;
-
-async function refreshRoom(clear = false) {
-  if (loading.value && !clear) return;
-  const version = ++requestVersion;
-  if (clear) {
-    room.value = undefined;
-    error.value = '';
-    invitationMessage.value = '';
-  }
-  const deployment = arena.connection?.deployment;
-  const matchId = id.value;
-  if (!deployment || matchId === undefined) {
-    loading.value = false;
-    return;
-  }
-  loading.value = true;
-  try {
-    const latest = await readRoom(deployment, matchId);
-    if (version === requestVersion) {
-      room.value = latest;
-      error.value = '';
-    }
-  } catch (cause) {
-    if (version === requestVersion) error.value = errorMessage(cause);
-  } finally {
-    if (version === requestVersion) loading.value = false;
-  }
-}
-
-watch(
-  [() => route.params.matchId, () => arena.epoch],
-  () => {
-    void refreshRoom(true);
-  },
-  { immediate: true },
-);
-onMounted(() => {
-  timer = setInterval(() => {
-    void refreshRoom();
-  }, 4_000);
-});
-onBeforeUnmount(() => {
-  clearInterval(timer);
-  requestVersion++;
-});
-
-const creator = computed(
+const copyStatus = ref('');
+const reading = ref(false);
+const isHost = computed(
   () => !!arena.address && room.value?.players[0].toLowerCase() === arena.address.toLowerCase(),
 );
+const isGuest = computed(
+  () => !!arena.address && room.value?.players[1].toLowerCase() === arena.address.toLowerCase(),
+);
+const opponentJoined = computed(() => !!room.value && room.value.players[1] !== zeroAddress);
+const waiting = computed(() => room.value?.phase === 1);
 const expired = computed(
   () => !!room.value && !!arena.connection && arena.connection.timestamp > room.value.joinDeadline,
 );
-const canJoin = computed(
+const mayStart = computed(
   () =>
-    arena.online &&
-    !!arena.selected &&
-    !!room.value &&
-    !error.value &&
-    room.value.phase === 1 &&
+    isHost.value &&
+    waiting.value &&
+    opponentJoined.value &&
     !expired.value &&
-    !creator.value &&
+    !error.value &&
     !transaction.busy,
 );
-const joinHint = computed(() => {
-  if (!room.value || room.value.phase !== 1) return '';
-  if (expired.value) return 'The join window has closed.';
-  if (creator.value)
-    return 'You created this room. Switch accounts, then open its invitation again to join.';
-  if (!arena.selected) return 'Choose a local account to take the open seat.';
-  return 'Joining registers the current account as Player B and starts the first round.';
+const mayJoin = computed(
+  () =>
+    waiting.value &&
+    !isHost.value &&
+    !opponentJoined.value &&
+    !!arena.selected &&
+    !expired.value &&
+    !error.value &&
+    !transaction.busy,
+);
+const starting = computed(() => transaction.busy && transaction.operation === 'start');
+const joining = computed(() => transaction.busy && transaction.operation === 'join');
+const roomStatus = computed(() =>
+  !waiting.value
+    ? phases[room.value?.phase ?? 0]
+    : opponentJoined.value
+      ? 'Ready for the host'
+      : 'Waiting for opponent',
+);
+let requestId = 0;
+let startVerified = false;
+let timer: ReturnType<typeof setInterval> | undefined;
+
+async function readState(clear = false) {
+  if (reading.value && !clear) return;
+  const request = ++requestId;
+  if (clear) {
+    room.value = undefined;
+    error.value = '';
+    copyStatus.value = '';
+    startVerified = false;
+  }
+  const deployment = arena.connection?.deployment;
+  const id = matchId.value;
+  const account = arena.address;
+  if (!deployment || id === undefined) {
+    reading.value = false;
+    return;
+  }
+  reading.value = true;
+  try {
+    const latest = await readRoom(deployment, id);
+    if (request !== requestId) return;
+    if (latest.round > 0 && !startVerified) {
+      await requireHostStart(deployment, id, latest);
+      if (request !== requestId) return;
+      startVerified = true;
+    }
+    room.value = latest;
+    error.value = '';
+    if (
+      startVerified &&
+      (isHost.value || isGuest.value) &&
+      arena.address === account &&
+      route.name === 'room'
+    ) {
+      void router.replace({ name: 'battlefield', params: { matchId: id.toString() } });
+    }
+  } catch (cause) {
+    if (request === requestId) error.value = errorMessage(cause);
+  } finally {
+    if (request === requestId) reading.value = false;
+  }
+}
+watch(
+  [matchId, () => arena.epoch],
+  () => {
+    void readState(true);
+  },
+  { immediate: true },
+);
+watch(
+  () => arena.address,
+  (account, previous) => {
+    if (account && !previous) void readState(true);
+  },
+);
+onMounted(() => {
+  timer = setInterval(() => {
+    void readState();
+  }, 1_000);
+});
+onBeforeUnmount(() => {
+  requestId++;
+  clearInterval(timer);
 });
 
-async function joinRoom() {
-  if (!canJoin.value || id.value === undefined) return;
-  const joined = await transaction.submit('join', id.value);
-  if (joined !== undefined) await refreshRoom(true);
+async function startGame() {
+  if (!mayStart.value || matchId.value === undefined) return;
+  const started = await transaction.startGame(matchId.value);
+  if (started !== undefined) await readState(true);
 }
-
+async function joinRoom() {
+  if (!mayJoin.value || matchId.value === undefined) return;
+  const joined = await transaction.joinRoom(matchId.value);
+  if (joined !== undefined) await readState(true);
+}
+function changeAccount(event: Event) {
+  arena.selectAccount((event.target as HTMLSelectElement).value);
+}
 async function copyInvitation() {
+  const path = router.resolve({
+    name: 'room',
+    params: { matchId: String(route.params.matchId) },
+  }).href;
   try {
-    await navigator.clipboard.writeText(window.location.href);
-    invitationMessage.value =
-      'Invitation copied. Paste it into Find a room, or open it in another tab.';
+    await navigator.clipboard.writeText(new URL(path, window.location.origin).href);
+    copyStatus.value = 'Invitation copied. Open it in another tab or paste it into Find a room.';
   } catch {
-    invitationMessage.value = 'Copy this page address from your browser to share it.';
+    copyStatus.value = 'Copy this room address from your browser.';
   }
 }
 </script>
 
 <template>
-  <div>
-    <RouterLink class="back-link" to="/"><AppIcon name="back" />Back to lobby</RouterLink>
-    <header class="page-heading room-heading">
-      <p class="eyebrow">Tactical Arena / Room</p>
-      <h1 class="room-title">Room #{{ route.params.matchId }}</h1>
-      <p class="page-intro">
-        The seats, phase, and result below come directly from the local chain.
-      </p>
-    </header>
-
-    <section v-if="id === undefined" class="panel empty-state" role="alert">
-      <h2>Invalid room ID</h2>
-      <p class="muted">Open an invitation with a positive room ID.</p>
-    </section>
-    <section v-else-if="!arena.online" class="panel empty-state">
-      <h2>Waiting for the Arena</h2>
-      <p class="muted">
-        Start the backend and wait for its ready message. This room will refresh automatically.
-      </p>
-    </section>
-    <section v-else-if="error" class="panel empty-state" role="alert">
-      <h2>Room unavailable</h2>
-      <p class="muted">{{ error }}</p>
-      <button class="button secondary" :disabled="loading" @click="refreshRoom()">
-        <AppIcon name="refresh" />{{ loading ? 'Refreshing…' : 'Try again' }}
-      </button>
-    </section>
-    <section v-else-if="!room" class="panel empty-state" aria-live="polite">
-      <h2>Loading room…</h2>
-      <p class="muted">Reading its current state from the contract.</p>
-    </section>
-
-    <section v-else class="panel room-panel" aria-labelledby="matchup-title">
-      <div class="panel-heading">
-        <h2 id="matchup-title">The matchup</h2>
-        <span
-          class="chip"
-          :class="room.phase === 1 ? 'chip-amber' : room.phase <= 5 ? 'chip-green' : ''"
-          >{{ phases[room.phase] }}</span
+  <main id="main-content" class="room-screen" tabindex="-1">
+    <nav aria-label="Room navigation">
+      <RouterLink to="/" class="lobby"><AppIcon name="back" />Lobby</RouterLink
+      ><label
+        ><span class="sr-only">Active local account</span
+        ><select
+          :value="arena.address ?? ''"
+          :disabled="!arena.online || transaction.busy"
+          @change="changeAccount"
         >
+          <option v-if="!arena.connection?.accounts.length" value="">Waiting for accounts…</option>
+          <option
+            v-for="(account, index) in arena.connection?.accounts"
+            :key="account.address"
+            :value="account.address"
+          >
+            Account {{ index + 1 }} · {{ shortAddress(account.address) }}
+          </option>
+        </select></label
+      >
+    </nav>
+    <header>
+      <div>
+        <p class="eyebrow">Preparation room</p>
+        <h1>Room #{{ route.params.matchId }}</h1>
       </div>
-      <div class="players-grid">
-        <div class="player-card">
-          <div class="player-topline">
-            <span class="player-mark mark-a">A</span><span class="eyebrow">Creator</span>
+      <span v-if="room" class="chip chip-amber">{{ roomStatus }}</span>
+    </header>
+    <section v-if="matchId === undefined" class="notice" role="alert">
+      <h2>Invalid room ID</h2>
+    </section>
+    <section v-else-if="!arena.online" class="notice" role="status">
+      <h2>Waiting for the backend</h2>
+      <p>Start the backend and wait for its ready message.</p>
+    </section>
+    <template v-else>
+      <p v-if="error" class="failure" role="alert">{{ error }}</p>
+      <template v-if="room">
+        <section
+          v-if="waiting && isHost"
+          class="host-controls"
+          aria-labelledby="host-controls-title"
+        >
+          <div>
+            <span class="host-label">Host controls</span>
+            <h2 id="host-controls-title">Start the game</h2>
+            <p>
+              {{
+                expired
+                  ? 'This room has expired.'
+                  : opponentJoined
+                    ? 'Both players are here. Click Start game to begin.'
+                    : 'Invite your opponent, then click Start game.'
+              }}
+            </p>
+            <span class="seat-count">{{
+              opponentJoined ? '2 / 2 players joined' : '1 / 2 players joined'
+            }}</span>
           </div>
-          <h3>Player A</h3>
-          <p class="address player-address">{{ room.players[0] }}</p>
-          <span v-if="creator" class="you-label">Current account</span
-          ><span v-else class="small muted">Guardian · Ranger · Scout</span>
-        </div>
-        <span class="versus" aria-hidden="true">VS</span>
-        <div class="player-card" :class="{ 'empty-seat': room.players[1] === zeroAddress }">
-          <div class="player-topline">
-            <span class="player-mark mark-b">B</span><span class="eyebrow">Opponent</span>
-          </div>
-          <h3>{{ room.players[1] === zeroAddress ? 'Open seat' : 'Player B' }}</h3>
-          <p v-if="room.players[1] !== zeroAddress" class="address player-address">
-            {{ room.players[1] }}
-          </p>
-          <p v-else class="muted seat-invite">A challenger belongs here.</p>
-          <span
-            v-if="arena.address?.toLowerCase() === room.players[1].toLowerCase()"
-            class="you-label"
-            >Current account</span
-          ><span v-else class="small muted">{{
-            room.players[1] === zeroAddress
-              ? 'Waiting for another account'
-              : 'Guardian · Ranger · Scout'
-          }}</span>
-        </div>
-      </div>
-
-      <dl class="room-facts">
-        <div>
-          <dt>Map</dt>
-          <dd>Arena · 8 × 8</dd>
-        </div>
-        <div>
-          <dt>{{ room.phase === 1 ? 'Join deadline' : 'Round' }}</dt>
-          <dd>{{ room.phase === 1 ? chainDate(room.joinDeadline) : room.round }}</dd>
-        </div>
-        <div v-if="room.phaseDeadline !== 0n && room.phase !== 1">
-          <dt>Phase deadline</dt>
-          <dd>{{ chainDate(room.phaseDeadline) }}</dd>
-        </div>
-        <div v-if="room.outcome !== 0">
-          <dt>Result</dt>
-          <dd>{{ outcomes[room.outcome] }} · {{ reasons[room.reason] }}</dd>
-        </div>
-      </dl>
-      <div v-if="room.phase === 1" class="room-actions">
-        <p class="muted">{{ joinHint }}</p>
-        <div class="button-row">
           <button
-            v-if="!creator"
+            type="button"
+            class="start-button"
+            :disabled="!mayStart"
+            :aria-busy="starting"
+            @click="startGame"
+          >
+            {{ starting ? 'Confirming start…' : 'Start game' }}<AppIcon name="arrow" />
+          </button>
+        </section>
+        <section v-else-if="waiting" class="guest-controls">
+          <div>
+            <h2>{{ isGuest ? 'Waiting for the host' : 'Join this room' }}</h2>
+            <p>
+              {{
+                expired
+                  ? 'This room has expired.'
+                  : isGuest
+                    ? 'The game begins when the host clicks Start game.'
+                    : opponentJoined
+                      ? 'Both seats are occupied.'
+                      : 'Take the open seat and wait for the host to click Start game.'
+              }}
+            </p>
+          </div>
+          <button
+            v-if="!opponentJoined"
+            type="button"
             class="button primary"
-            :disabled="!canJoin"
-            :aria-busy="transaction.busy"
+            :disabled="!mayJoin"
             @click="joinRoom"
           >
-            {{ transaction.busy ? 'Transaction in progress…' : 'Join room'
-            }}<AppIcon name="arrow" /></button
-          ><button class="button secondary" @click="copyInvitation">
-            <AppIcon name="copy" />Copy invitation
+            {{ joining ? 'Joining…' : 'Join room' }}
           </button>
-        </div>
-        <p v-if="invitationMessage" class="small feedback" role="status">{{ invitationMessage }}</p>
-      </div>
-      <div v-else-if="room.phase >= 2 && room.phase <= 4" class="room-ready">
-        <AppIcon name="check" />
-        <div>
-          <strong>Both players are registered.</strong>
-          <p class="muted">The contract is in {{ phases[room.phase].toLowerCase() }}.</p>
-        </div>
-      </div>
-      <div class="room-refresh">
-        <p class="small muted">
-          {{ loading ? 'Refreshing chain state…' : 'Room state refreshes automatically.' }}
+        </section>
+        <p v-if="transaction.status === 'failed'" class="failure" role="alert">
+          {{ transaction.message }}
         </p>
-        <button class="text-button" :disabled="loading" @click="refreshRoom()">Refresh</button>
-      </div>
-    </section>
-  </div>
+        <div class="seats">
+          <article v-for="player in [0, 1] as const" :key="player">
+            <h3>
+              <span :class="player === 0 ? 'mark-a' : 'mark-b'">{{ player === 0 ? 'A' : 'B' }}</span
+              >{{ player === 0 ? 'Host' : 'Opponent' }}
+            </h3>
+            <p class="address">
+              {{ room.players[player] === zeroAddress ? 'Open seat' : room.players[player] }}
+            </p>
+            <small>Guardian · Ranger · Scout</small>
+          </article>
+        </div>
+        <footer>
+          <button type="button" class="button secondary" @click="copyInvitation">
+            <AppIcon name="copy" />Copy invitation</button
+          ><span v-if="waiting" class="small muted"
+            >Room expires {{ chainDate(room.joinDeadline) }}</span
+          ><RouterLink
+            v-else-if="room.round > 0"
+            :to="{ name: 'battlefield', params: { matchId: route.params.matchId } }"
+            class="button primary"
+            >View battlefield</RouterLink
+          >
+        </footer>
+        <p v-if="copyStatus" class="small feedback" role="status">{{ copyStatus }}</p>
+      </template>
+      <p v-else-if="!error" class="muted" role="status">Reading room state…</p>
+      <button
+        v-if="error"
+        type="button"
+        class="button secondary"
+        :disabled="reading"
+        @click="readState()"
+      >
+        Retry
+      </button>
+    </template>
+  </main>
 </template>
+
+<style scoped>
+.room-screen {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 16px 24px;
+}
+nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.lobby {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  color: var(--text-muted);
+}
+nav label {
+  width: 210px;
+  max-width: 55%;
+  margin: 0;
+}
+nav select {
+  min-height: 44px;
+  font-size: 0.8125rem;
+}
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+header .eyebrow {
+  margin-bottom: 6px;
+}
+h1 {
+  margin: 0;
+  font-size: 1.9rem;
+  overflow-wrap: anywhere;
+}
+.host-controls,
+.guest-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  margin-bottom: 20px;
+}
+.host-controls {
+  border-color: var(--primary);
+}
+.host-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--success);
+  margin-bottom: 6px;
+}
+h2 {
+  font-size: 1.2rem;
+  margin: 0 0 8px;
+}
+.host-controls p,
+.guest-controls p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+.seat-count {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 12px;
+}
+.start-button {
+  min-height: 52px;
+  min-width: 170px;
+  padding: 12px 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-shrink: 0;
+  background: var(--primary);
+  color: white;
+  border: 1px solid var(--success);
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 650;
+}
+.start-button:disabled {
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  border-color: var(--control-border);
+}
+.seats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.seats article {
+  padding: 20px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9375rem;
+  margin-bottom: 16px;
+}
+h3 > span {
+  display: grid;
+  place-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+}
+.address {
+  font-size: 0.8125rem;
+}
+small {
+  color: var(--text-muted);
+}
+footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 20px;
+}
+.failure {
+  padding: 12px;
+  border: 1px solid var(--error);
+  border-radius: 7px;
+  color: var(--error);
+  font-size: 0.875rem;
+}
+.notice {
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+@media (max-width: 560px) {
+  .host-controls,
+  .guest-controls {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 18px;
+  }
+  .seats {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

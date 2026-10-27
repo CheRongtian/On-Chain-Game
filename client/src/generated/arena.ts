@@ -32,7 +32,7 @@ export const arenaAbi = [
   },
   {
     "type": "function",
-    "name": "cancelUnjoinedMatch",
+    "name": "cancelWaitingMatch",
     "inputs": [
       {
         "name": "matchId",
@@ -87,7 +87,7 @@ export const arenaAbi = [
   },
   {
     "type": "function",
-    "name": "expireUnjoinedMatch",
+    "name": "expireWaitingMatch",
     "inputs": [
       {
         "name": "matchId",
@@ -530,6 +530,19 @@ export const arenaAbi = [
         "name": "round",
         "type": "uint8",
         "internalType": "uint8"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "startMatch",
+    "inputs": [
+      {
+        "name": "matchId",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -1140,6 +1153,16 @@ export const arenaAbi = [
         "internalType": "address"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "OpponentMissing",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RoomFull",
+    "inputs": []
   },
   {
     "type": "error",

@@ -24,7 +24,7 @@ watch(
 );
 
 async function createRoom() {
-  const id = await transaction.submit('create');
+  const id = await transaction.createRoom();
   if (id !== undefined && router.currentRoute.value.name === 'lobby')
     await router.push(`/rooms/${id}`);
 }

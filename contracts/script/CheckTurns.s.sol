@@ -55,17 +55,20 @@ contract CheckTurns {
         GameTypes.Action[SQUAD_SIZE] memory actions = _holds();
         bytes32 commitment = _commitment(arena, matchId, PLAYER_A, actions, SALT_A);
         _expectRevert(
-            arena, abi.encodeCall(Arena.commitActions, (uint256(0), ROUND, commitment)),
+            arena,
+            abi.encodeCall(Arena.commitActions, (uint256(0), ROUND, commitment)),
             abi.encodeWithSelector(IArena.UnknownMatch.selector, uint256(0))
         );
         VM.prank(OBSERVER);
         _expectRevert(
-            arena, abi.encodeCall(Arena.commitActions, (matchId, ROUND, commitment)),
+            arena,
+            abi.encodeCall(Arena.commitActions, (matchId, ROUND, commitment)),
             abi.encodeWithSelector(IArena.NotPlayer.selector, OBSERVER)
         );
         VM.prank(PLAYER_A);
         _expectRevert(
-            arena, abi.encodeCall(Arena.commitActions, (matchId, uint8(0), commitment)),
+            arena,
+            abi.encodeCall(Arena.commitActions, (matchId, uint8(0), commitment)),
             abi.encodeWithSelector(IArena.StaleRound.selector, ROUND, uint8(0))
         );
         _checkStoredOrders(arena, matchId, 0);
@@ -77,12 +80,14 @@ contract CheckTurns {
         require(_sameBytes(logs[0].data, abi.encode(commitment)), "Commit exposed extra data");
         VM.prank(PLAYER_A);
         _expectRevert(
-            arena, abi.encodeCall(Arena.commitActions, (matchId, ROUND, SALT_B)),
+            arena,
+            abi.encodeCall(Arena.commitActions, (matchId, ROUND, SALT_B)),
             abi.encodeWithSelector(IArena.AlreadyCommitted.selector, PLAYER_A)
         );
         VM.prank(PLAYER_A);
         _expectRevert(
-            arena, abi.encodeCall(Arena.revealActions, (matchId, ROUND, actions, SALT_A)),
+            arena,
+            abi.encodeCall(Arena.revealActions, (matchId, ROUND, actions, SALT_A)),
             abi.encodeWithSelector(
                 IArena.InvalidPhase.selector, GameTypes.Phase.Reveal, GameTypes.Phase.Commit
             )
@@ -119,16 +124,21 @@ contract CheckTurns {
         GameTypes.Action[SQUAD_SIZE] memory actions = _holds();
         VM.prank(OBSERVER);
         _expectRevert(
-            arena, abi.encodeCall(Arena.revealActions, (matchId, ROUND, actions, SALT_A)),
+            arena,
+            abi.encodeCall(Arena.revealActions, (matchId, ROUND, actions, SALT_A)),
             abi.encodeWithSelector(IArena.NotPlayer.selector, OBSERVER)
         );
         VM.prank(PLAYER_A);
         _expectRevert(
-            arena, abi.encodeCall(Arena.revealActions, (matchId, ROUND + 1, actions, SALT_A)),
+            arena,
+            abi.encodeCall(Arena.revealActions, (matchId, ROUND + 1, actions, SALT_A)),
             abi.encodeWithSelector(IArena.StaleRound.selector, ROUND, ROUND + 1)
         );
         _rejectReveal(
-            arena, matchId, actions, SALT_B,
+            arena,
+            matchId,
+            actions,
+            SALT_B,
             abi.encodeWithSelector(IArena.CommitmentMismatch.selector)
         );
         VM.recordLogs();
@@ -140,7 +150,8 @@ contract CheckTurns {
         _checkStoredOrders(arena, matchId, 1);
         VM.prank(PLAYER_A);
         _expectRevert(
-            arena, abi.encodeCall(Arena.revealActions, (matchId, ROUND, actions, SALT_A)),
+            arena,
+            abi.encodeCall(Arena.revealActions, (matchId, ROUND, actions, SALT_A)),
             abi.encodeWithSelector(IArena.AlreadyRevealed.selector, PLAYER_A)
         );
         VM.recordLogs();
@@ -153,14 +164,16 @@ contract CheckTurns {
         _checkStoredOrders(arena, matchId, 2);
         VM.prank(PLAYER_B);
         _expectRevert(
-            arena, abi.encodeCall(Arena.commitActions, (matchId, ROUND, SALT_B)),
+            arena,
+            abi.encodeCall(Arena.commitActions, (matchId, ROUND, SALT_B)),
             abi.encodeWithSelector(
                 IArena.InvalidPhase.selector, GameTypes.Phase.Commit, GameTypes.Phase.Resolvable
             )
         );
         VM.prank(PLAYER_B);
         _expectRevert(
-            arena, abi.encodeCall(Arena.revealActions, (matchId, ROUND, actions, SALT_B)),
+            arena,
+            abi.encodeCall(Arena.revealActions, (matchId, ROUND, actions, SALT_B)),
             abi.encodeWithSelector(
                 IArena.InvalidPhase.selector, GameTypes.Phase.Reveal, GameTypes.Phase.Resolvable
             )
@@ -182,7 +195,10 @@ contract CheckTurns {
         _commit(arena, matchId, PLAYER_B, actions, SALT_B);
         actions[0].targetCell = 0;
         _rejectReveal(
-            arena, matchId, actions, SALT_A,
+            arena,
+            matchId,
+            actions,
+            SALT_A,
             abi.encodeWithSelector(IArena.InvalidActionEncoding.selector, uint8(0))
         );
     }
@@ -195,7 +211,10 @@ contract CheckTurns {
         actions[0].path[0] = INVALID_STEP;
         _commitBoth(arena, matchId, actions);
         _rejectReveal(
-            arena, matchId, actions, SALT_A,
+            arena,
+            matchId,
+            actions,
+            SALT_A,
             abi.encodeWithSelector(IArena.InvalidPath.selector, uint8(0))
         );
     }
@@ -208,9 +227,14 @@ contract CheckTurns {
         actions[1].targetCell = RANGER_TARGET;
         _commitBoth(arena, matchId, actions);
         _rejectReveal(
-            arena, matchId, actions, SALT_A,
+            arena,
+            matchId,
+            actions,
+            SALT_A,
             abi.encodeWithSelector(
-                IArena.InsufficientEnergy.selector, uint8(0), GameTypes.INITIAL_ENERGY + 1,
+                IArena.InsufficientEnergy.selector,
+                uint8(0),
+                GameTypes.INITIAL_ENERGY + 1,
                 GameTypes.INITIAL_ENERGY
             )
         );
@@ -225,7 +249,10 @@ contract CheckTurns {
         arena.commitActions(targetMatch, ROUND, commitment);
         _commit(arena, targetMatch, PLAYER_B, actions, SALT_B);
         _rejectReveal(
-            arena, targetMatch, actions, SALT_A,
+            arena,
+            targetMatch,
+            actions,
+            SALT_A,
             abi.encodeWithSelector(IArena.CommitmentMismatch.selector)
         );
     }
@@ -267,7 +294,8 @@ contract CheckTurns {
         if (expected == GameTypes.Outcome.Draw) {
             VM.prank(PLAYER_A);
             _expectRevert(
-                arena, abi.encodeCall(Arena.commitActions, (matchId, ROUND, SALT_A)),
+                arena,
+                abi.encodeCall(Arena.commitActions, (matchId, ROUND, SALT_A)),
                 abi.encodeWithSelector(IArena.DeadlinePassed.selector, deadline)
             );
         }
@@ -296,7 +324,8 @@ contract CheckTurns {
         if (expected == GameTypes.Outcome.Draw) {
             VM.prank(PLAYER_A);
             _expectRevert(
-                arena, abi.encodeCall(Arena.revealActions, (matchId, ROUND, actions, SALT_A)),
+                arena,
+                abi.encodeCall(Arena.revealActions, (matchId, ROUND, actions, SALT_A)),
                 abi.encodeWithSelector(IArena.DeadlinePassed.selector, deadline)
             );
         }
@@ -304,14 +333,18 @@ contract CheckTurns {
     }
 
     function _expireAndCheck(
-        Arena arena, uint256 matchId, GameTypes.Phase phase, GameTypes.Outcome outcome
+        Arena arena,
+        uint256 matchId,
+        GameTypes.Phase phase,
+        GameTypes.Outcome outcome
     ) private {
         VM.recordLogs();
         VM.prank(OBSERVER);
         arena.advanceExpiredPhase(matchId, ROUND, phase);
         IDevVm.Log[] memory logs = VM.getRecordedLogs();
         GameTypes.EndReason reason = phase == GameTypes.Phase.Commit
-            ? GameTypes.EndReason.CommitTimeout : GameTypes.EndReason.RevealTimeout;
+            ? GameTypes.EndReason.CommitTimeout
+            : GameTypes.EndReason.RevealTimeout;
         GameTypes.MatchSummary memory summary = arena.getMatch(matchId);
         require(
             summary.phase == GameTypes.Phase.Finished && summary.phaseDeadline == 0
@@ -330,14 +363,17 @@ contract CheckTurns {
         );
         _checkFinishedLogs(logs, arena, matchId, summary);
         _expectRevert(
-            arena, abi.encodeCall(Arena.advanceExpiredPhase, (matchId, ROUND, phase)),
+            arena,
+            abi.encodeCall(Arena.advanceExpiredPhase, (matchId, ROUND, phase)),
             abi.encodeWithSelector(IArena.InvalidPhase.selector, phase, GameTypes.Phase.Finished)
         );
         require(arena.getMatch(matchId).stateHash == expectedHash, "Repeated timeout changed state");
     }
 
     function _checkFinishedLogs(
-        IDevVm.Log[] memory logs, Arena arena, uint256 matchId,
+        IDevVm.Log[] memory logs,
+        Arena arena,
+        uint256 matchId,
         GameTypes.MatchSummary memory summary
     ) private pure {
         require(logs.length == 2, "Timeout emitted unexpected events");
@@ -350,14 +386,18 @@ contract CheckTurns {
                 && logs[1].topics[0] == FINISHED_TOPIC && logs[1].topics[1] == bytes32(matchId)
                 && logs[1].topics[2] == bytes32(uint256(uint160(winner)))
                 && _sameBytes(
-                    logs[1].data, abi.encode(ROUND, summary.outcome, summary.reason, summary.stateHash)
+                    logs[1].data,
+                    abi.encode(ROUND, summary.outcome, summary.reason, summary.stateHash)
                 ),
             "Timeout finish event differs"
         );
     }
 
     function _checkPhaseLog(
-        IDevVm.Log memory entry, Arena arena, uint256 matchId, GameTypes.Phase phase,
+        IDevVm.Log memory entry,
+        Arena arena,
+        uint256 matchId,
+        GameTypes.Phase phase,
         uint64 deadline
     ) private pure {
         require(
@@ -370,12 +410,15 @@ contract CheckTurns {
     }
 
     function _checkPlayerLog(
-        IDevVm.Log memory entry, Arena arena, uint256 matchId, bytes32 topic, address player
+        IDevVm.Log memory entry,
+        Arena arena,
+        uint256 matchId,
+        bytes32 topic,
+        address player
     ) private pure {
         require(
             entry.emitter == address(arena) && entry.topics.length == 4 && entry.topics[0] == topic
-                && entry.topics[1] == bytes32(matchId)
-                && entry.topics[2] == bytes32(uint256(ROUND))
+                && entry.topics[1] == bytes32(matchId) && entry.topics[2] == bytes32(uint256(ROUND))
                 && entry.topics[3] == bytes32(uint256(uint160(player))),
             "Player event identity differs"
         );
@@ -415,14 +458,17 @@ contract CheckTurns {
         );
     }
 
-    function _checkStoredOrders(Arena arena, uint256 matchId, uint256 revealedPlayers) private view {
+    function _checkStoredOrders(Arena arena, uint256 matchId, uint256 revealedPlayers)
+        private
+        view
+    {
         // Read the actual mapping storage; a later HOLD Reveal confirms this offset.
-        uint256 start = uint256(keccak256(abi.encode(matchId, uint256(1))))
-            + REVEALED_ACTIONS_OFFSET;
+        uint256 start =
+            uint256(keccak256(abi.encode(matchId, uint256(1)))) + REVEALED_ACTIONS_OFFSET;
         uint256 slot = 0;
         for (; slot < GameTypes.UNIT_COUNT; ++slot) {
-            uint256 expected = slot < revealedPlayers * SQUAD_SIZE
-                ? uint256(GameTypes.NO_CELL) << 8 : 0;
+            uint256 expected =
+                slot < revealedPlayers * SQUAD_SIZE ? uint256(GameTypes.NO_CELL) << 8 : 0;
             // These fixed, read-only slots verify the Commit/Reveal privacy boundary.
             // forge-lint: disable-next-line(calls-loop, unsafe-cheatcode)
             bytes32 header = VM.load(address(arena), bytes32(start + slot * ACTION_STORAGE_SLOTS));
@@ -434,7 +480,10 @@ contract CheckTurns {
     }
 
     function _rejectReveal(
-        Arena arena, uint256 matchId, GameTypes.Action[SQUAD_SIZE] memory actions, bytes32 salt,
+        Arena arena,
+        uint256 matchId,
+        GameTypes.Action[SQUAD_SIZE] memory actions,
+        bytes32 salt,
         bytes memory expected
     ) private {
         VM.recordLogs();
@@ -451,17 +500,22 @@ contract CheckTurns {
         matchId = arena.createMatch(GameTypes.MAP_ID);
         VM.prank(PLAYER_B);
         arena.joinMatch(matchId);
+        VM.prank(PLAYER_A);
+        arena.startMatch(matchId);
     }
 
-    function _commitBoth(
-        Arena arena, uint256 matchId, GameTypes.Action[SQUAD_SIZE] memory actionsA
-    ) private {
+    function _commitBoth(Arena arena, uint256 matchId, GameTypes.Action[SQUAD_SIZE] memory actionsA)
+        private
+    {
         _commit(arena, matchId, PLAYER_A, actionsA, SALT_A);
         _commit(arena, matchId, PLAYER_B, _holds(), SALT_B);
     }
 
     function _commit(
-        Arena arena, uint256 matchId, address player, GameTypes.Action[SQUAD_SIZE] memory actions,
+        Arena arena,
+        uint256 matchId,
+        address player,
+        GameTypes.Action[SQUAD_SIZE] memory actions,
         bytes32 salt
     ) private {
         bytes32 commitment = _commitment(arena, matchId, player, actions, salt);
@@ -470,7 +524,10 @@ contract CheckTurns {
     }
 
     function _reveal(
-        Arena arena, uint256 matchId, address player, GameTypes.Action[SQUAD_SIZE] memory actions,
+        Arena arena,
+        uint256 matchId,
+        address player,
+        GameTypes.Action[SQUAD_SIZE] memory actions,
         bytes32 salt
     ) private {
         VM.prank(player);
@@ -478,7 +535,10 @@ contract CheckTurns {
     }
 
     function _commitment(
-        Arena arena, uint256 matchId, address player, GameTypes.Action[SQUAD_SIZE] memory actions,
+        Arena arena,
+        uint256 matchId,
+        address player,
+        GameTypes.Action[SQUAD_SIZE] memory actions,
         bytes32 salt
     ) private view returns (bytes32) {
         return GameHash.actionCommitment(_context(arena, matchId), ROUND, player, actions, salt);

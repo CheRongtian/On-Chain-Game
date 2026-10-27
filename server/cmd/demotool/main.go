@@ -225,7 +225,10 @@ func (d *demo) openMatch(matchID uint64) error {
 	if err := d.send("createMatch", matchID, 0, players[0], "createMatch(uint8)", "1"); err != nil {
 		return err
 	}
-	return d.send("joinMatch", matchID, 0, players[1], "joinMatch(uint256)", decimal(matchID))
+	if err := d.send("joinMatch", matchID, 0, players[1], "joinMatch(uint256)", decimal(matchID)); err != nil {
+		return err
+	}
+	return d.send("startMatch", matchID, 1, players[0], "startMatch(uint256)", decimal(matchID))
 }
 
 func (d *demo) prepare(matchID uint64, round uint8, a, b [3]order) ([2]preparedOrders, error) {

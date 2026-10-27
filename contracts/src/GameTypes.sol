@@ -38,7 +38,7 @@ library GameTypes {
 
     enum Phase {
         None,
-        WaitingForOpponent,
+        Lobby,
         Commit,
         Reveal,
         Resolvable,
@@ -144,7 +144,7 @@ library GameTypes {
         uint8 dashRange;
     }
 
-    // Before joining: B is address(0), round/stateHash are zero, and outcome/reason are None.
+    // Before starting: round/stateHash are zero and outcome/reason are None; B may be seated.
     // phaseDeadline is zero outside Commit/Reveal; joinDeadline retains the room's expiry.
     struct MatchSummary {
         address[2] players;

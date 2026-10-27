@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, watch } from 'vue';
-import { RouterLink, RouterView, useRouter } from 'vue-router';
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue';
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router';
 import AppIcon from './components/AppIcon.vue';
 import TransactionNotice from './components/TransactionNotice.vue';
 import { balanceLabel, shortAddress } from './lib/format';
@@ -10,6 +10,8 @@ import { useTransactionStore } from './stores/transaction';
 const arena = useArenaStore();
 const transaction = useTransactionStore();
 const router = useRouter();
+const route = useRoute();
+const isSessionView = computed(() => route.name === 'battlefield' || route.name === 'room');
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
   void arena.refresh();
@@ -32,7 +34,8 @@ function changeAccount(event: Event) {
 
 <template>
   <a class="skip-link" href="#main-content">Skip to main content</a>
-  <div class="app-shell">
+  <RouterView v-if="isSessionView" />
+  <div v-else class="app-shell">
     <header class="site-header">
       <RouterLink to="/" class="brand" aria-label="Tactical Arena lobby"
         ><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span

@@ -36,6 +36,20 @@ export interface Connection {
   timestamp: bigint;
 }
 export type Room = ContractFunctionReturnType<typeof arenaAbi, 'view', 'getMatch'>;
+export type BattleState = ContractFunctionReturnType<typeof arenaAbi, 'view', 'getBattleState'>;
+export type BattleMap = ContractFunctionReturnType<typeof arenaAbi, 'view', 'getMap'>;
+export type BattleRules = ContractFunctionReturnType<typeof arenaAbi, 'view', 'getRules'>;
+
+export interface BattleSnapshot {
+  room: Room;
+  blockNumber: bigint;
+  timestamp: bigint;
+  battlefield?: {
+    state: BattleState;
+    map: BattleMap;
+    rules: BattleRules;
+  };
+}
 
 export function publicClient(deployment: Deployment) {
   return createPublicClient({
@@ -103,6 +117,53 @@ export function readRoom(deployment: Deployment, matchId: bigint) {
     functionName: 'getMatch',
     args: [matchId],
   });
+}
+
+export async function requireHostStart(deployment: Deployment, matchId: bigint, room: Room) {
+  const client = publicClient(deployment);
+  const starts = await client.getContractEvents({
+    address: deployment.arenaAddress,
+    abi: arenaAbi,
+    eventName: 'MatchStarted',
+    args: { matchId },
+    fromBlock: BigInt(deployment.deploymentBlock),
+    toBlock: 'latest',
+  });
+  const hash = starts[0]?.transactionHash;
+  if (!hash) throw new Error('The host start has not been confirmed. Refresh this room.');
+  const transaction = await client.getTransaction({ hash });
+  if (transaction.from.toLowerCase() !== room.players[0].toLowerCase()) {
+    throw new Error(
+      'This local Arena still starts games when a player joins. Restart the backend to deploy the host-controlled room flow.',
+    );
+  }
+}
+
+export async function readBattleSnapshot(
+  deployment: Deployment,
+  matchId: bigint,
+): Promise<BattleSnapshot> {
+  const client = publicClient(deployment);
+  const block = await client.getBlock();
+  // Pin all getters to one block so a settlement cannot mix two rounds in one view.
+  const request = {
+    address: deployment.arenaAddress,
+    abi: arenaAbi,
+    blockNumber: block.number,
+  } as const;
+  const room = await client.readContract({
+    ...request,
+    functionName: 'getMatch',
+    args: [matchId],
+  });
+  const snapshot: BattleSnapshot = { room, blockNumber: block.number, timestamp: block.timestamp };
+  if (room.round === 0) return snapshot;
+  const [state, map, rules] = await Promise.all([
+    client.readContract({ ...request, functionName: 'getBattleState', args: [matchId] }),
+    client.readContract({ ...request, functionName: 'getMap', args: [room.mapId] }),
+    client.readContract({ ...request, functionName: 'getRules' }),
+  ]);
+  return { ...snapshot, battlefield: { state, map, rules } };
 }
 
 export function createdRoomId(deployment: Deployment, receipt: TransactionReceipt): bigint {
