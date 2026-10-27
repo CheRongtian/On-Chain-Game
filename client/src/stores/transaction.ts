@@ -1,12 +1,30 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import type { Hash } from 'viem';
+import type { ActionBundle } from '../lib/battle';
 import { arenaAbi } from '../generated/arena';
 import { accountClient, createdRoomId, publicClient } from '../lib/arena';
 import { errorMessage } from '../lib/errors';
 import { useArenaStore } from './arena';
 
-type Operation = 'create' | 'join' | 'start';
+type Command =
+  | { action: 'create' }
+  | { action: 'join' }
+  | { action: 'start' }
+  | { action: 'commit'; round: number; commitment: Hash }
+  | { action: 'reveal'; round: number; actions: ActionBundle; salt: Hash }
+  | { action: 'settle'; round: number }
+  | { action: 'timeout'; round: number; phase: 2 | 3 };
+type Operation = Command['action'];
+const confirmations: Record<Operation, string> = {
+  create: 'Room created. Invite your opponent.',
+  join: 'Joined. Waiting for the host to click Start game.',
+  start: 'Your start transaction is confirmed.',
+  commit: 'Orders confirmed. Waiting for your opponent.',
+  reveal: 'Orders accepted. Finishing the round.',
+  settle: 'Round complete.',
+  timeout: 'Timeout finalized on the chain.',
+};
 type Status = 'idle' | 'sending' | 'pending' | 'confirmed' | 'failed';
 
 export const useTransactionStore = defineStore('transaction', () => {
@@ -27,7 +45,8 @@ export const useTransactionStore = defineStore('transaction', () => {
     message.value = '';
   }
 
-  async function send(action: Operation, matchId?: bigint): Promise<bigint | undefined> {
+  async function send(command: Command, matchId?: bigint): Promise<bigint | undefined> {
+    const action = command.action;
     if (busy.value || (action !== 'create' && matchId === undefined)) return;
     const arena = useArenaStore();
     const deployment = arena.connection?.deployment;
@@ -39,13 +58,14 @@ export const useTransactionStore = defineStore('transaction', () => {
     const current = () =>
       generation === token && arena.epoch === epoch && arena.address === account;
     operation.value = action;
+    roomId.value = matchId?.toString();
     status.value = 'sending';
     try {
       const reader = publicClient(deployment);
       const writer = accountClient(deployment, account);
       const contract = { abi: arenaAbi, address: deployment.arenaAddress, account } as const;
       let submitted: Hash;
-      if (action === 'create') {
+      if (command.action === 'create') {
         const { request } = await reader.simulateContract({
           ...contract,
           functionName: 'createMatch',
@@ -53,7 +73,7 @@ export const useTransactionStore = defineStore('transaction', () => {
         });
         if (!current()) return;
         submitted = await writer.writeContract(request);
-      } else if (action === 'join') {
+      } else if (command.action === 'join') {
         const { request } = await reader.simulateContract({
           ...contract,
           functionName: 'joinMatch',
@@ -61,11 +81,43 @@ export const useTransactionStore = defineStore('transaction', () => {
         });
         if (!current()) return;
         submitted = await writer.writeContract(request);
-      } else {
+      } else if (command.action === 'start') {
         const { request } = await reader.simulateContract({
           ...contract,
           functionName: 'startMatch',
           args: [matchId!],
+        });
+        if (!current()) return;
+        submitted = await writer.writeContract(request);
+      } else if (command.action === 'commit') {
+        const { request } = await reader.simulateContract({
+          ...contract,
+          functionName: 'commitActions',
+          args: [matchId!, command.round, command.commitment],
+        });
+        if (!current()) return;
+        submitted = await writer.writeContract(request);
+      } else if (command.action === 'reveal') {
+        const { request } = await reader.simulateContract({
+          ...contract,
+          functionName: 'revealActions',
+          args: [matchId!, command.round, command.actions, command.salt],
+        });
+        if (!current()) return;
+        submitted = await writer.writeContract(request);
+      } else if (command.action === 'settle') {
+        const { request } = await reader.simulateContract({
+          ...contract,
+          functionName: 'settleRound',
+          args: [matchId!, command.round],
+        });
+        if (!current()) return;
+        submitted = await writer.writeContract(request);
+      } else {
+        const { request } = await reader.simulateContract({
+          ...contract,
+          functionName: 'advanceExpiredPhase',
+          args: [matchId!, command.round, command.phase],
         });
         if (!current()) return;
         submitted = await writer.writeContract(request);
@@ -87,12 +139,7 @@ export const useTransactionStore = defineStore('transaction', () => {
       const id = action === 'create' ? createdRoomId(deployment, receipt) : matchId!;
       hash.value = receipt.transactionHash;
       roomId.value = id.toString();
-      message.value =
-        action === 'create'
-          ? 'Room created. Invite your opponent.'
-          : action === 'join'
-            ? 'Joined. Waiting for the host to click Start game.'
-            : 'Your start transaction is confirmed.';
+      message.value = confirmations[action];
       status.value = 'confirmed';
       void arena.refresh();
       return id;
@@ -105,14 +152,41 @@ export const useTransactionStore = defineStore('transaction', () => {
   }
 
   function createRoom() {
-    return send('create');
+    return send({ action: 'create' });
   }
   function joinRoom(matchId: bigint) {
-    return send('join', matchId);
+    return send({ action: 'join' }, matchId);
   }
   function startGame(matchId: bigint) {
-    return send('start', matchId);
+    return send({ action: 'start' }, matchId);
+  }
+  function commitOrders(matchId: bigint, round: number, commitment: Hash) {
+    return send({ action: 'commit', round, commitment }, matchId);
+  }
+  function revealOrders(matchId: bigint, round: number, actions: ActionBundle, salt: Hash) {
+    return send({ action: 'reveal', round, actions, salt }, matchId);
+  }
+  function settleRound(matchId: bigint, round: number) {
+    return send({ action: 'settle', round }, matchId);
+  }
+  function finalizeTimeout(matchId: bigint, round: number, phase: 2 | 3) {
+    return send({ action: 'timeout', round, phase }, matchId);
   }
 
-  return { status, operation, hash, roomId, message, busy, reset, createRoom, joinRoom, startGame };
+  return {
+    status,
+    operation,
+    hash,
+    roomId,
+    message,
+    busy,
+    reset,
+    createRoom,
+    joinRoom,
+    startGame,
+    commitOrders,
+    revealOrders,
+    settleRound,
+    finalizeTimeout,
+  };
 });

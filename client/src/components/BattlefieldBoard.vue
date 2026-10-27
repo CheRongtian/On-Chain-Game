@@ -13,7 +13,7 @@ import type { BattlefieldFrame } from '../battlefield/bridge';
 import { cellLabel, cells, contains, unitNames } from '../lib/battle';
 
 const props = defineProps<{ frame: BattlefieldFrame }>();
-const emit = defineEmits<{ choose: [cell: number] }>();
+const emit = defineEmits<{ choose: [cell: number]; resolved: [] }>();
 const host = ref<HTMLDivElement>();
 const grid = ref<HTMLDivElement>();
 const ready = ref(false);
@@ -64,6 +64,7 @@ onMounted(() => {
     playerB: token('--amber'),
     preview: token('--draft'),
     legal: token('--board-legal'),
+    damage: token('--error'),
   };
   try {
     game = new Game({
@@ -77,10 +78,15 @@ onMounted(() => {
       scale: { mode: Scale.FIT, autoCenter: Scale.CENTER_BOTH },
       input: { touch: { capture: false } },
       callbacks: { postBoot: (instance) => instance.canvas.setAttribute('aria-hidden', 'true') },
-      scene: new BattlefieldScene(bridge, palette, () => {
-        ready.value = true;
-        void nextTick(fit);
-      }),
+      scene: new BattlefieldScene(
+        bridge,
+        palette,
+        () => {
+          ready.value = true;
+          void nextTick(fit);
+        },
+        () => emit('resolved'),
+      ),
     });
     game.scale.on('resize', alignKeyboard);
     observer = new ResizeObserver(fit);

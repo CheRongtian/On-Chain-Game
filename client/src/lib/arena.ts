@@ -1,5 +1,6 @@
 import {
   createPublicClient,
+  createTestClient,
   createWalletClient,
   defineChain,
   http,
@@ -39,11 +40,21 @@ export type Room = ContractFunctionReturnType<typeof arenaAbi, 'view', 'getMatch
 export type BattleState = ContractFunctionReturnType<typeof arenaAbi, 'view', 'getBattleState'>;
 export type BattleMap = ContractFunctionReturnType<typeof arenaAbi, 'view', 'getMap'>;
 export type BattleRules = ContractFunctionReturnType<typeof arenaAbi, 'view', 'getRules'>;
+export type RoundStatus = ContractFunctionReturnType<typeof arenaAbi, 'view', 'getRoundStatus'>;
+export interface RoundResolution {
+  blockNumber: bigint;
+  round: number;
+  before: BattleState;
+  after: BattleState;
+  paths: readonly (readonly number[])[];
+}
 
 export interface BattleSnapshot {
   room: Room;
   blockNumber: bigint;
   timestamp: bigint;
+  roundStatus?: RoundStatus;
+  settlementAccount?: Address;
   battlefield?: {
     state: BattleState;
     map: BattleMap;
@@ -158,12 +169,95 @@ export async function readBattleSnapshot(
   });
   const snapshot: BattleSnapshot = { room, blockNumber: block.number, timestamp: block.timestamp };
   if (room.round === 0) return snapshot;
-  const [state, map, rules] = await Promise.all([
+  const [state, map, rules, roundStatus] = await Promise.all([
     client.readContract({ ...request, functionName: 'getBattleState', args: [matchId] }),
     client.readContract({ ...request, functionName: 'getMap', args: [room.mapId] }),
     client.readContract({ ...request, functionName: 'getRules' }),
+    client.readContract({ ...request, functionName: 'getRoundStatus', args: [matchId] }),
   ]);
-  return { ...snapshot, battlefield: { state, map, rules } };
+  const reveals =
+    room.phase === 4
+      ? await client.getContractEvents({
+          address: deployment.arenaAddress,
+          abi: arenaAbi,
+          eventName: 'ActionRevealed',
+          args: { matchId, round: room.round },
+          fromBlock: BigInt(deployment.deploymentBlock),
+          toBlock: block.number,
+          strict: true,
+        })
+      : [];
+  return {
+    ...snapshot,
+    roundStatus,
+    battlefield: { state, map, rules },
+    settlementAccount: reveals[reveals.length - 1]?.args.player,
+  };
+}
+
+// Called only by the manual timeout action, never by refresh or startup.
+export async function advanceLocalClock(deployment: Deployment, latestTimestamp: bigint) {
+  const timestamp = BigInt(Math.floor(Date.now() / 1_000));
+  if (timestamp <= latestTimestamp) return;
+  const client = createTestClient({
+    mode: 'anvil',
+    chain: localChain,
+    transport: http(deployment.rpcUrl, { retryCount: 0, timeout: 8_000 }),
+  });
+  await client.setNextBlockTimestamp({ timestamp });
+  await client.mine({ blocks: 1 });
+}
+
+export async function readResolutions(
+  deployment: Deployment,
+  matchId: bigint,
+  fromBlock: bigint,
+  toBlock: bigint,
+  players: Room['players'],
+): Promise<RoundResolution[]> {
+  if (fromBlock > toBlock) return [];
+  const client = publicClient(deployment);
+  const events = await client.getContractEvents({
+    address: deployment.arenaAddress,
+    abi: arenaAbi,
+    eventName: 'RoundResolved',
+    args: { matchId },
+    fromBlock,
+    toBlock,
+    strict: true,
+  });
+  return Promise.all(
+    events.map(async (event) => {
+      const request = {
+        address: deployment.arenaAddress,
+        abi: arenaAbi,
+        functionName: 'getBattleState',
+        args: [matchId],
+      } as const;
+      const [before, after, reveals] = await Promise.all([
+        client.readContract({ ...request, blockNumber: event.blockNumber - 1n }),
+        client.readContract({ ...request, blockNumber: event.blockNumber }),
+        client.getContractEvents({
+          address: deployment.arenaAddress,
+          abi: arenaAbi,
+          eventName: 'ActionRevealed',
+          args: { matchId, round: event.args.round },
+          fromBlock: BigInt(deployment.deploymentBlock),
+          toBlock: event.blockNumber,
+          strict: true,
+        }),
+      ]);
+      const paths = players.flatMap((player) => {
+        const orders = reveals.find(
+          (reveal) => reveal.args.player.toLowerCase() === player.toLowerCase(),
+        )?.args.actions;
+        return [0, 1, 2].map((slot) =>
+          orders ? orders[slot].path.slice(0, orders[slot].pathLength) : [],
+        );
+      });
+      return { blockNumber: event.blockNumber, round: event.args.round, before, after, paths };
+    }),
+  );
 }
 
 export function createdRoomId(deployment: Deployment, receipt: TransactionReceipt): bigint {

@@ -123,6 +123,15 @@ async function choose(kind: Parameters<typeof battle.choose>[0]) {
           </button>
         </template>
       </template>
+      <template v-else-if="battle.ownUnit && battle.secret && battle.hasPlans">
+        <p class="current">
+          <span>{{ battle.committed ? 'Confirmed order' : 'Saved order' }}</span
+          >{{ battle.selectedDraft ? draftLabel(battle.selectedDraft) : 'Hold' }}
+        </p>
+        <p class="description">
+          Orders are locked. Positions marked DRAFT remain previews until settlement.
+        </p>
+      </template>
       <p v-else class="description">
         {{
           !battle.selected.hp

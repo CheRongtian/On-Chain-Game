@@ -1,8 +1,13 @@
 import { computed, ref, shallowRef } from 'vue';
 import { defineStore } from 'pinia';
 import type { Address } from 'viem';
-import { readBattleSnapshot, requireHostStart } from '../lib/arena';
-import type { BattleSnapshot, Deployment } from '../lib/arena';
+import {
+  advanceLocalClock,
+  readBattleSnapshot,
+  readResolutions,
+  requireHostStart,
+} from '../lib/arena';
+import type { BattleSnapshot, Deployment, RoundResolution } from '../lib/arena';
 import {
   actionCost,
   actionIssue,
@@ -19,9 +24,20 @@ import {
 } from '../lib/battle';
 import type { ActionDraft, ActionKind, DraftBundle } from '../lib/battle';
 import { errorMessage } from '../lib/errors';
+import {
+  createSecret,
+  decryptSecret,
+  readSecret,
+  saveSecret,
+  secretContext,
+  secretDrafts,
+} from '../lib/secrets';
+import type { OrderSecret } from '../lib/secrets';
+import { useTransactionStore } from './transaction';
 
 type Interaction = 'idle' | 'details' | 'target' | 'review';
 export const useBattleStore = defineStore('battle', () => {
+  const transaction = useTransactionStore();
   const snapshot = shallowRef<BattleSnapshot>();
   const drafts = shallowRef<DraftBundle>(emptyDrafts());
   const selectedId = ref<number>();
@@ -30,13 +46,26 @@ export const useBattleStore = defineStore('battle', () => {
   const loading = ref(false);
   const error = ref('');
   const feedback = ref('');
+  const secret = shallowRef<OrderSecret>();
+  const secretReady = ref(false);
+  const secretError = ref('');
+  const working = ref(false);
+  const actionError = ref('');
+  const actionMessage = ref('');
+  const progressPaused = ref(false);
+  const resolutions = shallowRef<readonly RoundResolution[]>([]);
+  const animating = ref(false);
+  const localTime = ref(BigInt(Math.floor(Date.now() / 1_000)));
   const context = shallowRef<{ deployment: Deployment; id: bigint; account?: Address }>();
+  let continuingFor: typeof context.value;
   const history = shallowRef<readonly { drafts: DraftBundle; unitId: number }[]>([]);
   let requestId = 0;
+  let refreshPromise: Promise<void> | undefined;
   let hostChecked = false;
   let lastInspectedId: number | undefined;
   const field = computed(() => snapshot.value?.battlefield);
   const room = computed(() => snapshot.value?.room);
+  const roundStatus = computed(() => snapshot.value?.roundStatus);
   const playerIndex = computed(() => {
     const account = context.value?.account?.toLowerCase();
     const index = room.value?.players.findIndex((player) => player.toLowerCase() === account);
@@ -51,11 +80,53 @@ export const useBattleStore = defineStore('battle', () => {
       playerIndex.value !== undefined &&
       Math.floor(selectedId.value / 3) === playerIndex.value,
   );
+  const busy = computed(() => working.value || transaction.busy);
+  const committed = computed(
+    () => playerIndex.value !== undefined && !!roundStatus.value?.committed[playerIndex.value],
+  );
+  const revealed = computed(
+    () => playerIndex.value !== undefined && !!roundStatus.value?.revealed[playerIndex.value],
+  );
+  const secretMatches = computed(
+    () =>
+      !!secret.value &&
+      playerIndex.value !== undefined &&
+      secret.value.commitment.toLowerCase() ===
+        roundStatus.value?.commitments[playerIndex.value].toLowerCase(),
+  );
+  const currentTime = computed(() =>
+    snapshot.value && snapshot.value.timestamp > localTime.value
+      ? snapshot.value.timestamp
+      : localTime.value,
+  );
+  const phaseExpired = computed(
+    () =>
+      !!room.value &&
+      (room.value.phase === 2 || room.value.phase === 3) &&
+      currentTime.value > room.value.phaseDeadline,
+  );
+  const remainingSeconds = computed(() => {
+    if (!room.value?.phaseDeadline) return undefined;
+    const remaining = room.value.phaseDeadline - currentTime.value;
+    return Number(remaining > 0n ? remaining : 0n);
+  });
+  const hasPlans = computed(
+    () =>
+      playerIndex.value !== undefined &&
+      (room.value?.phase === 2 || room.value?.phase === 3 || room.value?.phase === 4),
+  );
   const editable = computed(
     () =>
       !!field.value &&
       playerIndex.value !== undefined &&
       !error.value &&
+      !busy.value &&
+      !animating.value &&
+      secretReady.value &&
+      !secretError.value &&
+      !secret.value &&
+      !committed.value &&
+      !phaseExpired.value &&
       room.value?.phase === 2 &&
       snapshot.value!.timestamp <= room.value.phaseDeadline,
   );
@@ -85,7 +156,7 @@ export const useBattleStore = defineStore('battle', () => {
   const unitCells = computed(
     () =>
       field.value?.state.units.map((unit, unitId) => {
-        if (!editable.value || !unit.hp || Math.floor(unitId / 3) !== playerIndex.value)
+        if (!hasPlans.value || !unit.hp || Math.floor(unitId / 3) !== playerIndex.value)
           return unit.cell;
         const draft = drafts.value[unitId % 3];
         return isMovement(draft.kind) && draft.path.length
@@ -149,6 +220,71 @@ export const useBattleStore = defineStore('battle', () => {
       : undefined;
   });
   const canUndo = computed(() => editable.value && history.value.length > 0);
+  const canCommit = computed(
+    () =>
+      !busy.value &&
+      !loading.value &&
+      !animating.value &&
+      !error.value &&
+      secretReady.value &&
+      !secretError.value &&
+      playerIndex.value !== undefined &&
+      room.value?.phase === 2 &&
+      !phaseExpired.value &&
+      !committed.value &&
+      (!!secret.value || !!canonicalActions.value),
+  );
+  const canReveal = computed(
+    () =>
+      !busy.value &&
+      !loading.value &&
+      !error.value &&
+      !secretError.value &&
+      room.value?.phase === 3 &&
+      !phaseExpired.value &&
+      committed.value &&
+      !revealed.value &&
+      secretMatches.value,
+  );
+  const canSettle = computed(
+    () =>
+      !busy.value &&
+      !loading.value &&
+      !error.value &&
+      !!context.value?.account &&
+      room.value?.phase === 4,
+  );
+  const canTimeout = computed(
+    () =>
+      !busy.value &&
+      !loading.value &&
+      !error.value &&
+      !!context.value?.account &&
+      phaseExpired.value,
+  );
+  const canRetryRound = computed(
+    () => progressPaused.value && (canReveal.value || canSettle.value),
+  );
+  const missingSecret = computed(
+    () =>
+      secretReady.value && committed.value && !revealed.value && !secret.value && hasPlans.value,
+  );
+  function tick() {
+    localTime.value = BigInt(Math.floor(Date.now() / 1_000));
+  }
+  function currentSecretContext() {
+    const target = context.value;
+    const summary = room.value;
+    return target?.account && summary?.round && playerIndex.value !== undefined
+      ? secretContext(
+          target.deployment,
+          target.id,
+          summary.round,
+          target.account,
+          summary.rulesHash,
+        )
+      : undefined;
+  }
   function dismiss() {
     interaction.value = 'idle';
     selectedId.value = undefined;
@@ -168,6 +304,18 @@ export const useBattleStore = defineStore('battle', () => {
     loading.value = false;
     error.value = '';
     hostChecked = false;
+    refreshPromise = undefined;
+    secret.value = undefined;
+    secretReady.value = false;
+    secretError.value = '';
+    actionError.value = '';
+    actionMessage.value = '';
+    progressPaused.value = false;
+    continuingFor = undefined;
+    working.value = false;
+    resolutions.value = [];
+    animating.value = false;
+    tick();
     clearOrders();
   }
   function open(deployment?: Deployment, id?: bigint, account?: Address) {
@@ -176,8 +324,18 @@ export const useBattleStore = defineStore('battle', () => {
     context.value = { deployment, id, account };
     void refresh();
   }
-  async function refresh() {
-    if (loading.value || !context.value) return;
+  function refresh(): Promise<void> {
+    if (refreshPromise) return refreshPromise;
+    if (!context.value) return Promise.resolve();
+    const pending: Promise<void> = loadSnapshot().finally(() => {
+      if (refreshPromise === pending) refreshPromise = undefined;
+      if (!busy.value && !error.value) void continueRound();
+    });
+    refreshPromise = pending;
+    return pending;
+  }
+  async function loadSnapshot() {
+    if (!context.value) return;
     const target = context.value;
     const request = ++requestId;
     loading.value = true;
@@ -190,13 +348,57 @@ export const useBattleStore = defineStore('battle', () => {
         hostChecked = true;
       }
       const previous = snapshot.value;
-      snapshot.value = next;
-      if (
-        !previous ||
-        previous.room.round !== next.room.round ||
-        previous.room.phase !== next.room.phase
-      )
+      const settled =
+        previous && previous.room.stateHash !== next.room.stateHash
+          ? await readResolutions(
+              target.deployment,
+              target.id,
+              previous.blockNumber + 1n,
+              next.blockNumber,
+              next.room.players,
+            )
+          : [];
+      if (request !== requestId) return;
+      if (!previous || previous.room.round !== next.room.round) {
         clearOrders();
+        secret.value = undefined;
+        secretReady.value = false;
+        secretError.value = '';
+        actionMessage.value = '';
+        actionError.value = '';
+        progressPaused.value = false;
+        if (transaction.roomId === target.id.toString() && !transaction.busy) transaction.reset();
+      } else if (previous.room.stateHash !== next.room.stateHash) dismiss();
+      snapshot.value = next;
+      tick();
+      if (settled.length) {
+        resolutions.value = settled;
+        animating.value = true;
+      }
+      const secretKey = currentSecretContext();
+      if (secretKey) {
+        try {
+          const saved = await readSecret(secretKey);
+          if (request !== requestId) return;
+          if (
+            saved &&
+            committed.value &&
+            saved.commitment.toLowerCase() !==
+              roundStatus.value!.commitments[playerIndex.value!].toLowerCase()
+          )
+            throw new Error(
+              'Saved orders do not match the chain commitment. Import the original backup.',
+            );
+          secret.value = saved;
+          if (saved) drafts.value = secretDrafts(saved);
+          secretError.value = '';
+        } catch (cause) {
+          if (request !== requestId) return;
+          secret.value = undefined;
+          secretError.value = errorMessage(cause);
+        }
+      }
+      secretReady.value = true;
       error.value = '';
       if (!editable.value) {
         proposal.value = undefined;
@@ -211,7 +413,197 @@ export const useBattleStore = defineStore('battle', () => {
       if (request === requestId) loading.value = false;
     }
   }
+  async function submit(action: 'commit' | 'reveal' | 'settle' | 'timeout'): Promise<boolean> {
+    const allowed = {
+      commit: canCommit.value,
+      reveal: canReveal.value,
+      settle: canSettle.value,
+      timeout: canTimeout.value,
+    };
+    if (!allowed[action] || !context.value || !room.value) return false;
+    const target = context.value;
+    const expectedRound = room.value.round;
+    const expectedPhase = room.value.phase;
+    const actions = secret.value?.actions ?? canonicalActions.value;
+    working.value = true;
+    progressPaused.value = false;
+    actionError.value = '';
+    actionMessage.value = '';
+    dismiss();
+    try {
+      await refresh();
+      if (context.value !== target) return false;
+      if (error.value) throw new Error(error.value);
+      if (room.value.round !== expectedRound || room.value.phase !== expectedPhase) {
+        if (transaction.status === 'failed') transaction.reset();
+        return true;
+      }
+      let submitted: bigint | undefined;
+      if (action === 'commit') {
+        if (secretError.value) throw new Error(secretError.value);
+        if (committed.value) {
+          if (transaction.status === 'failed') transaction.reset();
+          return true;
+        }
+        if (phaseExpired.value) throw new Error('The order confirmation deadline has passed.');
+        const saved = secret.value ?? createSecret(currentSecretContext()!, actions!);
+        actionMessage.value = 'Saving and confirming your squad…';
+        await saveSecret(saved);
+        if (context.value !== target || room.value.round !== expectedRound) return false;
+        secret.value = saved;
+        drafts.value = secretDrafts(saved);
+        actionMessage.value = '';
+        submitted = await transaction.commitOrders(target.id, expectedRound, saved.commitment);
+      } else if (action === 'reveal') {
+        if (!secretMatches.value || !secret.value)
+          throw new Error('Import the original orders and Salt to Reveal.');
+        if (revealed.value) {
+          if (transaction.status === 'failed') transaction.reset();
+          return true;
+        }
+        if (phaseExpired.value) throw new Error('The round processing deadline has passed.');
+        submitted = await transaction.revealOrders(
+          target.id,
+          expectedRound,
+          secret.value.actions,
+          secret.value.salt,
+        );
+      } else if (action === 'settle') {
+        submitted = await transaction.settleRound(target.id, expectedRound);
+      } else {
+        if (snapshot.value!.timestamp <= room.value.phaseDeadline) {
+          actionMessage.value = 'Synchronizing local chain time for this timeout…';
+          await advanceLocalClock(target.deployment, snapshot.value!.timestamp);
+          if (context.value !== target) return false;
+          await refresh();
+          if (context.value !== target) return false;
+          if (error.value) throw new Error(error.value);
+        }
+        if (room.value.round !== expectedRound || room.value.phase !== expectedPhase)
+          throw new Error('The phase changed. Refresh before continuing.');
+        if (snapshot.value!.timestamp <= room.value.phaseDeadline)
+          throw new Error('The chain deadline has not passed yet. Wait and retry.');
+        actionMessage.value = '';
+        submitted = await transaction.finalizeTimeout(
+          target.id,
+          expectedRound,
+          expectedPhase as 2 | 3,
+        );
+      }
+      if (context.value === target) await refresh();
+      if (context.value !== target) return false;
+      if (error.value) return false;
+      const completed =
+        room.value.round !== expectedRound ||
+        !!room.value.outcome ||
+        (action === 'commit' && committed.value && secretMatches.value) ||
+        (action === 'reveal' && revealed.value);
+      if (submitted === undefined && !completed) {
+        progressPaused.value = true;
+        actionError.value = transaction.message || 'Round processing stopped. Retry to continue.';
+        return false;
+      }
+      // Another tab may have completed the same action while this request was in flight.
+      if (completed && transaction.status === 'failed') transaction.reset();
+      return true;
+    } catch (cause) {
+      if (context.value === target) {
+        actionMessage.value = '';
+        actionError.value = errorMessage(cause);
+        progressPaused.value = true;
+      }
+      return false;
+    } finally {
+      if (context.value === target) {
+        working.value = false;
+        if (action !== 'timeout' && !progressPaused.value && !error.value) void continueRound();
+      }
+    }
+  }
+  async function continueRound(): Promise<void> {
+    const target = context.value;
+    const round = room.value?.round;
+    if (
+      !target ||
+      !round ||
+      continuingFor ||
+      busy.value ||
+      loading.value ||
+      error.value ||
+      progressPaused.value
+    )
+      return;
+    continuingFor = target;
+    try {
+      while (
+        context.value === target &&
+        room.value?.round === round &&
+        !error.value &&
+        !progressPaused.value
+      ) {
+        // Only a confirmed squad can reveal; the next round still waits for a new confirmation.
+        if (canReveal.value) {
+          if (!(await submit('reveal'))) break;
+        } else if (
+          canSettle.value &&
+          revealed.value &&
+          target.account?.toLowerCase() === snapshot.value?.settlementAccount?.toLowerCase()
+        ) {
+          if (!(await submit('settle'))) break;
+        } else break;
+      }
+    } finally {
+      if (continuingFor === target) continuingFor = undefined;
+    }
+  }
+  async function retryRound() {
+    if (!canRetryRound.value) return;
+    progressPaused.value = false;
+    actionError.value = '';
+    const action = room.value?.phase === 4 ? 'settle' : 'reveal';
+    await submit(action);
+  }
+  async function restoreBackup(file: File, password: string) {
+    const target = context.value;
+    const secretKey = currentSecretContext();
+    if (!target || !secretKey || busy.value) return;
+    working.value = true;
+    try {
+      const saved = await decryptSecret(file, password, secretKey);
+      await refresh();
+      if (context.value !== target || room.value?.round !== secretKey.round) return;
+      if (error.value) throw new Error(error.value);
+      if (room.value.phase !== 2 && room.value.phase !== 3)
+        throw new Error('This phase no longer needs a secret import.');
+      if (
+        committed.value &&
+        saved.commitment.toLowerCase() !==
+          roundStatus.value!.commitments[playerIndex.value!].toLowerCase()
+      )
+        throw new Error('This backup does not match your on-chain commitment.');
+      await saveSecret(saved, true);
+      if (context.value !== target || room.value.round !== secretKey.round) return;
+      secret.value = saved;
+      drafts.value = secretDrafts(saved);
+      history.value = [];
+      secretError.value = '';
+      actionError.value = '';
+      progressPaused.value = false;
+      actionMessage.value = 'Original orders restored. Continuing this round.';
+      dismiss();
+      return true;
+    } finally {
+      if (context.value === target) {
+        working.value = false;
+        void continueRound();
+      }
+    }
+  }
+  function animationComplete() {
+    animating.value = false;
+  }
   function inspect(unitId: number) {
+    if (animating.value) return;
     if (!field.value?.state.units[unitId]) return;
     selectedId.value = unitId;
     lastInspectedId = unitId;
@@ -229,6 +621,7 @@ export const useBattleStore = defineStore('battle', () => {
     interaction.value = isMovement(kind) || isAttack(kind) ? 'target' : 'review';
   }
   function pick(cell: number) {
+    if (animating.value) return;
     const data = field.value;
     if (!data) return;
     if (
@@ -334,6 +727,32 @@ export const useBattleStore = defineStore('battle', () => {
     error,
     feedback,
     playerIndex,
+    roundStatus,
+    committed,
+    revealed,
+    phaseExpired,
+    remainingSeconds,
+    hasPlans,
+    busy,
+    secret,
+    secretReady,
+    secretError,
+    missingSecret,
+    actionError,
+    actionMessage,
+    canCommit,
+    canReveal,
+    canSettle,
+    canTimeout,
+    canRetryRound,
+    progressPaused,
+    resolutions,
+    animating,
+    submit,
+    retryRound,
+    restoreBackup,
+    animationComplete,
+    tick,
     open,
     release,
     refresh,

@@ -4,31 +4,36 @@ import { RouterLink, useRoute, useRouter } from 'vue-router';
 import AppIcon from '../components/AppIcon.vue';
 import BattlefieldBoard from '../components/BattlefieldBoard.vue';
 import UnitActionDrawer from '../components/UnitActionDrawer.vue';
+import RoundControls from '../components/RoundControls.vue';
 import type { BattlefieldFrame } from '../battlefield/bridge';
 import { actionNames, draftLabel, emptyDrafts, unitCodes, unitNames } from '../lib/battle';
 import { outcomes, parseRoomId, phases, reasons, shortAddress } from '../lib/format';
 import { useArenaStore } from '../stores/arena';
 import { useBattleStore } from '../stores/battle';
-import { useTransactionStore } from '../stores/transaction';
 
 const route = useRoute();
 const router = useRouter();
 const arena = useArenaStore();
 const battle = useBattleStore();
-const transaction = useTransactionStore();
 const board = ref<InstanceType<typeof BattlefieldBoard>>();
 const lastUnit = ref<number>();
 const id = computed(() => parseRoomId(String(route.params.matchId ?? '')));
 const players = [0, 1] as const;
+const roundLabel = computed(() => {
+  if (battle.room?.phase === 2) return battle.committed ? 'Waiting for opponent' : 'Planning';
+  if (battle.room?.phase === 3 || battle.room?.phase === 4) return 'Processing';
+  return phases[battle.room?.phase ?? 0];
+});
 const frame = computed<BattlefieldFrame | undefined>(() =>
   battle.field
     ? {
         ...battle.field,
-        drafts: battle.editable ? battle.preview : emptyDrafts(),
+        drafts: battle.hasPlans ? battle.preview : emptyDrafts(),
         unitCells: battle.unitCells,
         playerIndex: battle.playerIndex,
         selectedUnit: battle.selectedId ?? -1,
         legalCells: battle.highlighted,
+        resolutions: battle.resolutions,
       }
     : undefined,
 );
@@ -47,6 +52,12 @@ const status = computed(() => {
   if (battle.room?.outcome)
     return `${outcomes[battle.room.outcome]} · ${reasons[battle.room.reason]}`;
   if (battle.playerIndex === undefined) return 'Spectator · select a unit to inspect.';
+  if (battle.animating) return 'Playing confirmed round result…';
+  if (battle.progressPaused) return 'Round processing paused. Retry to continue.';
+  if (battle.committed)
+    return battle.room?.phase === 2
+      ? 'Orders confirmed · waiting for your opponent.'
+      : 'Processing your confirmed orders…';
   if (!battle.editable) return 'Planning is closed in this phase.';
   return battle.canonicalActions
     ? `Local draft ready · ${battle.energySpent}/${battle.availableEnergy} Energy`
@@ -93,7 +104,7 @@ function escape(event: KeyboardEvent) {
 }
 onMounted(() => {
   timer = setInterval(() => {
-    void battle.refresh();
+    if (!battle.busy) void battle.refresh();
   }, 4_000);
   document.addEventListener('keydown', escape);
 });
@@ -112,15 +123,13 @@ onBeforeUnmount(() => {
       >
       <div class="identity">
         <h1>Room #{{ route.params.matchId }}</h1>
-        <span v-if="battle.room"
-          >Round {{ battle.room.round }} · {{ phases[battle.room.phase] }}</span
-        >
+        <span v-if="battle.room">Round {{ battle.room.round }} · {{ roundLabel }}</span>
       </div>
       <label class="account-picker"
         ><span class="sr-only">Active local account</span
         ><select
           :value="arena.address ?? ''"
-          :disabled="!arena.online || transaction.busy"
+          :disabled="!arena.online || battle.busy"
           @change="changeAccount"
         >
           <option v-if="!arena.connection?.accounts.length" value="">Offline</option>
@@ -135,13 +144,16 @@ onBeforeUnmount(() => {
       >
       <button
         class="refresh"
-        :disabled="battle.loading || !arena.online"
+        :disabled="battle.loading || battle.busy || !arena.online"
         aria-label="Refresh chain state"
         @click="battle.refresh()"
       >
         <AppIcon name="refresh" />
       </button>
     </header>
+
+    <RoundControls v-if="battle.field" />
+    <div v-else />
 
     <section v-if="battle.field && frame" class="battlefield" aria-label="Confirmed battlefield">
       <div class="scoreline">
@@ -151,10 +163,26 @@ onBeforeUnmount(() => {
             }}{{ battle.playerIndex === player ? ' · You' : '' }}</strong
           ><span>{{ battle.field.state.players[player].energy }} E</span
           ><span>{{ battle.field.state.players[player].victoryPoints }} VP</span>
+          <small v-if="battle.roundStatus">{{
+            battle.room?.outcome
+              ? 'Finished'
+              : battle.roundStatus.committed[player]
+                ? 'Ready'
+                : 'Planning'
+          }}</small>
         </div>
       </div>
       <div class="board-space">
-        <BattlefieldBoard ref="board" :frame="frame" @choose="battle.pick" />
+        <BattlefieldBoard
+          ref="board"
+          :frame="frame"
+          @choose="battle.pick"
+          @resolved="battle.animationComplete"
+        />
+        <div v-if="battle.room?.outcome && !battle.animating" class="result" role="status">
+          <strong>{{ outcomes[battle.room.outcome] }}</strong
+          ><span>{{ reasons[battle.room.reason] }}</span>
+        </div>
       </div>
     </section>
     <section
@@ -219,7 +247,9 @@ onBeforeUnmount(() => {
           ><span
             ><strong>{{ unitNames[entry.unit.unitType] }}</strong
             ><small>{{
-              battle.editable ? draftLabel(battle.drafts[entry.unitId % 3]) : `${entry.unit.hp} HP`
+              battle.hasPlans && battle.playerIndex !== undefined
+                ? draftLabel(battle.drafts[entry.unitId % 3])
+                : `${entry.unit.hp} HP`
             }}</small></span
           >
         </button>
@@ -239,7 +269,7 @@ onBeforeUnmount(() => {
   position: fixed;
   inset: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 8px;
   padding: 10px 14px;
   background: var(--background);
@@ -333,6 +363,32 @@ h1 {
   position: relative;
   min-height: 0;
   min-width: 0;
+}
+.scoreline small {
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+}
+.result {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 3px;
+  padding: 12px 20px;
+  max-width: calc(100% - 24px);
+  background: var(--surface);
+  border: 1px solid var(--success);
+  border-radius: 8px;
+  text-align: center;
+  pointer-events: none;
+}
+.result strong {
+  font-size: 1rem;
+}
+.result span {
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 .order-dock {
   min-width: 0;

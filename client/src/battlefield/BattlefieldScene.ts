@@ -1,6 +1,8 @@
 import { Scene } from 'phaser';
 import type { GameObjects, Input } from 'phaser';
-import { ActionKind, contains, isAttack, isMovement, unitCodes } from '../lib/battle';
+import { ActionKind, contains, emptyDrafts, isAttack, isMovement, unitCodes } from '../lib/battle';
+import type { RoundResolution } from '../lib/arena';
+import { outcomes } from '../lib/format';
 import type { BattlefieldBridge, BattlefieldFrame } from './bridge';
 
 export const TILE_SIZE = 64;
@@ -18,6 +20,7 @@ export interface BoardPalette {
   playerB: string;
   preview: string;
   legal: string;
+  damage: string;
 }
 const hex = (value: string) => Number.parseInt(value.slice(1), 16);
 const position = (cell: number) => ({
@@ -28,18 +31,23 @@ const position = (cell: number) => ({
 export class BattlefieldScene extends Scene {
   private ink!: GameObjects.Graphics;
   private labels: GameObjects.Text[] = [];
+  private latest?: BattlefieldFrame;
+  private playing = false;
+  private lastResolutionBlock = 0n;
   constructor(
     private bridge: BattlefieldBridge,
     private colors: BoardPalette,
     private onReady: () => void,
+    private onResolved: () => void,
   ) {
     super('Battlefield');
   }
   create() {
     this.ink = this.add.graphics();
-    const release = this.bridge.onFrame((frame) => this.paint(frame));
+    const release = this.bridge.onFrame((frame) => this.receive(frame));
     const choose = (pointer: Input.Pointer) => {
       if (pointer.getDistance() > 10) return;
+      if (this.playing) return;
       const x = Math.floor((pointer.x - BOARD_MARGIN) / TILE_SIZE);
       const y = Math.floor((pointer.y - BOARD_MARGIN) / TILE_SIZE);
       if (x >= 0 && x < 8 && y >= 0 && y < 8) this.bridge.selectCell(y * 8 + x);
@@ -51,6 +59,139 @@ export class BattlefieldScene extends Scene {
     });
     this.events.once('destroy', release);
     this.onReady();
+  }
+  private receive(frame: BattlefieldFrame) {
+    this.latest = frame;
+    if (this.playing) return;
+    const queue = frame.resolutions.filter((event) => event.blockNumber > this.lastResolutionBlock);
+    if (!queue.length) {
+      this.paint(frame);
+      return;
+    }
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.lastResolutionBlock = queue[queue.length - 1].blockNumber;
+      this.paint(frame);
+      this.onResolved();
+      return;
+    }
+    this.playing = true;
+    const next = () => {
+      const event = queue.shift();
+      if (event) {
+        this.lastResolutionBlock = event.blockNumber;
+        this.animateResolution(event, frame, next);
+      } else {
+        this.playing = false;
+        this.receive(this.latest!);
+        if (!this.playing) this.onResolved();
+      }
+    };
+    next();
+  }
+  private animateResolution(event: RoundResolution, frame: BattlefieldFrame, done: () => void) {
+    this.ink.clear();
+    for (const label of this.labels) label.destroy();
+    this.labels = [];
+    this.terrain({
+      ...frame,
+      state: event.before,
+      drafts: emptyDrafts(),
+      unitCells: event.before.units.map((unit) => unit.cell),
+      selectedUnit: -1,
+      legalCells: [],
+    });
+    const objects: GameObjects.GameObject[] = [];
+    const pieces: { unitId: number; piece: GameObjects.Container; hp: GameObjects.Text }[] = [];
+    event.before.units.forEach((unit, unitId) => {
+      if (!unit.hp) return;
+      const point = position(unit.cell);
+      const tint = unitId < 3 ? this.colors.playerA : this.colors.playerB;
+      const shape = this.add.graphics();
+      shape.fillStyle(hex(this.colors.background));
+      shape.fillRoundedRect(-22, -22, 44, 44, 5);
+      shape.lineStyle(2, hex(tint));
+      shape.strokeRoundedRect(-22, -22, 44, 44, 5);
+      const title = this.add
+        .text(0, -8, `${unitId < 3 ? 'A' : 'B'}·${unitCodes[unit.unitType]}`, {
+          fontFamily: 'system-ui',
+          fontSize: '16px',
+          fontStyle: 'bold',
+          color: tint,
+        })
+        .setOrigin(0.5);
+      const hp = this.add
+        .text(0, 10, `${unit.hp} HP`, {
+          fontFamily: 'system-ui',
+          fontSize: '12px',
+          color: this.colors.text,
+        })
+        .setOrigin(0.5);
+      const piece = this.add.container(point.x, point.y, [shape, title, hp]);
+      objects.push(piece);
+      pieces.push({ unitId, piece, hp });
+      const after = event.after.units[unitId];
+      if (after.hp > 0 && after.cell !== unit.cell) {
+        const path = event.paths[unitId];
+        const cells = path?.length && path[path.length - 1] === after.cell ? path : [after.cell];
+        cells.forEach((cell, step) => {
+          const end = position(cell);
+          this.tweens.add({
+            targets: piece,
+            x: end.x,
+            y: end.y,
+            delay: (step * 420) / cells.length,
+            duration: 420 / cells.length,
+            ease: 'Sine.easeInOut',
+          });
+        });
+      }
+    });
+    const float = (x: number, y: number, text: string, tint: string) => {
+      const label = this.add
+        .text(x, y, text, {
+          fontFamily: 'system-ui',
+          fontSize: '18px',
+          fontStyle: 'bold',
+          color: tint,
+          backgroundColor: this.colors.background,
+          padding: { x: 5, y: 3 },
+        })
+        .setOrigin(0.5);
+      objects.push(label);
+      this.tweens.add({ targets: label, y: y - 22, alpha: 0, delay: 350, duration: 650 });
+    };
+    this.time.delayedCall(460, () => {
+      pieces.forEach(({ unitId, piece, hp }) => {
+        const old = event.before.units[unitId];
+        const after = event.after.units[unitId];
+        hp.setText(`${after.hp} HP`);
+        if (after.hp < old.hp) {
+          float(piece.x, piece.y - 25, `−${old.hp - after.hp} HP`, this.colors.damage);
+          this.tweens.add({ targets: piece, alpha: 0.3, yoyo: true, duration: 90, repeat: 1 });
+        }
+        if (!after.hp) {
+          // The death sentinel erases final location; do not simulate a missing intermediate state.
+          this.tweens.add({ targets: piece, alpha: 0, scale: 0.5, delay: 360, duration: 240 });
+        }
+      });
+      for (const player of [0, 1] as const) {
+        const old = event.before.players[player];
+        const after = event.after.players[player];
+        const delta = (amount: number) => (amount > 0 ? `+${amount}` : String(amount));
+        float(
+          player ? 420 : 156,
+          548,
+          `${player ? 'B' : 'A'}: ${delta(after.energy - old.energy)} E · ${delta(after.victoryPoints - old.victoryPoints)} VP`,
+          player ? this.colors.playerB : this.colors.playerA,
+        );
+      }
+      if (event.after.outcome)
+        float(CANVAS_SIZE / 2, CANVAS_SIZE / 2, outcomes[event.after.outcome], this.colors.text);
+    });
+    this.time.delayedCall(1550, () => {
+      for (const object of objects) object.destroy();
+      done();
+    });
   }
   private label(x: number, y: number, value: string, size = 14, tint = this.colors.text) {
     this.labels.push(

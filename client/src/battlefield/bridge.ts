@@ -1,4 +1,4 @@
-import type { BattleMap, BattleRules, BattleState } from '../lib/arena';
+import type { BattleMap, BattleRules, BattleState, RoundResolution } from '../lib/arena';
 import type { DraftBundle } from '../lib/battle';
 
 export interface BattlefieldFrame {
@@ -10,6 +10,7 @@ export interface BattlefieldFrame {
   readonly playerIndex?: number;
   readonly selectedUnit: number;
   readonly legalCells: readonly number[];
+  readonly resolutions: readonly RoundResolution[];
 }
 
 // Each mounted board owns its bridge; no events cross tabs or room instances.
