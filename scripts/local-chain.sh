@@ -6,6 +6,7 @@ local_player_a="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 local_player_b="0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
 local_anvil_pid=""
 arena_address=""
+deployment_block=""
 
 start_local_chain() {
     local attempt
@@ -43,12 +44,13 @@ stop_local_chain() {
         kill "$local_anvil_pid" 2>/dev/null || true
         wait "$local_anvil_pid" 2>/dev/null || true
         local_anvil_pid=""
+        node "$project_root/scripts/client-contract.mjs" clear
     fi
 }
 
 deploy_local_arena() {
     local compiler="$project_root/.local/bin/solc-0.8.30"
-    local deployment deployment_block deployment_status=0
+    local deployment deployment_status=0
 
     cd "$project_root/contracts"
     printf 'Deploying Arena to the local chain...\n'

@@ -2,7 +2,7 @@
 
 A two-player on-chain tactical game in development. Each player commands three units on an 8x8 board, using hidden orders, simultaneous movement, combat, and objective control.
 
-The current project provides a Vue/TypeScript page, Go command entry, map validation utility, Solidity protocol types and hashes, shared state/battle vectors, and an Arena with rooms, Commit/Reveal, battle settlement, public timeout finalization, and state queries. The backend launcher runs complete local matches with two development accounts and records transaction receipts, events, and Gas usage. A playable browser interface, wallet integration, database services, and historical replay services remain planned.
+The current project provides a Vue/TypeScript local-account lobby, room creation/joining and live room details, Go command entry, map validation, shared state/battle vectors, and an Arena with Commit/Reveal, battle settlement, public timeout finalization, and state queries. The browser uses Anvil's unlocked development accounts for real local-chain transactions. The backend launcher runs complete matches with two development accounts and records transaction receipts, events, and Gas usage. Browser battle controls, external wallet integration, database services, and historical replay remain planned.
 
 ## Game design
 
@@ -30,9 +30,9 @@ Commitments cannot be replaced. Invalid reveals can be retried before the deadli
 
 - **Solidity / Foundry:** authoritative room and turn protocol storage, pure battle resolution, atomic settlement, and complete matches.
 - **Go / PostgreSQL:** planned indexing, reorg recovery, independent replay, read APIs, and public phase progression.
-- **Vue 3 / TypeScript / Vite:** the application entry; Phaser 4, wallet integration, and historical replay follow in their implementation stages.
+- **Vue 3 / TypeScript / Vite:** Router, Pinia, Viem, a local-account lobby, and room details read directly from RPC. Phaser 4, external wallets, battle controls, and historical replay follow.
 
-Players sign official writes with their own wallets. Backend services provide convenience and verification; they cannot override contract state or match outcomes.
+The local browser sends transactions through Anvil's unlocked accounts, with signing performed by the node. The contract uses each transaction sender to identify its player. External wallet signing remains planned. Backend services provide convenience and verification; they cannot override contract state or match outcomes.
 
 ## Contract protocol
 
@@ -60,26 +60,19 @@ The backend launcher builds the contracts with the local compiler. The generated
 
 The [complete-match check](contracts/script/CheckMatches.s.sol) compares the four actual match results against explicit final states and hashes, checks terminal immutability, and runs a bounded sequence of legal orders in a disposable fork. It checks public settlement, premature/repeated settlement rejection, stale Commit/Reveal/settlement requests, next-round input cleanup, unique live-unit occupancy, and continuing settlement events. It reconstructs each sequence round from the initial-state and Reveal events and compares the resulting state/hash with Arena storage. The local [demonstration runner](server/cmd/demotool/main.go) uses the existing Cast executable to submit transactions and archive their actual receipts; it provides no game authority or background Keeper service. It also checks the terminal settlement events in the Victory Points and elimination receipts.
 
+## Local account lobby
+
+The [lobby](client/src/views/LobbyView.vue) creates rooms using the selected local account and opens existing rooms by ID or a copied invitation URL from the same application. Copy invitation produces a link that can be pasted into Find a room or opened directly in another tab. Creation obtains the actual ID from the confirmed MatchCreated event. The [room view](client/src/views/RoomView.vue) reads players, phase, round, deadlines, and result directly from Arena. A different local account can join a waiting room; the contract then starts the first Commit phase.
+
+The account bar reads unlocked accounts and balances from Anvil through Viem's [JSON-RPC wallet client](https://viem.sh/docs/clients/wallet). The page stores the selected address in session storage, independently for each browser tab. Switching accounts returns the current tab to the lobby and clears its room view, form input/errors, invitation feedback, and transaction notices. A directly opened invitation remains on its room page during initial account loading. Room roles follow the creator and opponent recorded by the contract. The node signs transactions, and the browser displays their pending, confirmed, or failed status. Deployment changes clear the transaction context and refresh the current room.
+
+The [synchronization helper](scripts/client-contract.mjs) exports the [typed ABI](client/src/generated/arena.ts) from the compiler artifact. After the local demonstration succeeds, the backend publishes public connection information for the browser and removes it when its node stops. Deployment timestamps distinguish fresh local sessions when the deterministic Arena address repeats. The frontend supplies connection feedback, inline room-ID errors, retry actions, disabled submission states, and responsive layouts. This workflow requires no Go API, wallet extension, private-key import, or manually entered deployment address.
+
 ## Local use
 
 The current tool baseline is Node 22.23.2, npm 10.9.8, Go 1.25.3, Foundry 1.8.1, and Solidity 0.8.30. Install these tools before using the startup scripts. Keep the previously downloaded Solidity compiler in its existing local tools directory; the backend launcher uses it offline.
 
-Install frontend dependencies once:
-
-```
-cd client
-npm install --no-audit --no-fund
-```
-
-For daily use, run one script in each of two terminals at the project root.
-
-Frontend:
-
-```
-./scripts/run-frontend.sh
-```
-
-Open the local address printed by Vite, normally http://127.0.0.1:5173. The page currently displays the project name and availability notice.
+Run one script in each of two terminals at the project root. Start the backend first and wait for its ready message, then start the frontend. The frontend entry installs project dependencies, updates the npm lockfile, synchronizes the ABI when the compiler artifact is available, and starts Vite. The two entries handle their preparation steps automatically.
 
 Backend:
 
@@ -87,7 +80,15 @@ Backend:
 ./scripts/run-backend.sh
 ```
 
-The backend launcher builds the contracts, runs the offline protocol, static rule, result/hash, and battle checks, validates the map, starts Anvil, and deploys Arena. It creates and joins match 1 with Anvil's first two development accounts, checks rooms and Commit/Reveal, then runs four complete matches and checks settlement, events, replay, and state invariants. The current Go application entry runs afterward. These steps run automatically through this single entry point. Contract compilation uses the local compiler; deployment and protocol operations use the local RPC.
+The backend launcher builds the contracts, exports the frontend ABI, runs the offline protocol, static rule, result/hash, and battle checks, validates the map, starts Anvil, and deploys Arena. It creates and joins match 1 with Anvil's first two development accounts, checks rooms and Commit/Reveal, then runs four complete matches and checks settlement, events, replay, and state invariants. It publishes the browser connection information and runs the current Go application entry afterward. These steps run automatically through this single entry point. Contract compilation uses the local compiler; deployment and protocol operations use the local RPC.
+
+Frontend:
+
+```
+./scripts/run-frontend.sh
+```
+
+Open the address printed by Vite, normally http://127.0.0.1:5173. Select Account 1 and create a room. Open another tab, select Account 2, paste the room ID or copied invitation into Find a room, and join from the room page. Both tabs should display the same players and Commit phase after confirmation. Switching accounts after a transaction completes returns that tab to a clean lobby; reopen the invitation to view or join its room with the newly selected account. Browser interactions, compilation, and type checking remain to be verified by the maintainer when running the project.
 
 Keep port 8545 available. Each backend launch starts a fresh in-memory chain at http://127.0.0.1:8545 with chain ID 31337. The launcher prints the Arena address and deployment block. The demonstration finishes match 1 with a Player A Victory Points win in round 7, match 2 with a Player A elimination win in round 10, match 3 with a Player A win after a one-sided Commit timeout, and match 4 with a draw after neither player Reveals. All four remain queryable in Finished. Scripted orders and deterministic salts are public data for this disposable demonstration. The compiled Arena artifact provides its callable methods, events, and errors for direct RPC access.
 
@@ -95,10 +96,10 @@ The demonstration prints each transaction's method, match, round, receipt status
 
 Standard output and error output, including compilation and startup failures, appear in the terminal and are also written to a local log in the project root. Each invocation overwrites the previous log, which is excluded from the repository. Any failed step stops startup and shuts down the launcher's Anvil process. The Go application currently prints its development status and exits; it does not start HTTP, Indexer, or Keeper services. The launcher keeps the local chain running until Ctrl+C. Stopping it discards local chain state.
 
-The frontend lockfile exists. Use npm ci for subsequent dependency installation. CI and the project LICENSE are deferred by the maintainer.
+The frontend manifest pins direct dependencies; its startup script maintains the npm lockfile during installation. CI and the project LICENSE are deferred by the maintainer.
 
 ## Current limits
 
-The contracts support complete matches through the scripted local demonstration. The page does not access a wallet, RPC, or database. Browser gameplay, independent Go replay, indexing, read APIs, Keeper services, and public testnet deployment remain planned. Running the launcher provides local check results; independent security auditing and game-balance evaluation remain separate work.
+The contracts support complete matches through the scripted local demonstration. The browser currently supports local account selection, room creation/joining, and live room details through RPC. Battle rendering, action planning, browser Commit/Reveal controls, external wallet signing, independent Go replay, indexing, read APIs, Keeper services, and public testnet deployment remain planned. Running the launcher provides local check results; independent security auditing and game-balance evaluation remain separate work.
 
 Detailed design and implementation planning are maintained locally.

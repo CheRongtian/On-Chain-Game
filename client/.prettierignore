@@ -1,3 +1,5 @@
 node_modules/
 dist/
 package-lock.json
+src/generated/arena.ts
+public/deployment.json

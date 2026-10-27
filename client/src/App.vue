@@ -1,11 +1,157 @@
 <script setup lang="ts">
-const title = 'On-chain Tactical Arena';
+import { onBeforeUnmount, onMounted, watch } from 'vue';
+import { RouterLink, RouterView, useRouter } from 'vue-router';
+import AppIcon from './components/AppIcon.vue';
+import TransactionNotice from './components/TransactionNotice.vue';
+import { balanceLabel, shortAddress } from './lib/format';
+import { useArenaStore } from './stores/arena';
+import { useTransactionStore } from './stores/transaction';
+
+const arena = useArenaStore();
+const transaction = useTransactionStore();
+const router = useRouter();
+let timer: ReturnType<typeof setInterval> | undefined;
+onMounted(() => {
+  void arena.refresh();
+  timer = setInterval(() => {
+    void arena.refresh();
+  }, 4_000);
+});
+onBeforeUnmount(() => {
+  clearInterval(timer);
+});
+watch([() => arena.address, () => arena.epoch], ([address], [previousAddress]) => {
+  transaction.reset();
+  // Keep direct invitations on first load; later account changes start at the lobby.
+  if (previousAddress && address !== previousAddress) void router.replace({ name: 'lobby' });
+});
+function changeAccount(event: Event) {
+  arena.selectAccount((event.target as HTMLSelectElement).value);
+}
 </script>
 
 <template>
-  <main>
-    <h1>{{ title }}</h1>
-    <p>A two-player on-chain tactical game, currently in development.</p>
-    <p>Matches are not available yet.</p>
-  </main>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <div class="app-shell">
+    <header class="site-header">
+      <RouterLink to="/" class="brand" aria-label="Tactical Arena lobby"
+        ><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span
+        ><span>TACTICAL<span class="brand-light"> ARENA</span></span></RouterLink
+      >
+      <nav aria-label="Main navigation"><RouterLink to="/" class="nav-link">Lobby</RouterLink></nav>
+      <span class="local-tag">LOCAL</span>
+    </header>
+
+    <section class="account-bar" aria-label="Current local account">
+      <div class="account-field">
+        <label for="active-account">Active account</label
+        ><select
+          id="active-account"
+          :value="arena.selected?.address ?? ''"
+          :disabled="!arena.online || !arena.connection?.accounts.length || transaction.busy"
+          @change="changeAccount"
+        >
+          <option v-if="!arena.connection?.accounts.length" value="">
+            Waiting for local accounts…
+          </option>
+          <option
+            v-for="(account, index) in arena.connection?.accounts"
+            :key="account.address"
+            :value="account.address"
+          >
+            Account {{ index + 1 }} · {{ shortAddress(account.address) }}
+          </option>
+        </select>
+      </div>
+      <div class="account-balance">
+        <span class="eyebrow">Local balance</span
+        ><strong>{{ arena.selected ? balanceLabel(arena.selected.balance) : '—' }}</strong>
+      </div>
+      <div class="chain-indicator">
+        <span class="status-dot" :class="{ online: arena.online }" aria-hidden="true"></span>
+        <div>
+          <strong>{{ arena.online ? 'Local Arena online' : 'Local Arena offline' }}</strong
+          ><span class="small muted">{{
+            arena.connection
+              ? `Chain ${arena.connection.deployment.chainId}`
+              : 'Waiting for the backend'
+          }}</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="workspace">
+      <main id="main-content" tabindex="-1">
+        <div v-if="arena.error" class="connection-alert" role="status">
+          <div>
+            <strong>Local chain unavailable</strong>
+            <p>{{ arena.error }}</p>
+          </div>
+          <button class="button secondary" :disabled="arena.refreshing" @click="arena.refresh()">
+            <AppIcon name="refresh" />{{ arena.refreshing ? 'Connecting…' : 'Retry' }}
+          </button>
+        </div>
+        <TransactionNotice /><RouterView />
+      </main>
+      <aside class="side-column" aria-label="Local session details">
+        <section class="panel session-panel" aria-labelledby="session-title">
+          <div class="panel-heading">
+            <h2 id="session-title">Your session</h2>
+            <span class="chip" :class="arena.online ? 'chip-green' : 'chip-amber'">{{
+              arena.online ? 'Connected' : 'Waiting'
+            }}</span>
+          </div>
+          <p class="small muted">
+            Choose an account above to take a seat. Each tab keeps its own selection.
+          </p>
+          <dl class="session-facts">
+            <div>
+              <dt>Network</dt>
+              <dd>Local Anvil</dd>
+            </div>
+            <div>
+              <dt>Block</dt>
+              <dd>{{ arena.connection?.blockNumber.toString() ?? '—' }}</dd>
+            </div>
+          </dl>
+          <div v-if="arena.selected" class="current-address">
+            <span class="eyebrow">Current address</span>
+            <p class="address">{{ arena.selected.address }}</p>
+          </div>
+          <details v-if="arena.connection" class="connection-details">
+            <summary>Connection details</summary>
+            <p class="small address">{{ arena.connection.deployment.rpcUrl }}</p>
+            <p class="small address">{{ arena.connection.deployment.arenaAddress }}</p>
+          </details>
+          <button class="text-button" :disabled="arena.refreshing" @click="arena.refresh()">
+            {{ arena.refreshing ? 'Refreshing…' : 'Refresh connection' }}
+          </button>
+        </section>
+        <section class="squad-panel" aria-labelledby="squad-title">
+          <p class="eyebrow">Your starting squad</p>
+          <h2 id="squad-title">Three roles.<br />One shared battlefield.</h2>
+          <ul>
+            <li>
+              <span class="unit-code">G</span>
+              <div><strong>Guardian</strong><span class="small muted">Hold the line.</span></div>
+            </li>
+            <li>
+              <span class="unit-code">R</span>
+              <div>
+                <strong>Ranger</strong><span class="small muted">Control the distance.</span>
+              </div>
+            </li>
+            <li>
+              <span class="unit-code">S</span>
+              <div><strong>Scout</strong><span class="small muted">Find the opening.</span></div>
+            </li>
+          </ul>
+        </section>
+      </aside>
+    </div>
+    <footer class="site-footer">
+      <span>On-chain Tactical Arena</span
+      ><span>Local chain state resets when the backend restarts.</span>
+    </footer>
+  </div>
 </template>

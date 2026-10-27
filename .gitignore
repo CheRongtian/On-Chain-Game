@@ -8,6 +8,7 @@ __pycache__/
 
 node_modules/
 client/dist/
+client/public/deployment.json
 *.tsbuildinfo
 
 contracts/out/

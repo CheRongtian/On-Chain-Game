@@ -10,6 +10,8 @@ trap stop_local_chain EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+node "$project_root/scripts/client-contract.mjs" clear
+
 check_contracts() {
     local compiler="$project_root/.local/bin/solc-0.8.30"
     local actions_domain actions_encoding actions_hash
@@ -17,6 +19,7 @@ check_contracts() {
     cd "$project_root/contracts"
     printf 'Building contracts offline...\n'
     forge build --use "$compiler" --offline
+    node "$project_root/scripts/client-contract.mjs" abi
 
     printf 'Checking protocol encoding offline...\n'
     actions_domain="$(cast keccak 'OnChainTacticalArena.Actions')"
@@ -55,6 +58,9 @@ deploy_local_arena
 check_local_arena
 check_local_turns
 check_local_matches
+
+node "$project_root/scripts/client-contract.mjs" publish \
+    "$local_rpc_url" "$arena_address" "$deployment_block"
 
 cd "$project_root/server"
 printf 'Starting backend...\n'
