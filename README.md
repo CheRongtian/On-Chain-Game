@@ -2,7 +2,7 @@
 
 A two-player on-chain tactical game in development. Each player commands three units on an 8x8 board, using hidden orders, simultaneous movement, combat, and objective control.
 
-The current project provides a Vue/TypeScript local-account lobby, room creation/joining, host-controlled game starts, live room details, a Phaser battlefield with local action planning and browser Commit/Reveal rounds, Go command entry, map validation, shared state/battle vectors, and an Arena with Commit/Reveal, battle settlement, public timeout finalization, and state queries. The browser uses Anvil's unlocked development accounts for real local-chain transactions. The backend launcher deploys an empty Arena and waits for browser actions. Players create rooms, take seats, and start games through explicit controls. The browser saves orders before Commit, restores Reveal after refresh, supports encrypted order backups, and continues confirmed rounds automatically and provides manual timeout controls. External wallet integration, database services, and historical replay remain planned.
+The current project provides a Vue/TypeScript local-account lobby, room creation/joining, host-controlled game starts, live room details, a Phaser battlefield with local action planning and browser Commit/Reveal rounds, independent Go rules and hashing, deterministic offline simulation, map validation, shared protocol/state/battle vectors, and an Arena with Commit/Reveal, battle settlement, public timeout finalization, and state queries. The browser uses Anvil's unlocked development accounts for real local-chain transactions. The backend launcher deploys an empty Arena and waits for browser actions. Players create rooms, take seats, and start games through explicit controls. The browser saves orders before Commit, restores Reveal after refresh, supports encrypted order backups, continues confirmed rounds automatically, and provides manual timeout controls. External wallet integration, database services, and historical replay remain planned.
 
 ## Game design
 
@@ -29,7 +29,7 @@ Commitments cannot be replaced. Invalid reveals can be retried before the deadli
 ## Architecture
 
 - **Solidity / Foundry:** authoritative room and turn protocol storage, pure battle resolution, atomic settlement, and complete matches.
-- **Go / PostgreSQL:** planned indexing, reorg recovery, independent replay, read APIs, and public phase progression.
+- **Go / PostgreSQL:** independent offline rules, encoding, hashing, and simulation are implemented; indexing, reorg recovery, historical replay, read APIs, and public phase progression are planned.
 - **Vue 3 / TypeScript / Vite / Phaser:** Router, Pinia, Viem, a local-account lobby, room and battlefield state read directly from RPC, local action drafts, persistent round secrets, one squad confirmation per round, and confirmed result animations. External wallets and historical replay follow.
 
 The local browser sends transactions through Anvil's unlocked accounts, with signing performed by the node. The contract uses each transaction sender to identify its player. External wallet signing remains planned. Backend services provide convenience and verification; they cannot override contract state or match outcomes.
@@ -57,6 +57,30 @@ The [shared state vectors](config/state-vectors.json) contain the frozen rules h
 The [shared battle vectors](config/battle-vectors.json) contain complete input snapshots, both action squads, explicit expected next states and summaries, and fixed expected battle hashes. They cover shared endpoints and paths, moving targets, empty/friendly targets, rays through units, aggregate shielding, simultaneous deaths, overkill, resource income/caps, control ties, victory priority, and the final round. Their expected states and summaries are authored per case, with digests generated offline using Cast. Central control awards points to only one side per round; comparisons with both players already at the threshold remain covered by the state vectors.
 
 The backend launcher builds the contracts with the local compiler and deploys Arena. It leaves the room registry empty. Development fixtures and the demonstration runner remain in the source tree for contract work; the daily launcher does not invoke them or send room and turn transactions.
+
+## Go rules and offline tools
+
+The [Go rule package](server/internal/game/types.go) implements fixed state and action types, canonical validation, legal paths and targets, squad Energy budgets, simultaneous round resolution, outcomes, static ABI encoding, and protocol Keccak-256 hashing. It uses value copies of fixed arrays and has no RPC, wallet, database, or process dependency. The simulator and future replay service share these rules. Go predictions and simulations have no authority over official on-chain games.
+
+The [vector runner](server/internal/offline/vectors.go) reads the existing 18 outcome cases, 12 state hashes, and 20 battle cases. The [protocol vectors](config/protocol-vectors.json) add 13 fixed action-encoding, ActionsHash, and Commitment references generated offline with Viem's standard ABI encoder and Keccak-256. They cover all action kinds, context isolation, round and player binding, and Salt boundaries. Expected values are committed data and are not generated by the Go implementation during verification. Differences identify the case, field, expected value, and actual value.
+
+Run the fixed-vector comparison from the project root:
+
+```
+./scripts/run-backend.sh verify
+```
+
+This mode compares Go with the fixed references, then runs the existing Solidity outcome and battle checks and the new protocol comparison inside Forge's offline EVM. It requires neither Anvil nor PostgreSQL. The backend script prepares the pinned Go dependencies and updates dependency checksums before running the selected mode.
+
+Run deterministic multi-round simulation and differential comparison:
+
+```
+./scripts/run-backend.sh simulate --seed 42 --games 10
+```
+
+The [generator](server/internal/game/generate.go) enumerates legal actions in a fixed order and uses an explicitly seeded random source. Each squad stays within its round-start Energy budget. Generated games run to a contract-rule terminal result, and the same seed and game count produce the same complete input/output records. Timing and throughput are reported separately from deterministic records. The [offline Solidity comparator](contracts/script/CompareRules.s.sol) independently resolves every generated input and compares all state fields, summary fields, and StateHash. It runs in a local EVM with no RPC or broadcast. A difference or Solidity rejection stops the command with the failing seed/case and a single-round reproduction containing its full start state, context, and both squads. To replay a saved failure, pass its printed reproduction filename through the simulation mode's `--input` option. Run records and reproduction files stay in the ignored local working area.
+
+Both offline modes use the existing backend script and overwrite the same root log while displaying output in the terminal. They run before chain startup logic, so selecting one does not start or deploy a chain, clear the published deployment, or create game transactions. The default backend mode continues to prepare the local chain and wait for browser operations; it does not run batch simulation. The first dependency preparation may need network access; the rule calculations and Solidity reference execution are offline once tools and dependencies are available. Runtime comparison results and performance baselines must be established by the maintainer when invoking these modes.
 
 ## Local account lobby
 
@@ -120,12 +144,12 @@ Open the address printed by Vite, normally http://127.0.0.1:5173. Select Account
 
 Keep port 8545 available. Each backend launch starts a fresh in-memory chain at http://127.0.0.1:8545 with chain ID 31337 and two local development accounts. The launcher prints the Arena address and deployment block. The newly deployed Arena starts with zero rooms; its first browser-created room receives ID 1. Old rooms disappear when the backend restarts.
 
-Standard output and error output, including compilation and startup failures, appear in the terminal and are also written to a local log in the project root. Each invocation overwrites the previous log, which is excluded from the repository. Any failed step stops startup and shuts down the launcher's Anvil process. The Go application currently prints its development status and exits; it does not start HTTP, Indexer, or Keeper services. The launcher keeps the local chain running until Ctrl+C. Stopping it discards local chain state.
+Standard output and error output, including compilation and startup failures, appear in the terminal and are also written to a local log in the project root. Each invocation overwrites the previous log, which is excluded from the repository. Any failed step stops startup and shuts down the launcher's Anvil process. The Go application currently prints its offline-tool availability and exits; it does not start HTTP, Indexer, or Keeper services. The launcher keeps the local chain running until Ctrl+C. Stopping it discards local chain state.
 
 The frontend manifest pins direct dependencies; its startup script maintains the npm lockfile during installation. CI and the project LICENSE are deferred by the maintainer.
 
 ## Current limits
 
-The contracts implement complete matches through Commit/Reveal, settlement, and timeout handling. The browser supports local account selection, room creation/joining, host-controlled starts and automatic battlefield entry, live room and battle details through RPC, a Phaser board, local action planning, persistent browser Commit/Reveal, encrypted order backups, a single squad confirmation followed by automatic Reveal and settlement, manual timeout handling, and confirmed result animations. External wallet signing, independent Go replay, indexing, read APIs, Keeper services, and public testnet deployment remain planned. The daily launcher prepares the local chain for manual browser interaction. Independent security auditing and game-balance evaluation remain separate work.
+The contracts implement complete matches through Commit/Reveal, settlement, and timeout handling. The browser supports local account selection, room creation/joining, host-controlled starts and automatic battlefield entry, live room and battle details through RPC, a Phaser board, local action planning, persistent browser Commit/Reveal, encrypted order backups, a single squad confirmation followed by automatic Reveal and settlement, manual timeout handling, and confirmed result animations. The Go rule engine, fixed-vector comparison, and seeded offline simulation are implemented. External wallet signing, historical Go replay, indexing, read APIs, Keeper services, and public testnet deployment remain planned. The daily launcher prepares the local chain for manual browser interaction. Independent security auditing and game-balance evaluation remain separate work.
 
 Detailed design and implementation planning are maintained locally.

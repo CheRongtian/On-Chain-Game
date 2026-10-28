@@ -10,6 +10,8 @@ optimizer_runs = 200
 fs_permissions = [
     { access = "read", path = "../config/state-vectors.json" },
     { access = "read", path = "../config/battle-vectors.json" },
+    { access = "read", path = "../config/protocol-vectors.json" },
+    { access = "read-write", path = "../.local/simulation" },
 ]
 
 [lint]

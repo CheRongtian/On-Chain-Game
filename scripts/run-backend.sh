@@ -4,6 +4,27 @@ set -euo pipefail
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 exec > >(tee "$project_root/record.log") 2>&1
 
+mode="${1:-start}"
+if (( $# > 0 )); then
+    shift
+fi
+case "$mode" in
+    start|verify|simulate) ;;
+    *) printf 'Unknown backend mode: %s. Use start, verify, or simulate.\n' "$mode" >&2; exit 1 ;;
+esac
+if [[ "$mode" == "start" ]] && (( $# > 0 )); then
+    printf 'The start mode takes no additional arguments.\n' >&2
+    exit 1
+fi
+
+cd "$project_root/server"
+printf 'Preparing Go dependencies...\n'
+go mod tidy
+if [[ "$mode" != "start" ]]; then
+    go run ./cmd/arena-server "$mode" "$@"
+    exit
+fi
+
 source "$project_root/scripts/local-chain.sh"
 trap stop_local_chain EXIT
 trap 'exit 130' INT
