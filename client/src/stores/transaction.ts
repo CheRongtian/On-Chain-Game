@@ -3,7 +3,7 @@ import { defineStore } from 'pinia';
 import type { Hash } from 'viem';
 import type { ActionBundle } from '../lib/battle';
 import { arenaAbi } from '../generated/arena';
-import { accountClient, createdRoomId, publicClient } from '../lib/arena';
+import { accountClient, createdRoomId, publicClient, readRoom } from '../lib/arena';
 import { errorMessage } from '../lib/errors';
 import { useArenaStore } from './arena';
 
@@ -144,6 +144,25 @@ export const useTransactionStore = defineStore('transaction', () => {
       void arena.refresh();
       return id;
     } catch (cause) {
+      if (
+        current() &&
+        matchId !== undefined &&
+        (command.action === 'settle' || command.action === 'timeout')
+      ) {
+        try {
+          const room = await readRoom(deployment, matchId);
+          const expectedPhase = command.action === 'settle' ? 4 : command.phase;
+          if (current() && (room.round !== command.round || room.phase !== expectedPhase)) {
+            hash.value = undefined;
+            message.value = 'The room advanced on chain. Showing the latest state.';
+            status.value = 'confirmed';
+            void arena.refresh();
+            return matchId;
+          }
+        } catch {
+          // Keep the original transaction failure when the chain cannot be read.
+        }
+      }
       if (current()) {
         status.value = 'failed';
         message.value = errorMessage(cause);

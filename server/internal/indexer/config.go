@@ -22,6 +22,8 @@ type config struct {
 	HTTP            string
 	Confirmations   uint64
 	ABI             abi.ABI
+	KeeperEnabled   bool
+	KeeperKey       string `json:"-"`
 }
 
 func readConfig(root string) (config, error) {
@@ -48,6 +50,18 @@ func readConfig(root string) (config, error) {
 	cfg.HTTP = os.Getenv("HTTP_ADDRESS")
 	if cfg.HTTP == "" {
 		cfg.HTTP = "127.0.0.1:8080"
+	}
+	cfg.KeeperEnabled = true
+	if value := os.Getenv("KEEPER_ENABLED"); value != "" {
+		cfg.KeeperEnabled, err = strconv.ParseBool(value)
+		if err != nil {
+			return cfg, fmt.Errorf("KEEPER_ENABLED must be true or false")
+		}
+	}
+	cfg.KeeperKey = os.Getenv("KEEPER_PRIVATE_KEY")
+	if cfg.KeeperKey == "" {
+		// Public development key, funded only on this project's local Anvil chain.
+		cfg.KeeperKey = strings.Repeat("0", 63) + "3"
 	}
 	depth := os.Getenv("CONFIRMATION_DEPTH")
 	if depth != "" {

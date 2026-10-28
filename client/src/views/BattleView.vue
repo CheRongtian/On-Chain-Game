@@ -2,12 +2,13 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
 import AppIcon from '../components/AppIcon.vue';
+import CurrentAccount from '../components/CurrentAccount.vue';
 import BattlefieldBoard from '../components/BattlefieldBoard.vue';
 import UnitActionDrawer from '../components/UnitActionDrawer.vue';
 import RoundControls from '../components/RoundControls.vue';
 import type { BattlefieldFrame } from '../battlefield/bridge';
 import { actionNames, draftLabel, emptyDrafts, unitCodes, unitNames } from '../lib/battle';
-import { outcomes, parseRoomId, phases, reasons, shortAddress } from '../lib/format';
+import { outcomes, parseRoomId, phases, reasons } from '../lib/format';
 import { useArenaStore } from '../stores/arena';
 import { useBattleStore } from '../stores/battle';
 
@@ -93,9 +94,6 @@ watch(
 function focusBoard() {
   void nextTick(() => board.value?.focusUnit(lastUnit.value));
 }
-function changeAccount(event: Event) {
-  arena.selectAccount((event.target as HTMLSelectElement).value);
-}
 function escape(event: KeyboardEvent) {
   if (event.key === 'Escape' && battle.interaction === 'target') {
     event.preventDefault();
@@ -125,23 +123,7 @@ onBeforeUnmount(() => {
         <h1>Room #{{ route.params.matchId }}</h1>
         <span v-if="battle.room">Round {{ battle.room.round }} · {{ roundLabel }}</span>
       </div>
-      <label class="account-picker"
-        ><span class="sr-only">Active local account</span
-        ><select
-          :value="arena.address ?? ''"
-          :disabled="!arena.online || battle.busy"
-          @change="changeAccount"
-        >
-          <option v-if="!arena.connection?.accounts.length" value="">Offline</option>
-          <option
-            v-for="(account, index) in arena.connection?.accounts"
-            :key="account.address"
-            :value="account.address"
-          >
-            Account {{ index + 1 }} · {{ shortAddress(account.address) }}
-          </option>
-        </select></label
-      >
+      <CurrentAccount />
       <button
         class="refresh"
         :disabled="battle.loading || battle.busy || !arena.online"
@@ -306,16 +288,6 @@ h1 {
   display: block;
   color: var(--text-muted);
   font-size: 0.6875rem;
-}
-.account-picker {
-  margin: 0;
-  width: 190px;
-  max-width: 35%;
-}
-.account-picker select {
-  min-height: 40px;
-  font-size: 0.75rem;
-  padding: 8px;
 }
 .refresh {
   width: 36px;
@@ -538,10 +510,6 @@ button:disabled {
   }
   .lobby-link span {
     display: none;
-  }
-  .account-picker {
-    width: 150px;
-    max-width: 40%;
   }
   .scoreline {
     padding: 6px 8px;

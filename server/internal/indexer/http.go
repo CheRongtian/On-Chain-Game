@@ -16,22 +16,23 @@ import (
 )
 
 type metadata struct {
-	ProcessID           int       `json:"processId"`
-	ChainID             uint64    `json:"chainId"`
-	Arena               string    `json:"arena"`
-	DeploymentBlock     uint64    `json:"deploymentBlock"`
-	DeploymentHash      string    `json:"deploymentHash"`
-	IndexedBlock        int64     `json:"indexedBlock"`
-	IndexedHash         string    `json:"indexedHash"`
-	ObservedBlock       uint64    `json:"observedBlock"`
-	Lag                 uint64    `json:"lag"`
-	RequiredDescendants uint64    `json:"requiredDescendants"`
-	ConfirmationPolicy  string    `json:"confirmationPolicy"`
-	LastSync            time.Time `json:"lastSuccessfulSync"`
-	Ready               bool      `json:"ready"`
-	Blocked             bool      `json:"blocked"`
-	Error               string    `json:"error,omitempty"`
-	Verification        string    `json:"verification"`
+	ProcessID           int          `json:"processId"`
+	ChainID             uint64       `json:"chainId"`
+	Arena               string       `json:"arena"`
+	DeploymentBlock     uint64       `json:"deploymentBlock"`
+	DeploymentHash      string       `json:"deploymentHash"`
+	IndexedBlock        int64        `json:"indexedBlock"`
+	IndexedHash         string       `json:"indexedHash"`
+	ObservedBlock       uint64       `json:"observedBlock"`
+	Lag                 uint64       `json:"lag"`
+	RequiredDescendants uint64       `json:"requiredDescendants"`
+	ConfirmationPolicy  string       `json:"confirmationPolicy"`
+	LastSync            time.Time    `json:"lastSuccessfulSync"`
+	Ready               bool         `json:"ready"`
+	Blocked             bool         `json:"blocked"`
+	Error               string       `json:"error,omitempty"`
+	Verification        string       `json:"verification"`
+	Keeper              keeperStatus `json:"keeper"`
 }
 
 type apiError struct {
@@ -52,10 +53,12 @@ func writeResponse(w http.ResponseWriter, status int, value any) {
 func (s *service) meta(ctx context.Context, tx *sql.Tx) (metadata, error) {
 	s.mu.RLock()
 	seen := s.observed
+	keeper := s.keeperState
 	s.mu.RUnlock()
+	keeper.Enabled = s.cfg.KeeperEnabled
 	m := metadata{ProcessID: os.Getpid(), ChainID: s.cfg.ChainID, Arena: s.cfg.Arena, DeploymentBlock: s.cfg.From, DeploymentHash: s.anchor.Hash().Hex(),
 		ObservedBlock: seen.Head, RequiredDescendants: s.cfg.Confirmations, ConfirmationPolicy: "block_depth", LastSync: seen.LastSync,
-		Blocked: seen.Blocked, Error: seen.Error, Verification: "available_per_match"}
+		Blocked: seen.Blocked, Error: seen.Error, Verification: "available_per_match", Keeper: keeper}
 	err := tx.QueryRowContext(ctx, `SELECT block_number,block_hash FROM sync_cursors WHERE deployment_id=$1`, s.deploymentID).Scan(&m.IndexedBlock, &m.IndexedHash)
 	if err != nil {
 		return m, err

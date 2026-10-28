@@ -96,6 +96,7 @@ type checkReport struct {
 	Operations     []checkedOperation `json:"operations"`
 	History        []historyCheck     `json:"historyChecks"`
 	FaultMatches   []*checkedMatch    `json:"faultMatches"`
+	Keeper         []keeperCheck      `json:"keeperChecks,omitempty"`
 	Receipts       []struct {
 		MatchID string         `json:"matchId"`
 		Method  string         `json:"method"`
@@ -116,14 +117,18 @@ type checker struct {
 	client   *http.Client
 	accounts [2]common.Address
 	report   *checkReport
+	gate     *sql.Conn
 }
 
-func Check(ctx context.Context, root string) (err error) {
+func Check(ctx context.Context, root string, withKeeper bool) (err error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	cfg, err := readConfig(root)
 	if err != nil {
 		return err
+	}
+	if withKeeper && !cfg.KeeperEnabled {
+		return fmt.Errorf("Keeper acceptance requires KEEPER_ENABLED=true; ordinary manual play supports false")
 	}
 	dir := filepath.Join(root, ".local", "indexer")
 	if err = os.MkdirAll(dir, 0755); err != nil {
@@ -147,7 +152,7 @@ func Check(ctx context.Context, root string) (err error) {
 			}
 		}
 		if err == nil {
-			log.Printf("PASS: indexing, independent replay, tamper detection, branch recovery, crash recovery, and rebuild matched in %s. Local acceptance report saved.", report.Duration.Round(time.Millisecond))
+			log.Printf("PASS: indexing, replay, recovery, and requested acceptance scenarios matched in %s. Local acceptance report saved.", report.Duration.Round(time.Millisecond))
 		}
 	}()
 	c := &checker{ctx: ctx, root: root, cfg: cfg, client: &http.Client{Timeout: 35 * time.Second}, report: report}
@@ -214,7 +219,11 @@ func Check(ctx context.Context, root string) (err error) {
 	if err != nil {
 		return fmt.Errorf("find the active indexed deployment: %w", err)
 	}
-	c.store = &service{cfg: cfg, db: c.db, deploymentID: deploymentID}
+	c.store = &service{cfg: cfg, db: c.db, deploymentID: deploymentID, rpc: c.rpc, chain: c.chain, anchor: anchor}
+	if err = c.holdKeeper(); err != nil {
+		return err
+	}
+	defer func() { releaseKeeperGate(c.gate, deploymentID) }()
 	for _, plan := range []struct {
 		name   string
 		rounds uint8
@@ -290,6 +299,11 @@ func Check(ctx context.Context, root string) (err error) {
 	}
 	if err = c.checkHistory(); err != nil {
 		return err
+	}
+	if withKeeper {
+		if err = c.checkKeeper(); err != nil {
+			return fmt.Errorf("Keeper acceptance: %w", err)
+		}
 	}
 	report.Status = "passed"
 	return nil
@@ -418,6 +432,12 @@ func (c *checker) send(entry *checkedMatch, player int, method string, args ...a
 		case <-ticker.C:
 		}
 	}
+	return c.recordReceipt(entry, method, receipt)
+}
+
+func (c *checker) recordReceipt(entry *checkedMatch, method string, receipt *types.Receipt) (*types.Receipt, error) {
+	arena := common.HexToAddress(c.cfg.Arena)
+	var err error
 	index := len(c.report.Receipts)
 	c.report.Receipts = append(c.report.Receipts, struct {
 		MatchID string         `json:"matchId"`
@@ -425,7 +445,7 @@ func (c *checker) send(entry *checkedMatch, player int, method string, args ...a
 		Receipt *types.Receipt `json:"receipt"`
 	}{entry.ID, method, receipt})
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		return receipt, fmt.Errorf("%s transaction %s reverted at block %s", method, hash.Hex(), receipt.BlockNumber)
+		return receipt, fmt.Errorf("%s transaction %s reverted at block %s", method, receipt.TxHash.Hex(), receipt.BlockNumber)
 	}
 	for _, raw := range receipt.Logs {
 		if raw.Address != arena {

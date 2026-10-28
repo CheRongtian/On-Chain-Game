@@ -3,10 +3,11 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 import { RouterLink, useRoute, useRouter } from 'vue-router';
 import { zeroAddress } from 'viem';
 import AppIcon from '../components/AppIcon.vue';
+import CurrentAccount from '../components/CurrentAccount.vue';
 import { readRoom, requireHostStart } from '../lib/arena';
 import type { Room } from '../lib/arena';
 import { errorMessage } from '../lib/errors';
-import { chainDate, parseRoomId, phases, shortAddress } from '../lib/format';
+import { chainDate, parseRoomId, phases } from '../lib/format';
 import { useArenaStore } from '../stores/arena';
 import { useTransactionStore } from '../stores/transaction';
 
@@ -136,9 +137,6 @@ async function joinRoom() {
   const joined = await transaction.joinRoom(matchId.value);
   if (joined !== undefined) await readState(true);
 }
-function changeAccount(event: Event) {
-  arena.selectAccount((event.target as HTMLSelectElement).value);
-}
 async function copyInvitation() {
   const path = router.resolve({
     name: 'room',
@@ -156,24 +154,8 @@ async function copyInvitation() {
 <template>
   <main id="main-content" class="room-screen" tabindex="-1">
     <nav aria-label="Room navigation">
-      <RouterLink to="/" class="lobby"><AppIcon name="back" />Lobby</RouterLink
-      ><label
-        ><span class="sr-only">Active local account</span
-        ><select
-          :value="arena.address ?? ''"
-          :disabled="!arena.online || transaction.busy"
-          @change="changeAccount"
-        >
-          <option v-if="!arena.connection?.accounts.length" value="">Waiting for accounts…</option>
-          <option
-            v-for="(account, index) in arena.connection?.accounts"
-            :key="account.address"
-            :value="account.address"
-          >
-            Account {{ index + 1 }} · {{ shortAddress(account.address) }}
-          </option>
-        </select></label
-      >
+      <RouterLink to="/" class="lobby"><AppIcon name="back" />Lobby</RouterLink>
+      <CurrentAccount />
     </nav>
     <header>
       <div>
@@ -310,15 +292,6 @@ nav {
   gap: 8px;
   min-height: 44px;
   color: var(--text-muted);
-}
-nav label {
-  width: 210px;
-  max-width: 55%;
-  margin: 0;
-}
-nav select {
-  min-height: 44px;
-  font-size: 0.8125rem;
 }
 header {
   display: flex;

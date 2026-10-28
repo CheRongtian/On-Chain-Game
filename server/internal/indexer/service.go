@@ -38,6 +38,8 @@ type service struct {
 	deploymentID int64
 	mu           sync.RWMutex
 	observed     observation
+	keeper       *keeper
+	keeperState  keeperStatus
 }
 
 func Run(ctx context.Context, root, operation string) error {
@@ -121,6 +123,21 @@ func Run(ctx context.Context, root, operation string) error {
 		return fmt.Errorf("initial indexing: %w", err)
 	}
 	s.observed = observation{Head: head, LastSync: time.Now().UTC()}
+	if cfg.KeeperEnabled {
+		prepare, finish := context.WithTimeout(ctx, 15*time.Second)
+		s.runKeeper(prepare)
+		finish()
+	}
+	if !cfg.KeeperEnabled {
+		log.Print("Keeper disabled. Players can still settle rounds and finalize timeouts.")
+	}
+	keeperReadiness := "disabled"
+	if cfg.KeeperEnabled {
+		keeperReadiness = "enabled"
+		if s.keeperState.Error != "" {
+			keeperReadiness = "unavailable; see the Keeper error above"
+		}
+	}
 	listener, err := net.Listen("tcp", cfg.HTTP)
 	if err != nil {
 		return fmt.Errorf("listen for read API: %w", err)
@@ -131,7 +148,7 @@ func Run(ctx context.Context, root, operation string) error {
 	workerCtx, stopWorker := context.WithCancel(ctx)
 	workerDone := make(chan struct{})
 	go func() { defer close(workerDone); s.follow(workerCtx) }()
-	log.Printf("Local Arena is ready. Read API: http://%s. Indexed block %d. Create rooms in the browser; the host clicks Start game.", cfg.HTTP, head)
+	log.Printf("Local Arena is ready. Read API: http://%s. Indexed block %d. Keeper: %s. Create rooms in the browser; the host clicks Start game.", cfg.HTTP, head, keeperReadiness)
 	select {
 	case <-ctx.Done():
 		err = nil
@@ -185,6 +202,11 @@ func (s *service) follow(ctx context.Context) {
 		}
 		if errors.Is(err, errDeploymentChanged) {
 			return
+		}
+		if err == nil && s.cfg.KeeperEnabled {
+			request, finish := context.WithTimeout(ctx, 15*time.Second)
+			s.runKeeper(request)
+			finish()
 		}
 	}
 }

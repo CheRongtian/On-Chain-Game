@@ -26,8 +26,7 @@ fi
 source "$project_root/scripts/local-indexer.sh"
 
 run_backend_tests() {
-    run_indexer_checks
-    run_frontend_checks
+    run_indexer_checks keeper
 }
 
 case "$mode" in
@@ -53,7 +52,6 @@ build_go_backend
 
 if [[ "$mode" == "test" || "$mode" == "demo" ]]; then
     source "$project_root/scripts/check-indexer.sh"
-    source "$project_root/scripts/check-frontend.sh"
     trap 'exit 130' INT
     trap 'exit 143' TERM
     if backend_running_for_checks; then

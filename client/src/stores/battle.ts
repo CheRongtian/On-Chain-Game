@@ -503,7 +503,7 @@ export const useBattleStore = defineStore('battle', () => {
         actionError.value = transaction.message || 'Round processing stopped. Retry to continue.';
         return false;
       }
-      // Another tab may have completed the same action while this request was in flight.
+      // Another tab or Keeper may have advanced the room while this request was in flight.
       if (completed && transaction.status === 'failed') transaction.reset();
       return true;
     } catch (cause) {

@@ -105,6 +105,18 @@ CREATE TABLE IF NOT EXISTS sync_cursors (
     block_hash TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS keeper_jobs (
+    id BIGSERIAL PRIMARY KEY,
+    deployment_id BIGINT NOT NULL REFERENCES deployments(id),
+    match_id NUMERIC(78, 0) NOT NULL,
+    round SMALLINT NOT NULL,
+    phase SMALLINT NOT NULL,
+    operation TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (deployment_id, match_id, round, phase, operation)
+);
+
 CREATE TABLE IF NOT EXISTS keeper_attempts (
     id BIGSERIAL PRIMARY KEY,
     deployment_id BIGINT NOT NULL,
@@ -115,5 +127,25 @@ CREATE TABLE IF NOT EXISTS keeper_attempts (
     status TEXT NOT NULL,
     error TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (deployment_id, match_id) REFERENCES matches(deployment_id, match_id)
+    CONSTRAINT keeper_attempts_deployment_fkey FOREIGN KEY (deployment_id) REFERENCES deployments(id)
 );
+
+-- Transaction history survives projection rebuilds and displaced matches.
+ALTER TABLE keeper_attempts DROP CONSTRAINT IF EXISTS keeper_attempts_deployment_id_match_id_fkey;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='keeper_attempts'::regclass AND conname='keeper_attempts_deployment_fkey') THEN
+        ALTER TABLE keeper_attempts ADD CONSTRAINT keeper_attempts_deployment_fkey
+            FOREIGN KEY (deployment_id) REFERENCES deployments(id);
+    END IF;
+END; $$;
+ALTER TABLE keeper_attempts ADD COLUMN IF NOT EXISTS job_id BIGINT REFERENCES keeper_jobs(id);
+ALTER TABLE keeper_attempts ADD COLUMN IF NOT EXISTS signer TEXT;
+ALTER TABLE keeper_attempts ADD COLUMN IF NOT EXISTS nonce BIGINT;
+ALTER TABLE keeper_attempts ADD COLUMN IF NOT EXISTS raw_tx BYTEA;
+ALTER TABLE keeper_attempts ADD COLUMN IF NOT EXISTS tip_cap NUMERIC(78, 0);
+ALTER TABLE keeper_attempts ADD COLUMN IF NOT EXISTS fee_cap NUMERIC(78, 0);
+ALTER TABLE keeper_attempts ADD COLUMN IF NOT EXISTS receipt JSONB;
+ALTER TABLE keeper_attempts ADD COLUMN IF NOT EXISTS receipt_block BIGINT;
+ALTER TABLE keeper_attempts ADD COLUMN IF NOT EXISTS receipt_hash TEXT;
+ALTER TABLE keeper_attempts ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS keeper_attempts_job ON keeper_attempts(job_id, id);

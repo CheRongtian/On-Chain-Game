@@ -16,5 +16,9 @@ backend_running_for_checks() {
 run_indexer_checks() {
     cd "$project_root/server"
     printf 'Running indexing, replay, and recovery acceptance checks...\n'
-    run_backend_check "$indexer_binary" check-indexer
+    if [[ "${1:-}" == "keeper" ]]; then
+        run_backend_check "$indexer_binary" check-indexer keeper
+    else
+        run_backend_check "$indexer_binary" check-indexer
+    fi
 }
