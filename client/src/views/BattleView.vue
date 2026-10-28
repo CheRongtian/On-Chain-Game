@@ -256,6 +256,9 @@ onBeforeUnmount(() => {
       </div>
       <div class="dock-status">
         <p role="status">{{ status }}</p>
+        <RouterLink v-if="battle.room?.outcome" :to="`/history/${route.params.matchId}`"
+          >View replay</RouterLink
+        >
         <button v-if="battle.canUndo" @click="battle.undo()">Undo</button
         ><span class="legend">△ Energy · C Control · Pink: draft</span>
       </div>

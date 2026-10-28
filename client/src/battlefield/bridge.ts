@@ -11,6 +11,11 @@ export interface BattlefieldFrame {
   readonly selectedUnit: number;
   readonly legalCells: readonly number[];
   readonly resolutions: readonly RoundResolution[];
+  readonly playback?: {
+    readonly revision: number;
+    readonly paused: boolean;
+    readonly speed: number;
+  };
 }
 
 // Each mounted board owns its bridge; no events cross tabs or room instances.

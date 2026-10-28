@@ -20,6 +20,7 @@ func (s *service) replay(ctx context.Context, tx *sql.Tx, id string, meta metada
 	if err := tx.QueryRowContext(ctx, `SELECT data FROM matches WHERE deployment_id=$1 AND match_id=$2`, s.deploymentID, id).Scan(&stored); err != nil {
 		return e.result, err
 	}
+	e.result.Match = stored
 	if meta.Error != "" || meta.Blocked {
 		e.result.Verification.Message = "Indexer recovery or an RPC error prevents current verification."
 		return e.result, nil

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"onchainarena/server/internal/game"
 )
 
 func (s *service) replayRoute(view string) http.HandlerFunc {
@@ -38,7 +40,7 @@ func (s *service) replayRoute(view string) http.HandlerFunc {
 		if !result.Verification.Canonical && meta.Error == "" {
 			meta.Ready, meta.Error = false, result.Verification.Message
 		}
-		response := map[string]any{"meta": meta, "matchId": id, "verification": result.Verification,
+		response := map[string]any{"meta": meta, "matchId": id, "match": result.Match, "verification": result.Verification,
 			"confirmation": meta.confirmation(uint64(max(meta.IndexedBlock, 0)))}
 		if view == "verification" {
 			return response, nil
@@ -55,7 +57,23 @@ func (s *service) replayRoute(view string) http.HandlerFunc {
 		response["limit"], response["offset"], response["hasMore"] = limit, offset, end < len(items)
 		if view == "replay" {
 			response["rounds"] = result.Rounds
+			response["map"], response["rules"] = replayBoardConfig()
 		}
 		return response, nil
 	})
+}
+
+func replayBoardConfig() (map[string]any, map[string]any) {
+	board, rules := game.DefaultMap(), game.DefaultRules()
+	return map[string]any{
+			"mapId": board.MapID, "width": board.Width, "height": board.Height,
+			"obstacles": strconv.FormatUint(board.Obstacles, 10), "resources": strconv.FormatUint(board.Resources, 10),
+			"controlZone": strconv.FormatUint(board.ControlZone, 10), "spawnsA": board.SpawnsA, "spawnsB": board.SpawnsB,
+		}, map[string]any{
+			"initialEnergy": rules.InitialEnergy, "maxEnergy": rules.MaxEnergy, "maxRounds": rules.MaxRounds,
+			"victoryThreshold": rules.VictoryThreshold, "resourceIncome": rules.ResourceIncome, "controlAward": rules.ControlAward,
+			"phaseDuration": rules.PhaseDuration, "roomLifetime": rules.RoomLifetime, "maxHp": rules.MaxHP,
+			"moveRange": rules.MoveRange, "attackRange": rules.AttackRange, "attackDamage": rules.AttackDamage,
+			"skillCost": rules.SkillCost, "shieldReduction": rules.ShieldReduction, "powerShotDamage": rules.PowerShotDamage, "dashRange": rules.DashRange,
+		}
 }

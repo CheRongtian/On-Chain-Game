@@ -280,6 +280,13 @@ input[aria-invalid='true'] {
   align-items: start;
   padding: var(--space-12) 0 var(--space-16);
 }
+.workspace.history-workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+.site-header nav {
+  display: flex;
+  gap: 24px;
+}
 main {
   min-width: 0;
 }
@@ -811,7 +818,14 @@ dd {
   }
   .site-header {
     min-height: 80px;
-    gap: var(--space-6);
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px 0;
+  }
+  .site-header nav {
+    order: 3;
+    flex-basis: 100%;
+    gap: 20px;
   }
   .brand {
     font-size: 0.8125rem;

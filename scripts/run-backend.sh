@@ -10,8 +10,8 @@ if (( $# > 0 )); then
     shift
 fi
 case "$mode" in
-    start|test|verify|simulate|restart|rescan|reindex|status) ;;
-    *) printf 'Unknown backend mode: %s. Use start, test, verify, simulate, restart, rescan, reindex, or status.\n' "$mode" >&2; exit 1 ;;
+    start|demo|test|verify|simulate|restart|rescan|reindex|status) ;;
+    *) printf 'Unknown backend mode: %s. Use start, demo, test, verify, simulate, restart, rescan, reindex, or status.\n' "$mode" >&2; exit 1 ;;
 esac
 if [[ "$mode" != "verify" && "$mode" != "simulate" ]] && (( $# > 0 )); then
     printf 'The %s mode takes no additional arguments.\n' "$mode" >&2
@@ -27,6 +27,7 @@ source "$project_root/scripts/local-indexer.sh"
 
 run_backend_tests() {
     run_indexer_checks
+    run_frontend_checks
 }
 
 case "$mode" in
@@ -50,15 +51,24 @@ fi
 
 build_go_backend
 
-if [[ "$mode" == "test" ]]; then
+if [[ "$mode" == "test" || "$mode" == "demo" ]]; then
     source "$project_root/scripts/check-indexer.sh"
+    source "$project_root/scripts/check-frontend.sh"
     trap 'exit 130' INT
     trap 'exit 143' TERM
     if backend_running_for_checks; then
         trap stop_backend_tests EXIT
-        printf 'Using the running backend for acceptance checks.\n'
+        if [[ "$mode" == "demo" ]]; then
+            node "$project_root/scripts/client-contract.mjs" ready
+        fi
+        printf 'Using the running backend to prepare replay history.\n'
         wait_for_backend_ready "$existing_backend_pid"
-        run_backend_tests
+        if [[ "$mode" == "demo" ]]; then
+            run_indexer_checks
+            printf 'Demo is ready. Keep the existing backend running, then start ./scripts/run-frontend.sh and open History.\n'
+        else
+            run_backend_tests
+        fi
         exit
     fi
 fi
@@ -93,8 +103,16 @@ if [[ "$mode" == "test" ]]; then
     printf 'Backend checks completed. Stopping services started by this command.\n'
     exit
 fi
+if [[ "$mode" == "demo" ]]; then
+    printf 'Preparing two complete matches for browser replay...\n'
+    wait_for_backend_ready "$indexer_pid"
+    run_indexer_checks
+    printf 'Demo is ready. Start ./scripts/run-frontend.sh in another terminal and open History. This backend stays running until Ctrl+C.\n'
+fi
 
-printf 'Waiting for the Go services to become ready. Press Ctrl+C to stop the backend.\n'
+if [[ "$mode" != "demo" ]]; then
+    printf 'Waiting for the Go services to become ready. Press Ctrl+C to stop the backend.\n'
+fi
 while true; do
     active_indexer_pid="$indexer_pid"
     indexer_status=0

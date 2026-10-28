@@ -58,10 +58,11 @@ type replayFrame struct {
 }
 
 type replayResult struct {
-	MatchID      string        `json:"matchId"`
-	Verification verification  `json:"verification"`
-	Frames       []replayFrame `json:"frames"`
-	Rounds       []replayRound `json:"rounds"`
+	MatchID      string          `json:"matchId"`
+	Match        json.RawMessage `json:"match"`
+	Verification verification    `json:"verification"`
+	Frames       []replayFrame   `json:"frames"`
+	Rounds       []replayRound   `json:"rounds"`
 }
 
 type replayedRound struct {

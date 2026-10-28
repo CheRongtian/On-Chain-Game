@@ -166,7 +166,7 @@ function navigate(event: KeyboardEvent, cell: number) {
 </script>
 
 <template>
-  <div class="renderer">
+  <div class="renderer" :data-ready="ready">
     <div ref="host" class="canvas-host"></div>
     <p id="board-instructions" class="sr-only">
       Arrow keys navigate tiles. Enter or Space chooses a tile.

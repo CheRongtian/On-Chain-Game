@@ -6,6 +6,12 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'lobby', component: LobbyView },
+    { path: '/history', name: 'history', component: () => import('./views/HistoryView.vue') },
+    {
+      path: '/history/:matchId',
+      name: 'replay',
+      component: () => import('./views/ReplayView.vue'),
+    },
     { path: '/rooms/:matchId', name: 'room', component: RoomView },
     {
       path: '/rooms/:matchId/battle',

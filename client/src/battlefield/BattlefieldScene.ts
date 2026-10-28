@@ -34,6 +34,8 @@ export class BattlefieldScene extends Scene {
   private latest?: BattlefieldFrame;
   private playing = false;
   private lastResolutionBlock = 0n;
+  private playbackRevision = -1;
+  private animationObjects: GameObjects.GameObject[] = [];
   constructor(
     private bridge: BattlefieldBridge,
     private colors: BoardPalette,
@@ -62,8 +64,28 @@ export class BattlefieldScene extends Scene {
   }
   private receive(frame: BattlefieldFrame) {
     this.latest = frame;
+    if (frame.playback) {
+      this.time.timeScale = frame.playback.speed;
+      if (frame.playback.revision !== this.playbackRevision) {
+        this.tweens.killAll();
+        this.time.removeAllEvents();
+        this.time.clearPendingEvents();
+        this.time.paused = false;
+        this.tweens.timeScale = frame.playback.speed;
+        for (const object of this.animationObjects) object.destroy();
+        this.animationObjects = [];
+        this.playing = false;
+        this.playbackRevision = frame.playback.revision;
+      } else if (this.playing) {
+        this.time.paused = frame.playback.paused;
+        this.tweens.timeScale = frame.playback.paused ? 0 : frame.playback.speed;
+        return;
+      }
+    }
     if (this.playing) return;
-    const queue = frame.resolutions.filter((event) => event.blockNumber > this.lastResolutionBlock);
+    const queue = frame.playback
+      ? [...frame.resolutions]
+      : frame.resolutions.filter((event) => event.blockNumber > this.lastResolutionBlock);
     if (!queue.length) {
       this.paint(frame);
       return;
@@ -82,11 +104,20 @@ export class BattlefieldScene extends Scene {
         this.animateResolution(event, frame, next);
       } else {
         this.playing = false;
-        this.receive(this.latest!);
-        if (!this.playing) this.onResolved();
+        if (frame.playback) {
+          this.paint(this.latest!);
+          this.onResolved();
+        } else {
+          this.receive(this.latest!);
+          if (!this.playing) this.onResolved();
+        }
       }
     };
     next();
+    if (frame.playback) {
+      this.time.paused = frame.playback.paused;
+      this.tweens.timeScale = frame.playback.paused ? 0 : frame.playback.speed;
+    }
   }
   private animateResolution(event: RoundResolution, frame: BattlefieldFrame, done: () => void) {
     this.ink.clear();
@@ -101,7 +132,9 @@ export class BattlefieldScene extends Scene {
       legalCells: [],
     });
     const objects: GameObjects.GameObject[] = [];
+    this.animationObjects = objects;
     const pieces: { unitId: number; piece: GameObjects.Container; hp: GameObjects.Text }[] = [];
+    let moving = 0;
     event.before.units.forEach((unit, unitId) => {
       if (!unit.hp) return;
       const point = position(unit.cell);
@@ -130,19 +163,28 @@ export class BattlefieldScene extends Scene {
       objects.push(piece);
       pieces.push({ unitId, piece, hp });
       const after = event.after.units[unitId];
-      if (after.hp > 0 && after.cell !== unit.cell) {
-        const path = event.paths[unitId];
-        const cells = path?.length && path[path.length - 1] === after.cell ? path : [after.cell];
-        cells.forEach((cell, step) => {
-          const end = position(cell);
-          this.tweens.add({
-            targets: piece,
-            x: end.x,
-            y: end.y,
-            delay: (step * 420) / cells.length,
-            duration: 420 / cells.length,
+      const path = event.paths[unitId] ?? [];
+      // Replay paths identify successful movement even when death clears the final cell.
+      const cells =
+        after.hp > 0 && after.cell !== unit.cell
+          ? path.length && path[path.length - 1] === after.cell
+            ? path
+            : [after.cell]
+          : frame.playback && after.hp === 0
+            ? path
+            : [];
+      if (cells.length) {
+        moving++;
+        this.tweens.chain({
+          targets: piece,
+          tweens: cells.map((cell) => ({
+            ...position(cell),
+            duration: frame.playback ? 220 : 420 / cells.length,
             ease: 'Sine.easeInOut',
-          });
+          })),
+          onComplete: () => {
+            if (--moving === 0) this.time.delayedCall(40, impact);
+          },
         });
       }
     });
@@ -160,7 +202,7 @@ export class BattlefieldScene extends Scene {
       objects.push(label);
       this.tweens.add({ targets: label, y: y - 22, alpha: 0, delay: 350, duration: 650 });
     };
-    this.time.delayedCall(460, () => {
+    const impact = () => {
       pieces.forEach(({ unitId, piece, hp }) => {
         const old = event.before.units[unitId];
         const after = event.after.units[unitId];
@@ -170,7 +212,6 @@ export class BattlefieldScene extends Scene {
           this.tweens.add({ targets: piece, alpha: 0.3, yoyo: true, duration: 90, repeat: 1 });
         }
         if (!after.hp) {
-          // The death sentinel erases final location; do not simulate a missing intermediate state.
           this.tweens.add({ targets: piece, alpha: 0, scale: 0.5, delay: 360, duration: 240 });
         }
       });
@@ -187,11 +228,13 @@ export class BattlefieldScene extends Scene {
       }
       if (event.after.outcome)
         float(CANVAS_SIZE / 2, CANVAS_SIZE / 2, outcomes[event.after.outcome], this.colors.text);
-    });
-    this.time.delayedCall(1550, () => {
-      for (const object of objects) object.destroy();
-      done();
-    });
+      this.time.delayedCall(1090, () => {
+        for (const object of objects) object.destroy();
+        this.animationObjects = [];
+        done();
+      });
+    };
+    if (moving === 0) this.time.delayedCall(40, impact);
   }
   private label(x: number, y: number, value: string, size = 14, tint = this.colors.text) {
     this.labels.push(

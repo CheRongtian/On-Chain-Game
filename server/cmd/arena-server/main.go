@@ -29,6 +29,11 @@ func run(args []string) error {
 		return err
 	}
 	switch args[0] {
+	case "browser-fault":
+		if len(args) != 2 {
+			return fmt.Errorf("browser-fault requires corrupt or restore")
+		}
+		return indexer.BrowserFault(root, args[1])
 	case "check-indexer":
 		if len(args) != 1 {
 			return fmt.Errorf("check-indexer takes no additional arguments")

@@ -11,7 +11,9 @@ const arena = useArenaStore();
 const transaction = useTransactionStore();
 const router = useRouter();
 const route = useRoute();
-const isSessionView = computed(() => route.name === 'battlefield' || route.name === 'room');
+const isSessionView = computed(
+  () => route.name === 'battlefield' || route.name === 'room' || route.name === 'replay',
+);
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
   void arena.refresh();
@@ -25,7 +27,13 @@ onBeforeUnmount(() => {
 watch([() => arena.address, () => arena.epoch], ([address], [previousAddress]) => {
   transaction.reset();
   // Keep direct invitations on first load; later account changes start at the lobby.
-  if (previousAddress && address !== previousAddress) void router.replace({ name: 'lobby' });
+  if (
+    previousAddress &&
+    address !== previousAddress &&
+    route.name !== 'history' &&
+    route.name !== 'replay'
+  )
+    void router.replace({ name: 'lobby' });
 });
 function changeAccount(event: Event) {
   arena.selectAccount((event.target as HTMLSelectElement).value);
@@ -41,11 +49,14 @@ function changeAccount(event: Event) {
         ><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span
         ><span>TACTICAL<span class="brand-light"> ARENA</span></span></RouterLink
       >
-      <nav aria-label="Main navigation"><RouterLink to="/" class="nav-link">Lobby</RouterLink></nav>
+      <nav aria-label="Main navigation">
+        <RouterLink to="/" class="nav-link">Lobby</RouterLink
+        ><RouterLink to="/history" class="nav-link">History</RouterLink>
+      </nav>
       <span class="local-tag">LOCAL</span>
     </header>
 
-    <section class="account-bar" aria-label="Current local account">
+    <section v-if="route.name === 'lobby'" class="account-bar" aria-label="Current local account">
       <div class="account-field">
         <label for="active-account">Active account</label
         ><select
@@ -83,9 +94,9 @@ function changeAccount(event: Event) {
       </div>
     </section>
 
-    <div class="workspace">
+    <div class="workspace" :class="{ 'history-workspace': route.name === 'history' }">
       <main id="main-content" tabindex="-1">
-        <div v-if="arena.error" class="connection-alert" role="status">
+        <div v-if="arena.error && route.name === 'lobby'" class="connection-alert" role="status">
           <div>
             <strong>Local chain unavailable</strong>
             <p>{{ arena.error }}</p>
@@ -94,9 +105,9 @@ function changeAccount(event: Event) {
             <AppIcon name="refresh" />{{ arena.refreshing ? 'Connecting…' : 'Retry' }}
           </button>
         </div>
-        <TransactionNotice /><RouterView />
+        <TransactionNotice v-if="route.name === 'lobby'" /><RouterView />
       </main>
-      <aside class="side-column" aria-label="Local session details">
+      <aside v-if="route.name === 'lobby'" class="side-column" aria-label="Local session details">
         <section class="panel session-panel" aria-labelledby="session-title">
           <div class="panel-heading">
             <h2 id="session-title">Your session</h2>
