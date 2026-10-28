@@ -15,6 +15,6 @@ backend_running_for_checks() {
 
 run_indexer_checks() {
     cd "$project_root/server"
-    printf 'Running Indexer acceptance checks...\n'
+    printf 'Running indexing, replay, and recovery acceptance checks...\n'
     run_backend_check "$indexer_binary" check-indexer
 }

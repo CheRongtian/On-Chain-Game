@@ -37,6 +37,18 @@ CREATE TABLE IF NOT EXISTS chain_events (
 );
 CREATE INDEX IF NOT EXISTS chain_events_match ON chain_events(deployment_id, match_id, block_number, log_index);
 
+-- Displaced branches stay available for diagnosis and never feed public projections.
+CREATE TABLE IF NOT EXISTS orphaned_blocks (
+    deployment_id BIGINT NOT NULL REFERENCES deployments(id),
+    number BIGINT NOT NULL,
+    hash TEXT NOT NULL,
+    parent_hash TEXT NOT NULL,
+    timestamp BIGINT NOT NULL,
+    events JSONB NOT NULL,
+    displaced_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (deployment_id, hash)
+);
+
 CREATE TABLE IF NOT EXISTS matches (
     deployment_id BIGINT NOT NULL REFERENCES deployments(id),
     match_id NUMERIC(78, 0) NOT NULL CHECK (match_id > 0),

@@ -18,7 +18,8 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-var errFork = errors.New("canonical chain changed; indexing stopped until branch recovery is implemented")
+var errFork = errors.New("canonical chain changed while indexing")
+var errDeploymentChanged = errors.New("the deployment block left the canonical chain; restart the backend with the current deployment")
 
 type cursor struct {
 	Number int64
@@ -62,6 +63,21 @@ func (s *service) validateCursor(ctx context.Context) (cursor, uint64, error) {
 }
 
 func (s *service) sync(ctx context.Context, rescan bool, until *uint64) (uint64, error) {
+	head, err := s.syncBranch(ctx, rescan, until)
+	if !errors.Is(err, errFork) {
+		return head, err
+	}
+	s.mu.Lock()
+	s.observed.Error = "Recovering the canonical branch."
+	s.observed.Blocked = true
+	s.mu.Unlock()
+	if err = s.recoverBranch(ctx); err != nil {
+		return head, err
+	}
+	return s.syncBranch(ctx, rescan, until)
+}
+
+func (s *service) syncBranch(ctx context.Context, rescan bool, until *uint64) (uint64, error) {
 	value, head, err := s.validateCursor(ctx)
 	if err != nil {
 		return head, err

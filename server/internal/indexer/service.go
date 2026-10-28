@@ -125,7 +125,7 @@ func Run(ctx context.Context, root, operation string) error {
 	if err != nil {
 		return fmt.Errorf("listen for read API: %w", err)
 	}
-	server := &http.Server{Handler: s.routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+	server := &http.Server{Handler: s.routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 45 * time.Second, IdleTimeout: 60 * time.Second}
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	workerCtx, stopWorker := context.WithCancel(ctx)
@@ -174,7 +174,7 @@ func (s *service) follow(ctx context.Context) {
 			s.observed = observation{Head: head, LastSync: time.Now().UTC()}
 		} else {
 			s.observed.Error = err.Error()
-			s.observed.Blocked = errors.Is(err, errFork)
+			s.observed.Blocked = errors.Is(err, errFork) || errors.Is(err, errDeploymentChanged)
 		}
 		s.mu.Unlock()
 		if err != nil && err.Error() != previous {
@@ -183,7 +183,7 @@ func (s *service) follow(ctx context.Context) {
 		if err == nil && previous != "" {
 			log.Print("Indexer caught up after the previous error.")
 		}
-		if errors.Is(err, errFork) {
+		if errors.Is(err, errDeploymentChanged) {
 			return
 		}
 	}

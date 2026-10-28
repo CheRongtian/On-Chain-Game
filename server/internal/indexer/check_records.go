@@ -1,7 +1,6 @@
 package indexer
 
 import (
-	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -74,11 +73,6 @@ func (c *checker) checkMatch(want *checkedMatch) error {
 		return fmt.Errorf("API detail differs from its stored match")
 	}
 	return nil
-}
-
-func sameLog(a, b types.Log) bool {
-	return a.Address == b.Address && a.BlockNumber == b.BlockNumber && a.BlockHash == b.BlockHash && a.TxHash == b.TxHash &&
-		a.TxIndex == b.TxIndex && a.Index == b.Index && a.Removed == b.Removed && reflect.DeepEqual(a.Topics, b.Topics) && bytes.Equal(a.Data, b.Data)
 }
 
 func samePayload(a, b json.RawMessage) (bool, error) {

@@ -55,7 +55,7 @@ func (s *service) meta(ctx context.Context, tx *sql.Tx) (metadata, error) {
 	s.mu.RUnlock()
 	m := metadata{ProcessID: os.Getpid(), ChainID: s.cfg.ChainID, Arena: s.cfg.Arena, DeploymentBlock: s.cfg.From, DeploymentHash: s.anchor.Hash().Hex(),
 		ObservedBlock: seen.Head, RequiredDescendants: s.cfg.Confirmations, ConfirmationPolicy: "block_depth", LastSync: seen.LastSync,
-		Blocked: seen.Blocked, Error: seen.Error, Verification: "not_performed"}
+		Blocked: seen.Blocked, Error: seen.Error, Verification: "available_per_match"}
 	err := tx.QueryRowContext(ctx, `SELECT block_number,block_hash FROM sync_cursors WHERE deployment_id=$1`, s.deploymentID).Scan(&m.IndexedBlock, &m.IndexedHash)
 	if err != nil {
 		return m, err
@@ -83,8 +83,12 @@ func (m metadata) confirmation(block uint64) map[string]any {
 }
 
 func (s *service) read(handler func(*http.Request, *sql.Tx, metadata) (any, *apiError)) http.HandlerFunc {
+	return s.readFor(5*time.Second, handler)
+}
+
+func (s *service) readFor(timeout time.Duration, handler func(*http.Request, *sql.Tx, metadata) (any, *apiError)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()
 		r = r.WithContext(ctx)
 		tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
@@ -268,6 +272,9 @@ func (s *service) routes() http.Handler {
 		}
 		return map[string]any{"meta": m, "items": items, "limit": limit, "offset": offset, "hasMore": hasMore}, nil
 	}))
+	for _, view := range []string{"replay", "verification", "snapshots"} {
+		mux.HandleFunc("GET /matches/{id}/"+view, s.replayRoute(view))
+	}
 	return mux
 }
 

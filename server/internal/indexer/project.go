@@ -1,12 +1,14 @@
 package indexer
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
+	"reflect"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -20,6 +22,11 @@ type source struct {
 	BlockHash string `json:"blockHash"`
 	TxHash    string `json:"transactionHash"`
 	LogIndex  uint   `json:"logIndex"`
+}
+
+func sameLog(a, b types.Log) bool {
+	return a.Address == b.Address && a.BlockNumber == b.BlockNumber && a.BlockHash == b.BlockHash && a.TxHash == b.TxHash &&
+		a.TxIndex == b.TxIndex && a.Index == b.Index && a.Removed == b.Removed && reflect.DeepEqual(a.Topics, b.Topics) && bytes.Equal(a.Data, b.Data)
 }
 
 type match struct {
@@ -42,25 +49,26 @@ type match struct {
 }
 
 type decoded struct {
-	MatchID         string            `json:"matchId"`
-	Round           uint8             `json:"round"`
-	Creator         common.Address    `json:"creator"`
-	Player          common.Address    `json:"player"`
-	MapID           uint8             `json:"mapId"`
-	RulesHash       common.Hash       `json:"rulesHash"`
-	JoinDeadline    uint64            `json:"joinDeadline"`
-	InitialState    *game.BattleState `json:"initialState"`
-	StateHash       common.Hash       `json:"stateHash"`
-	Commitment      common.Hash       `json:"commitment"`
-	Actions         *[3]game.Action   `json:"actions"`
-	Salt            common.Hash       `json:"salt"`
-	Phase           uint8             `json:"phase"`
-	Deadline        uint64            `json:"deadline"`
-	BeforeStateHash common.Hash       `json:"beforeStateHash"`
-	AfterStateHash  common.Hash       `json:"afterStateHash"`
-	Outcome         game.Outcome      `json:"outcome"`
-	Reason          game.EndReason    `json:"reason"`
-	Winner          common.Address    `json:"winner"`
+	MatchID         string              `json:"matchId"`
+	Round           uint8               `json:"round"`
+	Creator         common.Address      `json:"creator"`
+	Player          common.Address      `json:"player"`
+	MapID           uint8               `json:"mapId"`
+	RulesHash       common.Hash         `json:"rulesHash"`
+	JoinDeadline    uint64              `json:"joinDeadline"`
+	InitialState    *game.BattleState   `json:"initialState"`
+	StateHash       common.Hash         `json:"stateHash"`
+	Commitment      common.Hash         `json:"commitment"`
+	Actions         *[3]game.Action     `json:"actions"`
+	Salt            common.Hash         `json:"salt"`
+	Phase           uint8               `json:"phase"`
+	Deadline        uint64              `json:"deadline"`
+	BeforeStateHash common.Hash         `json:"beforeStateHash"`
+	AfterStateHash  common.Hash         `json:"afterStateHash"`
+	Players         [2]game.PlayerState `json:"players"`
+	Outcome         game.Outcome        `json:"outcome"`
+	Reason          game.EndReason      `json:"reason"`
+	Winner          common.Address      `json:"winner"`
 }
 
 func decodeEvent(contract abi.ABI, entry types.Log) (string, decoded, []byte, error) {
@@ -210,7 +218,7 @@ func (s *service) project(ctx context.Context, tx *sql.Tx, entry types.Log, even
 				return err
 			}
 		}
-		// These snapshots are projections; independent historical verification belongs to Replay.
+		// Replay independently rebuilds these projections from canonical public events.
 		next, _, resolveErr := game.Resolve(*m.Battle, actions[0], actions[1])
 		if resolveErr != nil {
 			return resolveErr

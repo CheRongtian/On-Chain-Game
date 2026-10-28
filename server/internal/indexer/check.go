@@ -94,6 +94,8 @@ type checkReport struct {
 	DeploymentHash common.Hash        `json:"deploymentHash"`
 	Matches        []*checkedMatch    `json:"matches"`
 	Operations     []checkedOperation `json:"operations"`
+	History        []historyCheck     `json:"historyChecks"`
+	FaultMatches   []*checkedMatch    `json:"faultMatches"`
 	Receipts       []struct {
 		MatchID string         `json:"matchId"`
 		Method  string         `json:"method"`
@@ -145,10 +147,10 @@ func Check(ctx context.Context, root string) (err error) {
 			}
 		}
 		if err == nil {
-			log.Printf("PASS: two complete matches, restart, rescan, and rebuild matched in %s. Local acceptance report saved.", report.Duration.Round(time.Millisecond))
+			log.Printf("PASS: indexing, independent replay, tamper detection, branch recovery, crash recovery, and rebuild matched in %s. Local acceptance report saved.", report.Duration.Round(time.Millisecond))
 		}
 	}()
-	c := &checker{ctx: ctx, root: root, cfg: cfg, client: &http.Client{Timeout: 5 * time.Second}, report: report}
+	c := &checker{ctx: ctx, root: root, cfg: cfg, client: &http.Client{Timeout: 35 * time.Second}, report: report}
 	c.rpc, err = rpc.DialContext(ctx, cfg.RPC)
 	if err != nil {
 		return err
@@ -285,6 +287,9 @@ func Check(ctx context.Context, root string) (err error) {
 			return fmt.Errorf("after %s: %w", operation, err)
 		}
 		log.Printf("PASS: %s preserved all records and cursor at block %d (Go process %d -> %d).", operation, meta.IndexedBlock, previous, meta.ProcessID)
+	}
+	if err = c.checkHistory(); err != nil {
+		return err
 	}
 	report.Status = "passed"
 	return nil
@@ -459,6 +464,13 @@ func (c *checker) send(entry *checkedMatch, player int, method string, args ...a
 			entry.Snapshots = append(entry.Snapshots, checkedSnapshot{entry.Source, entry.State, entry.StateHash})
 		case "MatchFinished":
 			entry.StateHash = event.StateHash
+			if event.Reason == game.CommitTimeout || event.Reason == game.RevealTimeout {
+				entry.State, err = c.battle(receipt.BlockNumber, newBigID(entry.ID))
+				if err != nil {
+					return receipt, err
+				}
+				entry.Snapshots = append(entry.Snapshots, checkedSnapshot{entry.Source, entry.State, entry.StateHash})
+			}
 		}
 	}
 	return receipt, nil
