@@ -2,7 +2,7 @@
 
 A two-player on-chain tactical game in development. Each player commands three units on an 8x8 board, using hidden orders, simultaneous movement, combat, and objective control.
 
-The current project provides a Vue/TypeScript local-account lobby, room creation/joining, host-controlled game starts, live room details, a Phaser battlefield with local action planning and browser Commit/Reveal rounds, independent Go rules and hashing, deterministic offline simulation, map validation, shared protocol/state/battle vectors, and an Arena with Commit/Reveal, battle settlement, public timeout finalization, and state queries. The browser uses Anvil's unlocked development accounts for real local-chain transactions. The backend launcher deploys an empty Arena and waits for browser actions. Players create rooms, take seats, and start games through explicit controls. The browser saves orders before Commit, restores Reveal after refresh, supports encrypted order backups, continues confirmed rounds automatically, and provides manual timeout controls. External wallet integration, database services, and historical replay remain planned.
+The current project provides a Vue/TypeScript local-account lobby, room creation/joining, host-controlled game starts, live room details, a Phaser battlefield with local action planning and browser Commit/Reveal rounds, independent Go rules and hashing, deterministic offline simulation, PostgreSQL event indexing, a read API, and an Arena with authoritative settlement and timeout handling. The browser uses Anvil's unlocked development accounts for real local-chain transactions. Players create rooms, take seats, and start games through explicit controls. The browser saves orders before Commit, restores Reveal after refresh, supports encrypted order backups, continues confirmed rounds automatically, and provides manual timeout controls. External wallet integration and independently verified historical replay remain planned.
 
 ## Game design
 
@@ -29,7 +29,7 @@ Commitments cannot be replaced. Invalid reveals can be retried before the deadli
 ## Architecture
 
 - **Solidity / Foundry:** authoritative room and turn protocol storage, pure battle resolution, atomic settlement, and complete matches.
-- **Go / PostgreSQL:** independent offline rules, encoding, hashing, and simulation are implemented; indexing, reorg recovery, historical replay, read APIs, and public phase progression are planned.
+- **Go / PostgreSQL:** independent offline rules, encoding, hashing, simulation, transactional event indexing, and a read API. Automatic reorg recovery, independently verified historical replay, and Keeper progression remain planned.
 - **Vue 3 / TypeScript / Vite / Phaser:** Router, Pinia, Viem, a local-account lobby, room and battlefield state read directly from RPC, local action drafts, persistent round secrets, one squad confirmation per round, and confirmed result animations. External wallets and historical replay follow.
 
 The local browser sends transactions through Anvil's unlocked accounts, with signing performed by the node. The contract uses each transaction sender to identify its player. External wallet signing remains planned. Backend services provide convenience and verification; they cannot override contract state or match outcomes.
@@ -70,7 +70,7 @@ Run the fixed-vector comparison from the project root:
 ./scripts/run-backend.sh verify
 ```
 
-This mode compares Go with the fixed references, then runs the existing Solidity outcome and battle checks and the new protocol comparison inside Forge's offline EVM. It requires neither Anvil nor PostgreSQL. The backend script prepares the pinned Go dependencies and updates dependency checksums before running the selected mode.
+This mode compares Go with the fixed references, then runs the existing Solidity outcome and battle checks and the new protocol comparison inside Forge's offline EVM. It requires neither Anvil nor PostgreSQL. The backend script uses `go run -mod=mod` for offline commands and `go build -mod=mod` for normal startup. Go downloads missing build dependencies and maintains its dependency records as needed, reusing successfully cached downloads on subsequent runs. Routine startup does not run `go mod tidy`, which also resolves dependencies used by upstream tests and other platforms.
 
 Run deterministic multi-round simulation and differential comparison:
 
@@ -122,7 +122,15 @@ For newly observed RoundResolved events, the renderer reads battle states immedi
 
 ## Local use
 
-The current tool baseline is Node 22.23.2, npm 10.9.8, Go 1.25.3, Foundry 1.8.1, and Solidity 0.8.30. Install these tools before using the startup scripts. Keep the previously downloaded Solidity compiler in its existing local tools directory; the backend launcher uses it offline.
+The current tool baseline is Node 22.23.2, npm 10.9.8, Go 1.25.3, Foundry 1.8.1, and Solidity 0.8.30. Install these tools before using the startup scripts. Keep the previously downloaded Solidity compiler in its existing local tools directory; the backend launcher uses it offline. The online backend also requires a running PostgreSQL service and an existing database. Offline vector and simulation modes require no database connection.
+
+Reuse the existing PostgreSQL service on localhost port 5432. On this machine, the independently installed PostgreSQL 16 tools are available at the path below. Create the project database once using an existing database account; the example uses `postgres`. Enter that account's existing database password when prompted.
+
+```
+/Library/PostgreSQL/16/bin/createdb -h localhost -p 5432 -U postgres -W onchain_arena
+```
+
+The tracked [environment template](.env.example) lists `DATABASE_URL`, `PGPASSWORD`, `HTTP_ADDRESS`, and `CONFIRMATION_DEPTH`. Copy it into the launcher's local environment configuration, set the existing database password there, and adjust the username in `DATABASE_URL` if needed. Keep the real password out of the tracked template. PostgreSQL credentials are independent of the macOS account. The backend reuses this service and applies its SQL schema automatically. Normal startup needs only the backend and frontend scripts.
 
 Run one script in each of two terminals at the project root. Start the backend first and wait for its ready message, then start the frontend. The frontend entry first checks that contract sources, compiler output, and backend launch scripts predate the current deployment. It stops with a backend restart instruction when they do not match. It then installs project dependencies, updates the npm lockfile, synchronizes the ABI, and starts Vite. The two entries handle their preparation steps automatically.
 
@@ -132,7 +140,7 @@ Backend:
 ./scripts/run-backend.sh
 ```
 
-The backend launcher builds Arena offline, exports the frontend ABI, starts a fresh Anvil chain, deploys Arena, publishes connection information, and runs the current Go application entry. It then waits for browser operations. It sends no room creation, joining, start, Commit, Reveal, settlement, or timeout transactions. The first room is created when a player clicks Create room. These preparation steps remain inside this single entry point.
+The backend launcher builds the Go service with cached dependencies, downloads missing build dependencies when necessary, builds Arena, exports the frontend ABI, starts a fresh Anvil chain, deploys Arena, publishes connection information, applies the database schema, and starts the Indexer and read API. It prints `Local Arena is ready` only after initial indexing and HTTP binding succeed. It sends no room creation, joining, start, Commit, Reveal, settlement, or timeout transactions. The first room is created when a player clicks Create room. These preparation steps remain inside this single entry point. Download failures remain visible and stop startup; successfully cached dependencies are reused on retry.
 
 Frontend:
 
@@ -142,14 +150,67 @@ Frontend:
 
 Open the address printed by Vite, normally http://127.0.0.1:5173. Select Account 1 and create a room. Open another tab, select Account 2, paste the room ID or copied invitation into Find a room, and join from the room page. Joining leaves both tabs in the waiting room; the host account alone sees Start game. Start from Account 1 and wait for confirmation: both room pages should automatically open the battlefield in Commit. Click a unit to open its narrow drawer on the unit's spawn side with a dark backdrop. Choose Move or Attack to return to the unobscured board, select a highlighted tile, then confirm or cancel the proposed order. The other account's drafts remain isolated. For each round, finish the three local orders and click Confirm orders in both tabs. Accept the reminder or return to editing. Keep both pages open as they automatically process the confirmed round. Export an encrypted backup if needed. Refresh after confirmation to recover the same saved orders and continue. Continue until the contract displays a result. After a phase deadline, Finalize timeout handles the contract's timeout result. Combining Shield and Power shot exceeds the initial Energy budget and prevents the unaffordable proposal from replacing its previous draft. Switching accounts returns that tab to a clean lobby; reopen the invitation to view or join its room with the newly selected account. Browser interactions, compilation, and type checking remain to be verified by the maintainer when running the project.
 
-Keep port 8545 available. Each backend launch starts a fresh in-memory chain at http://127.0.0.1:8545 with chain ID 31337 and two local development accounts. The launcher prints the Arena address and deployment block. The newly deployed Arena starts with zero rooms; its first browser-created room receives ID 1. Old rooms disappear when the backend restarts.
+Keep ports 8545 and 8080 available. Each normal backend launch starts a fresh in-memory chain at http://127.0.0.1:8545 with chain ID 31337 and two local development accounts. The launcher prints the Arena address and deployment block. The newly deployed Arena starts with zero rooms; its first browser-created room receives ID 1. Old rooms disappear from the chain after a normal backend restart. PostgreSQL retains previous deployment records, isolated by chain ID, Arena address, and deployment block hash. Queries use only the currently running deployment.
 
-Standard output and error output, including compilation and startup failures, appear in the terminal and are also written to a local log in the project root. Each invocation overwrites the previous log, which is excluded from the repository. Any failed step stops startup and shuts down the launcher's Anvil process. The Go application currently prints its offline-tool availability and exits; it does not start HTTP, Indexer, or Keeper services. The launcher keeps the local chain running until Ctrl+C. Stopping it discards local chain state.
+Standard output and error output, including compilation and startup failures, appear in the terminal and are also written to a local log in the project root. Once Anvil starts listening, the launcher disables its routine RPC logging so idle Indexer polling does not flood the terminal or root log. Startup messages, indexing progress, and command/service errors keep their existing output paths. Each invocation overwrites the previous log, which is excluded from the repository. Live services continue appending after a maintenance invocation clears that log. Any failed startup step shuts down the launcher's Anvil process. The launcher keeps Go and the local chain running until Ctrl+C. Stopping it discards local chain state; PostgreSQL remains running under its own service manager.
+
+## Event indexing and read API
+
+The [Indexer](server/internal/indexer/chain.go) uses go-ethereum block-range log queries and batched header reads, ordered by block height and log index. It preserves raw logs, decoded payloads, block/parent hashes, transaction hashes, and log positions. One PostgreSQL transaction saves each range's headers, events, projections, and cursor. Duplicate logs skip projection. The [schema](server/internal/indexer/schema.sql) creates deployment, block, event, match, round, public action, snapshot, cursor, and Keeper-attempt tables. Keeper execution is not enabled.
+
+The [Projector](server/internal/indexer/project.go) follows public events and uses the Go rules to build round snapshots. Pre-Reveal orders and salts never enter the database. Projected snapshots are explicitly unverified; storing the event's state hash does not certify that snapshot. Independent Replay verification follows separately.
+
+The [read API](server/internal/indexer/http.go) defaults to http://127.0.0.1:8080:
+
+| GET endpoint                          | Result                                                                                                    |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `/health`                             | HTTP service and database availability                                                                    |
+| `/ready`                              | Initial indexing complete, no known sync error, and no observed lag                                       |
+| `/sync`                               | Active deployment, observed tip, indexed cursor/hash, confirmation policy, sync errors, and record counts |
+| `/matches?limit=20&offset=0`          | Match page, ordered by numeric match ID                                                                   |
+| `/matches/1`                          | Match detail, projected battle state, and source block/transaction/log                                    |
+| `/matches/1/events?limit=20&offset=0` | Raw and decoded public events, ordered by block/log position                                              |
+
+Pagination accepts limits from 1 to 100 and nonnegative offsets; `hasMore` indicates another page. Data and cursor metadata are read from one consistent database transaction. A zero confirmation depth labels local observations `observed`. A positive depth labels observations `provisional` until enough descendant blocks exist, then `confirmed`. These labels do not claim network finality or independent Replay verification. No extra blocks are mined to satisfy confirmation depth. A known RPC/indexing error makes confirmation status `unknown` and readiness fail while existing records remain readable. A changed cursor hash or broken parent link stops indexing explicitly; automatic branch recovery follows separately. The browser continues using RPC directly.
+
+Keep the original backend terminal running. In another terminal at the project root, the same backend entry supports these operations:
+
+```
+./scripts/run-backend.sh status
+```
+
+```
+./scripts/run-backend.sh restart
+```
+
+```
+./scripts/run-backend.sh rescan
+```
+
+```
+./scripts/run-backend.sh reindex
+```
+
+`restart` restarts only Go and resumes from the stored cursor, keeping Anvil and current rooms alive. `rescan` rereads the indexed range and compares all records before/after to detect duplicates or projection changes. `reindex` removes only the current deployment's rebuildable indexing data, reconstructs it from its deployment block, and compares every record against the previous incremental result at the same height. It preserves other deployments. Comparison excludes generated database row IDs, retains original block/transaction/log identities, and saves a local before/after report. Successful maintenance prints a comparison result followed by a new ready message in the original backend terminal. Maintenance commands request the operation and return; wait for that terminal's result before sending another operation. A comparison failure stops the backend and preserves its report.
+
+For command-line acceptance, run this single command in one terminal at the project root:
+
+```
+./scripts/run-backend.sh test
+```
+
+The [backend entry](scripts/run-backend.sh) loads the environment, sets up logging, and builds Go. With no managed backend running, it starts Anvil, builds and deploys Arena, starts Go, waits for readiness, and runs the checks in the same terminal. It shuts down the Go and Anvil processes it started on completion, failure, or interruption. PostgreSQL uses the existing configured service. When a managed backend is already running, the command reuses it and leaves it running afterward. A separate backend terminal or frontend is not required.
+
+The main script dispatches tests through `run_backend_tests`, currently calling the internal [Indexer check module](scripts/check-indexer.sh). Add later acceptance modules to that function. Checks run under the launcher's supervision so Go restart requests can be handled while testing continues. The Indexer check reloads Go, creates two new rooms, reads their actual IDs from creation receipts, and uses the unlocked local accounts to create, join, start, Commit, Reveal, and settle them through the real contract. The [shared action plans](server/internal/scenario/plans.go) produce a seven-round points win and a ten-round elimination win. Transactions proceed as soon as their receipts arrive, with no frontend interaction, deadline waits, interval mining, or manual time changes. Ordinary backend startup continues waiting for browser actions.
+
+The [acceptance tool](server/internal/indexer/check.go) waits for indexing to catch up and compares the two chain results with API details, paginated events, stored raw logs, rounds, public reveals, and every projected snapshot. It then requests Go restart, rescan, and rebuild in sequence. Each operation must produce a different Go process and a ready API before the next comparison begins. The entire current deployment's records and cursor must remain identical, including pre-existing rooms. Rescan and rebuild must also produce fresh successful comparison reports. Process identity is included in API synchronization metadata.
+
+When reusing a running backend, keep manual matches idle so the before/after comparisons cover the same chain tip. Progress and failures appear in the terminal and the same overwritten root log. Public receipts, match IDs, snapshots, and operation results are saved in a local acceptance report, including available evidence when a step fails. Salts and orders enter that evidence only after they are public on chain. The check adds two test matches. Existing rooms remain available when reusing a backend; a chain started by test mode is discarded when that command ends. Database records and local reports are retained. This check validates indexing against chain observations; independent historical Replay verification follows separately. The maintainer runs it explicitly.
 
 The frontend manifest pins direct dependencies; its startup script maintains the npm lockfile during installation. CI and the project LICENSE are deferred by the maintainer.
 
 ## Current limits
 
-The contracts implement complete matches through Commit/Reveal, settlement, and timeout handling. The browser supports local account selection, room creation/joining, host-controlled starts and automatic battlefield entry, live room and battle details through RPC, a Phaser board, local action planning, persistent browser Commit/Reveal, encrypted order backups, a single squad confirmation followed by automatic Reveal and settlement, manual timeout handling, and confirmed result animations. The Go rule engine, fixed-vector comparison, and seeded offline simulation are implemented. External wallet signing, historical Go replay, indexing, read APIs, Keeper services, and public testnet deployment remain planned. The daily launcher prepares the local chain for manual browser interaction. Independent security auditing and game-balance evaluation remain separate work.
+The contracts implement complete matches through Commit/Reveal, settlement, and timeout handling. The browser supports local account selection, room creation/joining, host-controlled starts and automatic battlefield entry, live room and battle details through RPC, a Phaser board, local action planning, persistent browser Commit/Reveal, encrypted order backups, a single squad confirmation followed by automatic Reveal and settlement, manual timeout handling, and confirmed result animations. The Go rule engine, fixed-vector comparison, seeded offline simulation, PostgreSQL Indexer, and read API are implemented. External wallet signing, automatic reorg recovery, independently verified historical Go replay, frontend history integration, Keeper services, and public testnet deployment remain planned. The daily launcher prepares the local chain for manual browser interaction. Independent security auditing and game-balance evaluation remain separate work.
 
 Detailed design and implementation planning are maintained locally.

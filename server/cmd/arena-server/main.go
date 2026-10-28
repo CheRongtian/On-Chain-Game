@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
+	"onchainarena/server/internal/indexer"
 	"onchainarena/server/internal/offline"
 )
 
@@ -18,14 +22,39 @@ func main() {
 }
 func run(args []string) error {
 	if len(args) == 0 {
-		fmt.Println("Go rules and offline tools are available. HTTP, Indexer, and Keeper services are not implemented yet.")
-		return nil
+		args = []string{"serve"}
 	}
 	root, err := filepath.Abs("..")
 	if err != nil {
 		return err
 	}
 	switch args[0] {
+	case "check-indexer":
+		if len(args) != 1 {
+			return fmt.Errorf("check-indexer takes no additional arguments")
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return indexer.Check(ctx, root)
+	case "serve":
+		operation := ""
+		if len(args) > 2 {
+			return fmt.Errorf("serve accepts at most one indexing operation")
+		}
+		if len(args) == 2 {
+			operation = args[1]
+			if operation != "rescan" && operation != "reindex" {
+				return fmt.Errorf("unknown indexing operation %q", operation)
+			}
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return indexer.Run(ctx, root, operation)
+	case "status":
+		if len(args) != 1 {
+			return fmt.Errorf("status takes no additional arguments")
+		}
+		return indexer.Status(root)
 	case "verify":
 		if len(args) != 1 {
 			return fmt.Errorf("verify takes no additional arguments")
@@ -76,6 +105,6 @@ func run(args []string) error {
 		fmt.Println("Every generated round matched the independent Solidity resolver. Simulation results do not determine official games.")
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q; use verify or simulate", args[0])
+		return fmt.Errorf("unknown command %q; use serve, status, verify, simulate, or check-indexer", args[0])
 	}
 }

@@ -29,6 +29,8 @@ start_local_chain() {
             return 1
         fi
         if lsof -nP -a -p "$local_anvil_pid" -iTCP:8545 -sTCP:LISTEN >/dev/null 2>&1; then
+            # Disable routine RPC chatter while keeping command errors and service logs visible.
+            cast rpc anvil_setLoggingEnabled false --rpc-url "$local_rpc_url" >/dev/null
             printf 'Local chain is listening at %s.\n' "$local_rpc_url"
             return 0
         fi

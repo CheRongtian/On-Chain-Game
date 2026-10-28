@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"onchainarena/server/internal/game"
+	"onchainarena/server/internal/scenario"
 )
 
 var players = [2]string{
@@ -109,14 +112,14 @@ func (d *demo) run() (err error) {
 	}
 
 	fmt.Println("Completing match 1 through a Victory Points win...")
-	if err = d.playGame(1, 7, 3, pointOrders); err != nil {
+	if err = d.playGame(1, 7, 3, scenario.PointOrders); err != nil {
 		return err
 	}
 	fmt.Println("Playing match 2 through elimination from the normal initial state...")
 	if err = d.openMatch(2); err != nil {
 		return err
 	}
-	if err = d.playGame(2, 10, 1, eliminationOrders); err != nil {
+	if err = d.playGame(2, 10, 1, scenario.EliminationOrders); err != nil {
 		return err
 	}
 	if err = d.commitForfeit(); err != nil {
@@ -281,7 +284,7 @@ func (d *demo) commitForfeit() error {
 	if err := d.openMatch(3); err != nil {
 		return err
 	}
-	prepared, err := d.prepare(3, 1, holds(), holds())
+	prepared, err := d.prepare(3, 1, game.HoldActions(), game.HoldActions())
 	if err != nil {
 		return err
 	}
@@ -296,7 +299,7 @@ func (d *demo) revealDraw() error {
 	if err := d.openMatch(4); err != nil {
 		return err
 	}
-	prepared, err := d.prepare(4, 1, holds(), holds())
+	prepared, err := d.prepare(4, 1, game.HoldActions(), game.HoldActions())
 	if err != nil {
 		return err
 	}

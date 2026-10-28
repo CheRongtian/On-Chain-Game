@@ -13,6 +13,11 @@ interface IDevVm {
     function recordLogs() external;
     function getRecordedLogs() external view returns (Log[] memory);
     function readFile(string calldata path) external view returns (string memory);
+    function readFileBinary(string calldata path) external view returns (bytes memory);
+    function writeFile(string calldata path, string calldata data) external;
+    function toString(uint256 value) external pure returns (string memory);
+    function toString(bytes32 value) external pure returns (string memory);
+    function toString(bytes calldata value) external pure returns (string memory);
     function parseJsonType(string calldata json, string calldata typeDescription)
         external
         pure
