@@ -18,6 +18,7 @@ start_local_chain() {
 
     printf 'Starting a fresh local chain...\n'
     anvil --host 127.0.0.1 --port 18545 --chain-id 31337 --hardfork cancun \
+        --gas-limit 30000000 \
         --accounts 2 \
         --mnemonic 'test test test test test test test test test test test junk' &
     local_anvil_pid=$!

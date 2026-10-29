@@ -42,7 +42,7 @@ require_local_images() {
 
 reset_local_demo() {
     local answer managed_pid deadline
-    printf "Reset will remove this project's Compose containers and database volume, contract build output, published deployment, and local demo/acceptance reports.\n"
+    printf "Reset will remove this project's Compose containers and database volume, contract build output, published deployment, and local demo/recovery/safety reports, including generated simulation inputs and Foundry failure corpora.\n"
     printf 'The local environment, downloaded tools, and macOS PostgreSQL installation are retained.\n'
     read -r -p 'Type reset to continue: ' answer
     if [[ "$answer" != "reset" ]]; then
@@ -72,6 +72,7 @@ reset_local_demo() {
     fi
     arena_compose down --volumes
     rm -rf "$project_root/.local/indexer" "$project_root/.local/browser" "$project_root/.local/demo" \
+        "$project_root/.local/safety" "$project_root/.local/simulation" \
         "$project_root/contracts/out" "$project_root/contracts/cache" "$project_root/contracts/broadcast"
     rm -f "$backend_pid_file" "$indexer_command_file" "$project_root/.local/indexer-failure" \
         "$project_root/.local/anvil.pid" "$project_root/.local/container-exit" \

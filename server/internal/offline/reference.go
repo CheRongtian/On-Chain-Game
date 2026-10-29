@@ -1,6 +1,7 @@
 package offline
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math/big"
@@ -11,18 +12,18 @@ import (
 	"onchainarena/server/internal/game"
 )
 
-func RunSolidityVectors(root string, output io.Writer) error {
+func RunSolidityVectors(ctx context.Context, root string, output io.Writer) error {
 	for _, script := range []string{"CheckResults", "CheckBattle"} {
-		if err := runForge(root, output, "script/"+script+".s.sol:"+script, "--sig", "run()"); err != nil {
+		if err := runForge(ctx, root, output, "script/"+script+".s.sol:"+script, "--sig", "run()"); err != nil {
 			return err
 		}
 	}
-	return runForge(root, output, "script/CompareRules.s.sol:CompareRules", "--sig", "protocol()")
+	return runForge(ctx, root, output, "script/CompareRules.s.sol:CompareRules", "--sig", "protocol()")
 }
-func runForge(root string, output io.Writer, script string, args ...string) error {
+func runForge(ctx context.Context, root string, output io.Writer, script string, args ...string) error {
 	arguments := []string{"script", script, "--offline", "--use", filepath.Join(root, ".local", "bin", "solc-0.8.30")}
 	arguments = append(arguments, args...)
-	command := exec.Command("forge", arguments...)
+	command := exec.CommandContext(ctx, "forge", arguments...)
 	command.Dir = filepath.Join(root, "contracts")
 	command.Stdout, command.Stderr = output, output
 	if err := command.Run(); err != nil {
@@ -30,7 +31,7 @@ func runForge(root string, output io.Writer, script string, args ...string) erro
 	}
 	return nil
 }
-func CompareSimulation(root string, simulation Simulation, output io.Writer) error {
+func CompareSimulation(ctx context.Context, root string, simulation Simulation, output io.Writer) error {
 	directory := filepath.Join(root, ".local", "simulation")
 	if err := os.MkdirAll(directory, 0755); err != nil {
 		return err
@@ -38,38 +39,23 @@ func CompareSimulation(root string, simulation Simulation, output io.Writer) err
 	if err := writeJSON(filepath.Join(directory, "simulation.json"), simulation); err != nil {
 		return err
 	}
-	encoded, err := game.EncodeComparisons(simulation.Cases)
+	result, err := compareSolidity(ctx, root, simulation.Cases, output)
 	if err != nil {
-		return err
-	}
-	input, report := filepath.Join(directory, "rounds.abi"), filepath.Join(directory, "comparison.json")
-	if err := os.WriteFile(input, encoded, 0644); err != nil {
-		return err
-	}
-	if err := runForge(root, output, "script/CompareRules.s.sol:CompareRules", "--sig", "run(string,string)", input, report); err != nil {
-		return err
-	}
-	var result struct {
-		Matched   bool      `json:"matched"`
-		Rejected  bool      `json:"rejected"`
-		Error     string    `json:"error"`
-		CaseIndex int       `json:"caseIndex"`
-		Word      int       `json:"word"`
-		Expected  game.Hash `json:"expected"`
-		Actual    game.Hash `json:"actual"`
-	}
-	if err := readJSON(report, &result); err != nil {
 		return err
 	}
 	if result.Matched {
 		return nil
 	}
-	if result.CaseIndex < 0 || result.CaseIndex >= len(simulation.Cases) {
-		return fmt.Errorf("Solidity returned an invalid comparison index")
-	}
 	entry := simulation.Cases[result.CaseIndex]
-	// A pure resolver needs only this round's full input; earlier games and rounds are removed.
 	repro := Simulation{Seed: simulation.Seed, Games: 1, Rounds: 1, InitialState: entry.State, Cases: []game.Comparison{entry}}
+	if err := writeJSON(filepath.Join(directory, "repro-original.json"), repro); err != nil {
+		return err
+	}
+	entry, result, err = shrinkDifference(ctx, root, entry, result, output)
+	if err != nil {
+		return fmt.Errorf("difference found; shrinking failed: %w; original reproduction retained", err)
+	}
+	repro.InitialState, repro.Cases[0] = entry.State, entry
 	reproPath := filepath.Join(directory, "repro.json")
 	if err := writeJSON(reproPath, repro); err != nil {
 		return err

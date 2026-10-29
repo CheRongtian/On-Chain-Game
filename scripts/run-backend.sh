@@ -26,6 +26,8 @@ fi
 source "$project_root/scripts/local-indexer.sh"
 
 run_backend_tests() {
+    source "$project_root/scripts/check-safety.sh"
+    run_safety_checks
     run_indexer_checks keeper
     run_frontend_checks
     printf 'PASS: all backend and browser recovery checks completed.\n'

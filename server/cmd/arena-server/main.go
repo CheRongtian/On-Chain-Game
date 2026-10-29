@@ -30,6 +30,13 @@ func run(args []string) error {
 		return err
 	}
 	switch args[0] {
+	case "safety":
+		if len(args) != 1 {
+			return fmt.Errorf("safety takes no additional arguments")
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return offline.Safety(ctx, root, os.Stdout)
 	case "check-ready":
 		if len(args) != 1 {
 			return fmt.Errorf("check-ready takes no additional arguments")
@@ -86,7 +93,7 @@ func run(args []string) error {
 		}
 		fmt.Printf("Go vectors matched: %d results, %d states, %d battles, %d protocol cases.\n", counts.Results, counts.Hashes, counts.Battles, counts.Protocol)
 		fmt.Printf("Go vector baseline: %s elapsed.\n", time.Since(started))
-		if err := offline.RunSolidityVectors(root, os.Stdout); err != nil {
+		if err := offline.RunSolidityVectors(context.Background(), root, os.Stdout); err != nil {
 			return err
 		}
 		fmt.Println("Solidity and Go matched the same fixed vectors without RPC or database access.")
@@ -119,12 +126,12 @@ func run(args []string) error {
 		elapsed := time.Since(started)
 		fmt.Printf("Offline simulation: seed %d, %d games, %d rounds; A wins %d, B wins %d, draws %d.\n", simulation.Seed, simulation.Games, simulation.Rounds, simulation.Outcomes[1], simulation.Outcomes[2], simulation.Outcomes[3])
 		fmt.Printf("Go simulation baseline: %s, %.0f rounds/second. Timing is separate from the deterministic records.\n", elapsed, float64(simulation.Rounds)/elapsed.Seconds())
-		if err := offline.CompareSimulation(root, simulation, os.Stdout); err != nil {
+		if err := offline.CompareSimulation(context.Background(), root, simulation, os.Stdout); err != nil {
 			return err
 		}
 		fmt.Println("Every generated round matched the independent Solidity resolver. Simulation results do not determine official games.")
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q; use serve, status, check-ready, verify, simulate, or check-indexer", args[0])
+		return fmt.Errorf("unknown command %q; use serve, status, check-ready, safety, verify, simulate, or check-indexer", args[0])
 	}
 }

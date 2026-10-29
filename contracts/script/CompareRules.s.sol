@@ -33,6 +33,12 @@ contract CompareRules {
         bytes32 expectedCommitment;
     }
 
+    struct Rejection {
+        GameTypes.BattleState state;
+        GameTypes.Action[3] actionsA;
+        GameTypes.Action[3] actionsB;
+    }
+
     struct ProtocolVectors {
         bytes32 rulesHash;
         ProtocolVector[] cases;
@@ -107,6 +113,50 @@ contract CompareRules {
         if (index < cases) {
             // forge-lint: disable-next-line(unsafe-cheatcode)
             VM.writeFile(reportPath, _report(index, result));
+        } else {
+            // forge-lint: disable-next-line(unsafe-cheatcode)
+            VM.writeFile(reportPath, '{"matched":true}');
+        }
+    }
+
+    function reject(string calldata inputPath, string calldata reportPath) external {
+        // Generated rejection fixtures are restricted to the local safety directory.
+        // forge-lint: disable-next-line(unsafe-cheatcode)
+        Rejection[] memory entries = abi.decode(VM.readFileBinary(inputPath), (Rejection[]));
+        require(entries.length > 0, "Rejection inputs are empty");
+        BattleProbe probe = new BattleProbe();
+        uint256 index = 0;
+        bytes memory reason = new bytes(0);
+        for (; index < entries.length; ++index) {
+            Rejection memory entry = entries[index];
+            bool rejected = false;
+            reason = "";
+            // forge-lint: disable-next-line(calls-loop)
+            try probe.resolve(entry.state, entry.actionsA, entry.actionsB) returns (
+                GameTypes.BattleState memory, GameTypes.ResolutionSummary memory
+            ) {
+                rejected = false;
+            } catch (bytes memory failure) {
+                reason = failure;
+                // The length guard permits reading exactly the custom-error selector.
+                // forge-lint: disable-next-line(unsafe-typecast)
+                rejected = failure.length >= 4 && bytes4(failure) != bytes4(0x4e487b71);
+            }
+            if (!rejected) break;
+        }
+        if (index < entries.length) {
+            // The failure report stays within the launcher's permitted local evidence directory.
+            // forge-lint: disable-next-line(unsafe-cheatcode)
+            VM.writeFile(
+                reportPath,
+                string.concat(
+                    '{"matched":false,"caseIndex":',
+                    VM.toString(index),
+                    ',"error":"',
+                    VM.toString(reason),
+                    '"}'
+                )
+            );
         } else {
             // forge-lint: disable-next-line(unsafe-cheatcode)
             VM.writeFile(reportPath, '{"matched":true}');

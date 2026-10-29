@@ -12,7 +12,19 @@ fs_permissions = [
     { access = "read", path = "../config/battle-vectors.json" },
     { access = "read", path = "../config/protocol-vectors.json" },
     { access = "read-write", path = "../.local/simulation" },
+    { access = "read-write", path = "../.local/safety" },
 ]
+
+[profile.default.fuzz]
+runs = 64
+failure_persist_dir = "../.local/safety/foundry-fuzz"
+
+[profile.default.invariant]
+runs = 64
+depth = 128
+fail_on_revert = true
+shrink_run_limit = 500
+failure_persist_dir = "../.local/safety/foundry-invariant"
 
 [lint]
 # Standard ABI hashing and reusable protocol helpers are intentional.

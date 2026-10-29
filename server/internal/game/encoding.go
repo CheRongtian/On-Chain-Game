@@ -193,6 +193,19 @@ func EncodeComparisons(cases []Comparison) ([]byte, error) {
 	return encoded, nil
 }
 
+// Invalid fixtures must reach the independent Solidity validator without Go normalizing them.
+func EncodeRejections(cases []Comparison) []byte {
+	var encoded words
+	encoded.number(32)
+	encoded.number(uint64(len(cases)))
+	for _, entry := range cases {
+		encoded.state(entry.State)
+		encoded.actions(entry.ActionsA)
+		encoded.actions(entry.ActionsB)
+	}
+	return encoded
+}
+
 // Result word names match abi.encode(BattleState, ResolutionSummary, bytes32).
 func ResultField(word int) string {
 	fields := []string{"state.mapId", "state.round"}
