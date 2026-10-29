@@ -159,6 +159,7 @@ func (s *service) saveRange(ctx context.Context, headers []*types.Header, logs [
 	}
 	defer tx.Rollback()
 	indexed := 0
+	affected := map[string]bool{}
 	var finished []string
 	for _, header := range headers {
 		var existing string
@@ -201,15 +202,28 @@ func (s *service) saveRange(ctx context.Context, headers []*types.Header, logs [
 			return fmt.Errorf("project %s match %s at block %d log %d: %w", name, event.MatchID, entry.BlockNumber, entry.Index, err)
 		}
 		indexed++
+		affected[event.MatchID] = true
 		if name == "MatchFinished" {
 			finished = append(finished, fmt.Sprintf("Indexed finished match %s: outcome=%d reason=%d stateHash=%s.", event.MatchID, event.Outcome, event.Reason, event.StateHash.Hex()))
 		}
 	}
 	last := headers[len(headers)-1]
-	_, err = tx.ExecContext(ctx, `UPDATE sync_cursors SET block_number=$2,block_hash=$3 WHERE deployment_id=$1 AND block_number<$2`,
+	updated, err := tx.ExecContext(ctx, `UPDATE sync_cursors SET block_number=$2,block_hash=$3 WHERE deployment_id=$1 AND block_number<$2`,
 		s.deploymentID, last.Number.Int64(), last.Hash().Hex())
 	if err != nil {
 		return err
+	}
+	if count, rowErr := updated.RowsAffected(); rowErr != nil {
+		return rowErr
+	} else if count > 0 {
+		ids := make([]string, 0, len(affected))
+		for id := range affected {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		if err = s.notify(ctx, tx, "change", cursor{last.Number.Int64(), last.Hash().Hex()}, ids); err != nil {
+			return err
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return err

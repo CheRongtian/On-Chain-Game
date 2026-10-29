@@ -18,6 +18,15 @@ export default defineConfig(({ mode }) => {
     '/api': {
       target: `http://${process.env.HTTP_ADDRESS || env.HTTP_ADDRESS || '127.0.0.1:8080'}`,
       rewrite: (path) => path.replace(/^\/api/, ''),
+      configure(proxy) {
+        proxy.on('proxyRes', (upstream, _request, downstream) => {
+          if (!upstream.headers['content-type']?.startsWith('text/event-stream')) return;
+          // A killed Go process must also disconnect the browser's event stream.
+          const disconnect = () => downstream.destroy();
+          upstream.on('aborted', disconnect);
+          upstream.on('error', disconnect);
+        });
+      },
     },
   };
   return {

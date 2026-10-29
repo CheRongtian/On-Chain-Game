@@ -27,7 +27,14 @@ source "$project_root/scripts/local-indexer.sh"
 
 run_backend_tests() {
     run_indexer_checks keeper
+    run_frontend_checks
+    printf 'PASS: all backend and browser recovery checks completed.\n'
 }
+
+if [[ "$mode" == "test" ]]; then
+    source "$project_root/scripts/check-frontend.sh"
+    prepare_frontend_checks
+fi
 
 case "$mode" in
     restart|rescan|reindex) request_indexer_operation "$mode"; exit ;;
@@ -118,9 +125,8 @@ while true; do
     if [[ "$active_indexer_pid" != "$indexer_pid" ]]; then
         continue
     fi
-    printf 'Go services exited with status %d. Stopping the backend.\n' "$indexer_status" >&2
-    if (( indexer_status == 0 )); then
-        exit 1
+    if recover_go_indexer; then
+        continue
     fi
-    exit "$indexer_status"
+    exit 1
 done

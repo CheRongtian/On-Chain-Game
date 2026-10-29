@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router';
 import AppIcon from '../components/AppIcon.vue';
 import CurrentAccount from '../components/CurrentAccount.vue';
+import UpdateStatus from '../components/UpdateStatus.vue';
 import BattlefieldBoard from '../components/BattlefieldBoard.vue';
 import UnitActionDrawer from '../components/UnitActionDrawer.vue';
 import RoundControls from '../components/RoundControls.vue';
@@ -11,11 +12,13 @@ import { actionNames, draftLabel, emptyDrafts, unitCodes, unitNames } from '../l
 import { outcomes, parseRoomId, phases, reasons } from '../lib/format';
 import { useArenaStore } from '../stores/arena';
 import { useBattleStore } from '../stores/battle';
+import { useUpdatesStore } from '../stores/updates';
 
 const route = useRoute();
 const router = useRouter();
 const arena = useArenaStore();
 const battle = useBattleStore();
+const updates = useUpdatesStore();
 const board = ref<InstanceType<typeof BattlefieldBoard>>();
 const lastUnit = ref<number>();
 const id = computed(() => parseRoomId(String(route.params.matchId ?? '')));
@@ -102,7 +105,7 @@ function escape(event: KeyboardEvent) {
 }
 onMounted(() => {
   timer = setInterval(() => {
-    if (!battle.busy) void battle.refresh();
+    if ((!updates.live || battle.error) && !battle.busy) void battle.refresh();
   }, 4_000);
   document.addEventListener('keydown', escape);
 });
@@ -122,6 +125,7 @@ onBeforeUnmount(() => {
       <div class="identity">
         <h1>Room #{{ route.params.matchId }}</h1>
         <span v-if="battle.room">Round {{ battle.room.round }} · {{ roundLabel }}</span>
+        <UpdateStatus />
       </div>
       <CurrentAccount />
       <button
@@ -156,6 +160,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="board-space">
         <BattlefieldBoard
+          :key="battle.boardRevision"
           ref="board"
           :frame="frame"
           @choose="battle.pick"

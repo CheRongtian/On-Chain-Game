@@ -105,6 +105,15 @@ CREATE TABLE IF NOT EXISTS sync_cursors (
     block_hash TEXT NOT NULL
 );
 
+-- Notifications share the projection transaction and survive branch rollback and reindexing.
+CREATE TABLE IF NOT EXISTS stream_events (
+    id BIGSERIAL PRIMARY KEY,
+    deployment_id BIGINT NOT NULL REFERENCES deployments(id),
+    kind TEXT NOT NULL,
+    data JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS stream_events_deployment ON stream_events(deployment_id, id);
+
 CREATE TABLE IF NOT EXISTS keeper_jobs (
     id BIGSERIAL PRIMARY KEY,
     deployment_id BIGINT NOT NULL REFERENCES deployments(id),

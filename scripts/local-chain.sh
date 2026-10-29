@@ -21,6 +21,7 @@ start_local_chain() {
         --accounts 2 \
         --mnemonic 'test test test test test test test test test test test junk' &
     local_anvil_pid=$!
+    printf '%s\n' "$local_anvil_pid" > "$project_root/.local/anvil.pid"
 
     for attempt in {1..50}; do
         if ! kill -0 "$local_anvil_pid" 2>/dev/null; then
@@ -43,9 +44,11 @@ start_local_chain() {
 
 stop_local_chain() {
     if [[ -n "$local_anvil_pid" ]]; then
+        kill -CONT "$local_anvil_pid" 2>/dev/null || true
         kill "$local_anvil_pid" 2>/dev/null || true
         wait "$local_anvil_pid" 2>/dev/null || true
         local_anvil_pid=""
+        rm -f "$project_root/.local/anvil.pid"
         node "$project_root/scripts/client-contract.mjs" clear
     fi
 }

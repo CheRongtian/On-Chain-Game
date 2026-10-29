@@ -11,8 +11,10 @@ import {
 import type { HistoryMeta, MatchPage, ReplayData } from '../lib/history';
 import type { BattlefieldFrame } from '../battlefield/bridge';
 import { emptyDrafts } from '../lib/battle';
+import { useUpdatesStore } from './updates';
 
 export const useHistoryStore = defineStore('history', () => {
+  const updates = useUpdatesStore();
   const page = shallowRef<MatchPage>();
   const replay = shallowRef<ReplayData>();
   const loading = ref(false);
@@ -34,6 +36,7 @@ export const useHistoryStore = defineStore('history', () => {
   let poll: ReturnType<typeof setInterval> | undefined;
   let advance: ReturnType<typeof setTimeout> | undefined;
   let continuous = false;
+  let refreshQueued = false;
   const meta = computed<HistoryMeta | undefined>(() => replay.value?.meta ?? page.value?.meta);
   const current = computed(() => replay.value?.items[target.value ?? position.value]);
   const last = computed(() => Math.max(0, (replay.value?.items.length ?? 0) - 1));
@@ -200,6 +203,10 @@ export const useHistoryStore = defineStore('history', () => {
       if (request === controller) {
         refreshing.value = false;
         loading.value = false;
+        if (refreshQueued && active) {
+          refreshQueued = false;
+          void refresh();
+        }
       }
     }
   }
@@ -208,6 +215,7 @@ export const useHistoryStore = defineStore('history', () => {
     request?.abort();
     request = undefined;
     clearInterval(poll);
+    refreshQueued = false;
     pause();
     refreshing.value = false;
     target.value = undefined;
@@ -230,8 +238,70 @@ export const useHistoryStore = defineStore('history', () => {
     loading.value = true;
     active = true;
     void refresh();
-    poll = setInterval(() => void refresh(), 4_000);
+    poll = setInterval(() => {
+      if (!updates.live) void refresh();
+    }, 4_000);
   }
+  updates.listen((update) => {
+    if (!active) return;
+    if (
+      update.kind === 'change' &&
+      matchId &&
+      update.matches.length &&
+      !update.matches.includes(matchId)
+    ) {
+      const old = replay.value;
+      if (
+        old &&
+        update.block !== undefined &&
+        update.blockHash &&
+        update.deploymentHash === old.meta.deploymentHash &&
+        update.block >= old.meta.indexedBlock
+      ) {
+        const observedBlock = Math.max(update.block, old.meta.observedBlock);
+        replay.value = {
+          ...old,
+          meta: {
+            ...old.meta,
+            indexedBlock: update.block,
+            indexedHash: update.blockHash,
+            observedBlock,
+            lag: observedBlock - update.block,
+          },
+        };
+      }
+      return;
+    }
+    if (update.kind === 'reorg' || update.kind === 'reset' || update.kind === 'unavailable') {
+      request?.abort();
+      request = undefined;
+      refreshing.value = false;
+      available.value = false;
+      refreshQueued = false;
+      const changedDeployment =
+        !!replay.value &&
+        !!update.deploymentHash &&
+        update.deploymentHash !== replay.value.meta.deploymentHash;
+      const from = update.kind === 'reorg' || changedDeployment ? 0 : position.value;
+      if (replay.value) wantedFrame = from;
+      seek(from);
+      if (update.kind === 'reorg' || update.kind === 'reset') {
+        loading.value = true;
+        replay.value = undefined;
+        page.value = undefined;
+        selectedUnit.value = undefined;
+        notice.value =
+          'Chain history is being refreshed. Previous verification is being rechecked.';
+      }
+      if (update.kind === 'unavailable') {
+        error.value = 'Live updates are interrupted. The page will keep checking for changes.';
+        return;
+      }
+    }
+    if (refreshing.value) refreshQueued = true;
+    else void refresh();
+  });
+
   return {
     page,
     replay,

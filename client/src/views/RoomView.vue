@@ -4,17 +4,20 @@ import { RouterLink, useRoute, useRouter } from 'vue-router';
 import { zeroAddress } from 'viem';
 import AppIcon from '../components/AppIcon.vue';
 import CurrentAccount from '../components/CurrentAccount.vue';
+import UpdateStatus from '../components/UpdateStatus.vue';
 import { readRoom, requireHostStart } from '../lib/arena';
 import type { Room } from '../lib/arena';
 import { errorMessage } from '../lib/errors';
 import { chainDate, parseRoomId, phases } from '../lib/format';
 import { useArenaStore } from '../stores/arena';
 import { useTransactionStore } from '../stores/transaction';
+import { useUpdatesStore } from '../stores/updates';
 
 const route = useRoute();
 const router = useRouter();
 const arena = useArenaStore();
 const transaction = useTransactionStore();
+const updates = useUpdatesStore();
 const matchId = computed(() => parseRoomId(String(route.params.matchId ?? '')));
 const room = shallowRef<Room>();
 const error = ref('');
@@ -60,6 +63,7 @@ const roomStatus = computed(() =>
       : 'Waiting for opponent',
 );
 let requestId = 0;
+let refreshQueued = false;
 let startVerified = false;
 let timer: ReturnType<typeof setInterval> | undefined;
 
@@ -101,7 +105,13 @@ async function readState(clear = false) {
   } catch (cause) {
     if (request === requestId) error.value = errorMessage(cause);
   } finally {
-    if (request === requestId) reading.value = false;
+    if (request === requestId) {
+      reading.value = false;
+      if (refreshQueued) {
+        refreshQueued = false;
+        void readState();
+      }
+    }
   }
 }
 watch(
@@ -119,12 +129,27 @@ watch(
 );
 onMounted(() => {
   timer = setInterval(() => {
-    void readState();
+    if (!updates.live || error.value) void readState();
   }, 1_000);
 });
 onBeforeUnmount(() => {
+  stopUpdates();
   requestId++;
   clearInterval(timer);
+});
+const stopUpdates = updates.listen((update) => {
+  if (update.kind === 'unavailable') return;
+  if (
+    update.kind === 'change' &&
+    update.matches.length &&
+    !update.matches.includes(String(matchId.value))
+  )
+    return;
+  if (update.kind === 'reorg' || update.kind === 'reset') {
+    refreshQueued = false;
+    void readState(true);
+  } else if (reading.value) refreshQueued = true;
+  else void readState();
 });
 
 async function startGame() {
@@ -161,6 +186,7 @@ async function copyInvitation() {
       <div>
         <p class="eyebrow">Preparation room</p>
         <h1>Room #{{ route.params.matchId }}</h1>
+        <UpdateStatus />
       </div>
       <span v-if="room" class="chip chip-amber">{{ roomStatus }}</span>
     </header>

@@ -2,6 +2,9 @@
 
 # Sourced by the backend launcher; operations keep its existing Anvil chain alive.
 indexer_pid=""
+indexer_operation=""
+indexer_restarts=0
+indexer_restart_window=$SECONDS
 backend_test_pid=""
 backend_pid_file="$project_root/.local/backend.pid"
 indexer_command_file="$project_root/.local/indexer-command"
@@ -37,15 +40,16 @@ run_backend_check() {
     # Waiting on a background check lets this launcher handle its Go restart requests.
     "$@" &
     backend_test_pid=$!
-    while true; do
-        check_status=0
-        wait "$backend_test_pid" || check_status=$?
-        if (( check_status > 128 )) && kill -0 "$backend_test_pid" 2>/dev/null; then
-            continue
+    while kill -0 "$backend_test_pid" 2>/dev/null; do
+        if [[ -n "$indexer_pid" ]] && ! kill -0 "$indexer_pid" 2>/dev/null; then
+            recover_go_indexer || return 1
         fi
-        backend_test_pid=""
-        return "$check_status"
+        sleep 0.1
     done
+    check_status=0
+    wait "$backend_test_pid" || check_status=$?
+    backend_test_pid=""
+    return "$check_status"
 }
 
 stop_backend_tests() {
@@ -74,6 +78,7 @@ request_indexer_operation() {
 
 start_go_indexer() {
     local operation="${1:-}"
+    indexer_operation="$operation"
     printf 'Starting Go Indexer and read API...\n'
     if [[ -n "$operation" ]]; then
         "$indexer_binary" serve "$operation" &
@@ -81,6 +86,33 @@ start_go_indexer() {
         "$indexer_binary" serve &
     fi
     indexer_pid=$!
+}
+
+recover_go_indexer() {
+    local service_status=0
+    wait "$indexer_pid" 2>/dev/null || service_status=$?
+    if [[ -n "$indexer_operation" ]]; then
+        printf 'Go indexing maintenance failed with status %d. Inspect the saved comparison report.\n' "$service_status" >&2
+        return 1
+    fi
+    if (( SECONDS - indexer_restart_window >= 60 )); then
+        indexer_restarts=0
+        indexer_restart_window=$SECONDS
+    fi
+    while (( indexer_restarts < 3 )); do
+        indexer_restarts=$((indexer_restarts + 1))
+        printf 'Go services exited with status %d. Keeping Anvil and rooms; recovery attempt %d/3.\n' "$service_status" "$indexer_restarts" >&2
+        sleep 1
+        start_go_indexer
+        if wait_for_backend_ready "$indexer_pid"; then
+            return 0
+        fi
+        # A live but unready process must be stopped before binding the API again.
+        stop_go_indexer
+        service_status=1
+    done
+    printf 'Go recovery failed repeatedly. Stopping the backend; inspect the preceding errors.\n' >&2
+    return 1
 }
 
 stop_go_indexer() {
@@ -108,6 +140,8 @@ restart_go_indexer() {
         start_go_indexer
     else
         start_go_indexer "$operation"
+        wait_for_backend_ready "$indexer_pid"
+        indexer_operation=""
     fi
 }
 

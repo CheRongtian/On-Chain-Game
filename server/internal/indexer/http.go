@@ -33,6 +33,7 @@ type metadata struct {
 	Error               string       `json:"error,omitempty"`
 	Verification        string       `json:"verification"`
 	Keeper              keeperStatus `json:"keeper"`
+	Services            streamStatus `json:"services"`
 }
 
 type apiError struct {
@@ -58,7 +59,7 @@ func (s *service) meta(ctx context.Context, tx *sql.Tx) (metadata, error) {
 	keeper.Enabled = s.cfg.KeeperEnabled
 	m := metadata{ProcessID: os.Getpid(), ChainID: s.cfg.ChainID, Arena: s.cfg.Arena, DeploymentBlock: s.cfg.From, DeploymentHash: s.anchor.Hash().Hex(),
 		ObservedBlock: seen.Head, RequiredDescendants: s.cfg.Confirmations, ConfirmationPolicy: "block_depth", LastSync: seen.LastSync,
-		Blocked: seen.Blocked, Error: seen.Error, Verification: "available_per_match", Keeper: keeper}
+		Blocked: seen.Blocked, Error: seen.Error, Verification: "available_per_match", Keeper: keeper, Services: s.streamState()}
 	err := tx.QueryRowContext(ctx, `SELECT block_number,block_hash FROM sync_cursors WHERE deployment_id=$1`, s.deploymentID).Scan(&m.IndexedBlock, &m.IndexedHash)
 	if err != nil {
 		return m, err
@@ -67,7 +68,7 @@ func (s *service) meta(ctx context.Context, tx *sql.Tx) (metadata, error) {
 		m.ObservedBlock = max(m.ObservedBlock, uint64(m.IndexedBlock))
 		m.Lag = m.ObservedBlock - uint64(m.IndexedBlock)
 	}
-	m.Ready = m.Error == "" && !m.LastSync.IsZero() && m.Lag == 0
+	m.Ready = m.Error == "" && !m.LastSync.IsZero() && m.Lag == 0 && m.Services.Ready
 	return m, nil
 }
 
@@ -151,14 +152,28 @@ func matchID(r *http.Request) (string, *apiError) {
 
 func (s *service) routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /events", s.stream)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
-		if err := s.db.PingContext(ctx); err != nil {
-			writeResponse(w, 503, apiError{Code: "database_unavailable", Message: "PostgreSQL is unavailable."})
-			return
+		state := s.streamState()
+		events := "available"
+		var latest int64
+		if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(max(id),0) FROM stream_events WHERE deployment_id=$1`, s.deploymentID).Scan(&latest); err != nil {
+			events = "unavailable"
+			if pingErr := s.db.PingContext(ctx); pingErr != nil {
+				state.Database, state.Ready, state.Error = "unavailable", false, "PostgreSQL is unavailable."
+			}
 		}
-		writeResponse(w, 200, map[string]string{"status": "ok"})
+		status, code := "ok", http.StatusOK
+		if !state.Ready || events != "available" {
+			status, code = "degraded", http.StatusServiceUnavailable
+		}
+		s.mu.RLock()
+		keeper := s.keeperState
+		s.mu.RUnlock()
+		keeper.Enabled = s.cfg.KeeperEnabled
+		writeResponse(w, code, map[string]any{"status": status, "services": state, "events": events, "keeper": keeper})
 	})
 	status := func(ready bool) http.HandlerFunc {
 		return s.read(func(r *http.Request, tx *sql.Tx, m metadata) (any, *apiError) {

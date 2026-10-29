@@ -5,15 +5,15 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
 )
 
-// BrowserFault only changes a snapshot belonging to the current acceptance run.
-// Public APIs remain read-only; the browser driver restores this fault in finally.
+// BrowserFault supplies local browser acceptance without adding write API routes.
 func BrowserFault(root, operation string) error {
-	if operation != "corrupt" && operation != "restore" {
+	if operation != "corrupt" && operation != "restore" && operation != "database-state" && operation != "hold-keeper" {
 		return fmt.Errorf("unknown browser fault operation")
 	}
 	cfg, err := readConfig(root)
@@ -43,6 +43,38 @@ func BrowserFault(root, operation string) error {
 		cfg.ChainID, cfg.Arena, report.DeploymentHash.Hex()).Scan(&deployment)
 	if err != nil {
 		return err
+	}
+	if operation == "hold-keeper" {
+		gate, err := keeperGate(ctx, db, deployment, true)
+		if err != nil {
+			return err
+		}
+		defer releaseKeeperGate(gate, deployment)
+		fmt.Println("Keeper paused for browser branch acceptance.")
+		// Closing the driver's input releases the lock, including during cleanup.
+		_, err = io.Copy(io.Discard, os.Stdin)
+		return err
+	}
+	if operation == "database-state" {
+		state := struct {
+			Started time.Time                    `json:"startedAt"`
+			LockPID int                          `json:"indexerLockPid"`
+			Records map[string][]json.RawMessage `json:"records"`
+		}{}
+		err = db.QueryRowContext(ctx, `SELECT pg_postmaster_start_time(),COALESCE((
+			SELECT a.pid FROM pg_stat_activity a JOIN pg_locks l ON l.pid=a.pid
+			WHERE a.datname=current_database() AND a.application_name='onchain_arena_backend'
+			AND l.locktype='advisory' AND l.classid=0 AND l.objid::bigint=$1 AND l.granted LIMIT 1),0)`, deployment).
+			Scan(&state.Started, &state.LockPID)
+		if err != nil {
+			return err
+		}
+		store := &service{db: db, deploymentID: deployment}
+		state.Records, err = store.export(ctx)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(state)
 	}
 	backup := struct {
 		Deployment int64           `json:"deployment"`

@@ -100,6 +100,9 @@ func (s *service) recoverBranch(ctx context.Context) error {
 	if !strings.EqualFold(last.Hash().Hex(), ancestor.Hash) {
 		return errFork
 	}
+	if err = s.notify(ctx, tx, "reorg", ancestor, affected); err != nil {
+		return err
+	}
 	if err = tx.Commit(); err != nil {
 		return err
 	}

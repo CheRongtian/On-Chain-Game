@@ -71,6 +71,9 @@ func (s *service) maintenance(ctx context.Context, root, operation string) error
 			s.deploymentID, int64(s.cfg.From)-1, s.anchor.ParentHash.Hex()); err != nil {
 			return err
 		}
+		if err = s.notify(ctx, tx, "reset", cursor{int64(s.cfg.From) - 1, s.anchor.ParentHash.Hex()}, nil); err != nil {
+			return err
+		}
 		if err = tx.Commit(); err != nil {
 			return err
 		}

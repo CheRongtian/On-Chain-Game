@@ -97,6 +97,7 @@ type checkReport struct {
 	History        []historyCheck     `json:"historyChecks"`
 	FaultMatches   []*checkedMatch    `json:"faultMatches"`
 	Keeper         []keeperCheck      `json:"keeperChecks,omitempty"`
+	Stream         []streamCheck      `json:"streamChecks,omitempty"`
 	Receipts       []struct {
 		MatchID string         `json:"matchId"`
 		Method  string         `json:"method"`
@@ -303,6 +304,9 @@ func Check(ctx context.Context, root string, withKeeper bool) (err error) {
 	if withKeeper {
 		if err = c.checkKeeper(); err != nil {
 			return fmt.Errorf("Keeper acceptance: %w", err)
+		}
+		if err = c.checkStream(); err != nil {
+			return fmt.Errorf("stream and service recovery acceptance: %w", err)
 		}
 	}
 	report.Status = "passed"

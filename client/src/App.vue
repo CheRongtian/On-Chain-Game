@@ -6,9 +6,11 @@ import TransactionNotice from './components/TransactionNotice.vue';
 import { balanceLabel, shortAddress } from './lib/format';
 import { useArenaStore } from './stores/arena';
 import { useTransactionStore } from './stores/transaction';
+import { useUpdatesStore } from './stores/updates';
 
 const arena = useArenaStore();
 const transaction = useTransactionStore();
+const updates = useUpdatesStore();
 const router = useRouter();
 const route = useRoute();
 const isSessionView = computed(
@@ -16,12 +18,14 @@ const isSessionView = computed(
 );
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
+  updates.start();
   void arena.refresh();
   timer = setInterval(() => {
     void arena.refresh();
   }, 4_000);
 });
 onBeforeUnmount(() => {
+  updates.stop();
   clearInterval(timer);
 });
 watch([() => arena.address, () => arena.epoch], ([address], [previousAddress]) => {

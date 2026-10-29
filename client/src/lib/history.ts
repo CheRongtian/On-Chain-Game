@@ -2,6 +2,7 @@ import type { Address } from 'viem';
 import type { BattleMap, BattleRules, BattleState, RoundResolution } from './arena';
 import type { ActionBundle } from './battle';
 import { actionNames, cellLabel } from './battle';
+import type { UpdateHealth } from '../stores/updates';
 
 export const replaySpeeds = [0.5, 1, 2, 4] as const;
 
@@ -23,6 +24,7 @@ export interface HistoryMeta {
   ready: boolean;
   blocked: boolean;
   error?: string;
+  services?: UpdateHealth;
 }
 export interface Confirmation {
   status: 'unknown' | 'observed' | 'provisional' | 'confirmed';

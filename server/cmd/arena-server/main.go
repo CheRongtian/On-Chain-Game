@@ -31,7 +31,7 @@ func run(args []string) error {
 	switch args[0] {
 	case "browser-fault":
 		if len(args) != 2 {
-			return fmt.Errorf("browser-fault requires corrupt or restore")
+			return fmt.Errorf("browser-fault requires corrupt, restore, database-state, or hold-keeper")
 		}
 		return indexer.BrowserFault(root, args[1])
 	case "check-indexer":

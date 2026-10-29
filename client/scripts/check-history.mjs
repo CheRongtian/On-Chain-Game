@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
+import { installedBrowser } from './browser.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const clientRoot = resolve(root, 'client');
@@ -103,15 +104,11 @@ async function restoreChain() {
 }
 
 try {
-  await access(chromium.executablePath()).catch(() => {
-    throw new Error(
-      'Chromium is missing. In client/, run: npx --no-install playwright install chromium',
-    );
-  });
+  const executablePath = await installedBrowser();
   server = await createServer({
     root: clientRoot,
     configFile: resolve(clientRoot, 'vite.config.js'),
-    server: { host: '127.0.0.1', port: 5174, strictPort: true, hmr: { port: 5174 } },
+    server: { host: '127.0.0.1', port: 5174, strictPort: true, ws: { port: 5174 } },
   });
   const headers = server.config.server.headers;
   if (headers?.['Content-Security-Policy'])
@@ -120,7 +117,7 @@ try {
       'ws://127.0.0.1:5174',
     );
   await server.listen();
-  browser = await chromium.launch({ headless: true, channel: 'chromium' });
+  browser = await chromium.launch({ headless: true, executablePath });
   const context = await browser.newContext({
     viewport: { width: 1100, height: 760 },
     reducedMotion: 'no-preference',

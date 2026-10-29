@@ -16,17 +16,21 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 //go:embed schema.sql
 var schema string
 
 type observation struct {
-	Head     uint64
-	LastSync time.Time
-	Error    string
-	Blocked  bool
+	Head          uint64
+	Indexed       int64
+	LastSync      time.Time
+	Error         string
+	Blocked       bool
+	DatabaseError string
+	RPCError      string
 }
 
 type service struct {
@@ -40,6 +44,7 @@ type service struct {
 	observed     observation
 	keeper       *keeper
 	keeperState  keeperStatus
+	indexerLock  *sql.Conn
 }
 
 func Run(ctx context.Context, root, operation string) error {
@@ -50,10 +55,12 @@ func Run(ctx context.Context, root, operation string) error {
 	s := &service{cfg: cfg}
 	setup, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	s.db, err = sql.Open("pgx", cfg.Database)
+	database, err := pgx.ParseConfig(cfg.Database)
 	if err != nil {
 		return fmt.Errorf("invalid PostgreSQL connection configuration; check DATABASE_URL")
 	}
+	database.RuntimeParams["application_name"] = "onchain_arena_backend"
+	s.db = stdlib.OpenDB(*database)
 	defer s.db.Close()
 	s.db.SetMaxOpenConns(8)
 	s.db.SetMaxIdleConns(4)
@@ -86,24 +93,10 @@ func Run(ctx context.Context, root, operation string) error {
 	if err != nil {
 		return err
 	}
-	lock, err := s.db.Conn(setup)
-	if err != nil {
+	if err = s.ensureIndexerLock(setup); err != nil {
 		return err
 	}
-	defer lock.Close()
-	var acquired bool
-	if err = lock.QueryRowContext(setup, `SELECT pg_try_advisory_lock($1)`, s.deploymentID).Scan(&acquired); err != nil {
-		return err
-	}
-	if !acquired {
-		return fmt.Errorf("an Indexer is already running for this deployment")
-	}
-	// Advisory locks belong to a session, so release it before returning the connection to the pool.
-	defer func() {
-		cleanup, finish := context.WithTimeout(context.Background(), 3*time.Second)
-		defer finish()
-		_, _ = lock.ExecContext(cleanup, `SELECT pg_advisory_unlock($1)`, s.deploymentID)
-	}()
+	defer s.releaseIndexerLock()
 	_, err = s.db.ExecContext(setup, `INSERT INTO sync_cursors(deployment_id,block_number,block_hash) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,
 		s.deploymentID, int64(cfg.From)-1, s.anchor.ParentHash.Hex())
 	if err != nil {
@@ -122,7 +115,7 @@ func Run(ctx context.Context, root, operation string) error {
 	if err != nil {
 		return fmt.Errorf("initial indexing: %w", err)
 	}
-	s.observed = observation{Head: head, LastSync: time.Now().UTC()}
+	s.observed = observation{Head: head, Indexed: int64(head), LastSync: time.Now().UTC()}
 	if cfg.KeeperEnabled {
 		prepare, finish := context.WithTimeout(ctx, 15*time.Second)
 		s.runKeeper(prepare)
@@ -142,7 +135,8 @@ func Run(ctx context.Context, root, operation string) error {
 	if err != nil {
 		return fmt.Errorf("listen for read API: %w", err)
 	}
-	server := &http.Server{Handler: s.routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 45 * time.Second, IdleTimeout: 60 * time.Second}
+	server := &http.Server{Handler: s.routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 45 * time.Second, IdleTimeout: 60 * time.Second,
+		BaseContext: func(net.Listener) context.Context { return ctx }}
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	workerCtx, stopWorker := context.WithCancel(ctx)
@@ -180,7 +174,32 @@ func (s *service) follow(ctx context.Context) {
 		case <-ticker.C:
 		}
 		request, cancel := context.WithTimeout(ctx, 30*time.Second)
-		head, err := s.sync(request, false, nil)
+		var head uint64
+		var databaseError, rpcError string
+		err := s.ensureIndexerLock(request)
+		if err != nil {
+			databaseError = err.Error()
+		} else {
+			probe, finish := context.WithTimeout(request, 2*time.Second)
+			var observedHead uint64
+			observedHead, err = s.chain.BlockNumber(probe)
+			finish()
+			if err != nil {
+				rpcError = err.Error()
+			} else {
+				s.mu.Lock()
+				s.observed.Head = observedHead
+				s.mu.Unlock()
+				head, err = s.sync(request, false, nil)
+				if err != nil {
+					probe, finish := context.WithTimeout(ctx, time.Second)
+					if pingErr := s.db.PingContext(probe); pingErr != nil {
+						databaseError = pingErr.Error()
+					}
+					finish()
+				}
+			}
+		}
 		cancel()
 		if ctx.Err() != nil {
 			return
@@ -188,9 +207,10 @@ func (s *service) follow(ctx context.Context) {
 		s.mu.Lock()
 		previous := s.observed.Error
 		if err == nil {
-			s.observed = observation{Head: head, LastSync: time.Now().UTC()}
+			s.observed = observation{Head: head, Indexed: int64(head), LastSync: time.Now().UTC()}
 		} else {
 			s.observed.Error = err.Error()
+			s.observed.DatabaseError, s.observed.RPCError = databaseError, rpcError
 			s.observed.Blocked = errors.Is(err, errFork) || errors.Is(err, errDeploymentChanged)
 		}
 		s.mu.Unlock()

@@ -5,6 +5,7 @@ import {
   advanceLocalClock,
   readBattleSnapshot,
   readResolutions,
+  publicClient,
   requireHostStart,
 } from '../lib/arena';
 import type { BattleSnapshot, Deployment, RoundResolution } from '../lib/arena';
@@ -34,10 +35,12 @@ import {
 } from '../lib/secrets';
 import type { OrderSecret } from '../lib/secrets';
 import { useTransactionStore } from './transaction';
+import { useUpdatesStore } from './updates';
 
 type Interaction = 'idle' | 'details' | 'target' | 'review';
 export const useBattleStore = defineStore('battle', () => {
   const transaction = useTransactionStore();
+  const updates = useUpdatesStore();
   const snapshot = shallowRef<BattleSnapshot>();
   const drafts = shallowRef<DraftBundle>(emptyDrafts());
   const selectedId = ref<number>();
@@ -55,12 +58,14 @@ export const useBattleStore = defineStore('battle', () => {
   const progressPaused = ref(false);
   const resolutions = shallowRef<readonly RoundResolution[]>([]);
   const animating = ref(false);
+  const boardRevision = ref(0);
   const localTime = ref(BigInt(Math.floor(Date.now() / 1_000)));
   const context = shallowRef<{ deployment: Deployment; id: bigint; account?: Address }>();
   let continuingFor: typeof context.value;
   const history = shallowRef<readonly { drafts: DraftBundle; unitId: number }[]>([]);
   let requestId = 0;
   let refreshPromise: Promise<void> | undefined;
+  let refreshQueued = false;
   let hostChecked = false;
   let lastInspectedId: number | undefined;
   const field = computed(() => snapshot.value?.battlefield);
@@ -305,6 +310,7 @@ export const useBattleStore = defineStore('battle', () => {
     error.value = '';
     hostChecked = false;
     refreshPromise = undefined;
+    refreshQueued = false;
     secret.value = undefined;
     secretReady.value = false;
     secretError.value = '';
@@ -328,8 +334,12 @@ export const useBattleStore = defineStore('battle', () => {
     if (refreshPromise) return refreshPromise;
     if (!context.value) return Promise.resolve();
     const pending: Promise<void> = loadSnapshot().finally(() => {
-      if (refreshPromise === pending) refreshPromise = undefined;
-      if (!busy.value && !error.value) void continueRound();
+      if (refreshPromise !== pending) return;
+      refreshPromise = undefined;
+      if (refreshQueued && !busy.value) {
+        refreshQueued = false;
+        void refresh();
+      } else if (!busy.value && !error.value) void continueRound();
     });
     refreshPromise = pending;
     return pending;
@@ -347,7 +357,22 @@ export const useBattleStore = defineStore('battle', () => {
         if (request !== requestId) return;
         hostChecked = true;
       }
-      const previous = snapshot.value;
+      let previous = snapshot.value;
+      if (previous) {
+        const displaced =
+          next.blockNumber < previous.blockNumber ||
+          (await publicClient(target.deployment).getBlock({ blockNumber: previous.blockNumber }))
+            .hash !== previous.blockHash;
+        if (request !== requestId) return;
+        if (displaced) {
+          previous = undefined;
+          resolutions.value = [];
+          animating.value = false;
+          boardRevision.value++;
+          hostChecked = false;
+          if (transaction.roomId === target.id.toString()) transaction.reset();
+        }
+      }
       const settled =
         previous && previous.room.stateHash !== next.room.stateHash
           ? await readResolutions(
@@ -516,6 +541,10 @@ export const useBattleStore = defineStore('battle', () => {
     } finally {
       if (context.value === target) {
         working.value = false;
+        if (refreshQueued && !busy.value) {
+          refreshQueued = false;
+          void refresh();
+        }
         if (action !== 'timeout' && !progressPaused.value && !error.value) void continueRound();
       }
     }
@@ -699,6 +728,22 @@ export const useBattleStore = defineStore('battle', () => {
     feedback.value = '';
     interaction.value = 'details';
   }
+  updates.listen((update) => {
+    const target = context.value;
+    if (!target || update.kind === 'unavailable') return;
+    if (
+      (update.kind === 'change' || update.kind === 'reorg') &&
+      update.matches.length &&
+      !update.matches.includes(target.id.toString())
+    )
+      return;
+    if (update.kind === 'reorg' || update.kind === 'reset') {
+      if (transaction.roomId === target.id.toString()) transaction.reset();
+      // Reset transient rendering and requests; persisted orders and Salt remain in IndexedDB.
+      open(target.deployment, target.id, target.account);
+    } else if (refreshPromise || busy.value) refreshQueued = true;
+    else void refresh();
+  });
   return {
     snapshot,
     room,
@@ -748,6 +793,7 @@ export const useBattleStore = defineStore('battle', () => {
     progressPaused,
     resolutions,
     animating,
+    boardRevision,
     submit,
     retryRound,
     restoreBackup,

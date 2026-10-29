@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { Confirmation, HistoryMeta } from '../lib/history';
+import { useUpdatesStore } from '../stores/updates';
+const updates = useUpdatesStore();
 defineProps<{ meta?: HistoryMeta; available: boolean; confirmation?: Confirmation }>();
 </script>
 <template>
@@ -25,6 +27,7 @@ defineProps<{ meta?: HistoryMeta; available: boolean; confirmation?: Confirmatio
       }}</span>
     </template>
     <span v-else>{{ available ? 'History connected' : 'Connecting to history…' }}</span>
+    <span>{{ updates.label }}</span>
   </div>
 </template>
 <style scoped>

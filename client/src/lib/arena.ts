@@ -52,6 +52,7 @@ export interface RoundResolution {
 export interface BattleSnapshot {
   room: Room;
   blockNumber: bigint;
+  blockHash: string;
   timestamp: bigint;
   roundStatus?: RoundStatus;
   settlementAccount?: Address;
@@ -167,7 +168,12 @@ export async function readBattleSnapshot(
     functionName: 'getMatch',
     args: [matchId],
   });
-  const snapshot: BattleSnapshot = { room, blockNumber: block.number, timestamp: block.timestamp };
+  const snapshot: BattleSnapshot = {
+    room,
+    blockNumber: block.number,
+    blockHash: block.hash,
+    timestamp: block.timestamp,
+  };
   if (room.round === 0) return snapshot;
   const [state, map, rules, roundStatus] = await Promise.all([
     client.readContract({ ...request, functionName: 'getBattleState', args: [matchId] }),
