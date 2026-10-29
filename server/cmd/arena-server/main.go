@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -29,6 +30,20 @@ func run(args []string) error {
 		return err
 	}
 	switch args[0] {
+	case "check-ready":
+		if len(args) != 1 {
+			return fmt.Errorf("check-ready takes no additional arguments")
+		}
+		client := &http.Client{Timeout: 2 * time.Second}
+		response, err := client.Get("http://127.0.0.1:8080/ready")
+		if err != nil {
+			return err
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			return fmt.Errorf("read API is not ready: %s", response.Status)
+		}
+		return nil
 	case "browser-fault":
 		if len(args) != 2 {
 			return fmt.Errorf("browser-fault requires corrupt, restore, database-state, or hold-keeper")
@@ -110,6 +125,6 @@ func run(args []string) error {
 		fmt.Println("Every generated round matched the independent Solidity resolver. Simulation results do not determine official games.")
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q; use serve, status, verify, simulate, or check-indexer", args[0])
+		return fmt.Errorf("unknown command %q; use serve, status, check-ready, verify, simulate, or check-indexer", args[0])
 	}
 }

@@ -65,7 +65,7 @@ func Run(ctx context.Context, root, operation string) error {
 	s.db.SetMaxOpenConns(8)
 	s.db.SetMaxIdleConns(4)
 	if err = s.db.PingContext(setup); err != nil {
-		return fmt.Errorf("connect PostgreSQL: %w; start PostgreSQL and create the onchain_arena database, or set DATABASE_URL", err)
+		return fmt.Errorf("connect PostgreSQL: %w; check the project database container and backend startup output", err)
 	}
 	if _, err = s.db.ExecContext(setup, schema); err != nil {
 		return fmt.Errorf("apply database schema: %w", err)

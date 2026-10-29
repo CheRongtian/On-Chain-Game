@@ -57,15 +57,17 @@ func BrowserFault(root, operation string) error {
 	}
 	if operation == "database-state" {
 		state := struct {
-			Started time.Time                    `json:"startedAt"`
-			LockPID int                          `json:"indexerLockPid"`
-			Records map[string][]json.RawMessage `json:"records"`
+			Started     time.Time                    `json:"startedAt"`
+			LockPID     int                          `json:"indexerLockPid"`
+			LockStarted *time.Time                   `json:"indexerLockStartedAt"`
+			Records     map[string][]json.RawMessage `json:"records"`
 		}{}
-		err = db.QueryRowContext(ctx, `SELECT pg_postmaster_start_time(),COALESCE((
-			SELECT a.pid FROM pg_stat_activity a JOIN pg_locks l ON l.pid=a.pid
+		err = db.QueryRowContext(ctx, `WITH lease AS (
+			SELECT a.pid,a.backend_start FROM pg_stat_activity a JOIN pg_locks l ON l.pid=a.pid
 			WHERE a.datname=current_database() AND a.application_name='onchain_arena_backend'
-			AND l.locktype='advisory' AND l.classid=0 AND l.objid::bigint=$1 AND l.granted LIMIT 1),0)`, deployment).
-			Scan(&state.Started, &state.LockPID)
+			AND l.locktype='advisory' AND l.classid=0 AND l.objid::bigint=$1 AND l.granted LIMIT 1)
+			SELECT pg_postmaster_start_time(),COALESCE((SELECT pid FROM lease),0),(SELECT backend_start FROM lease)`, deployment).
+			Scan(&state.Started, &state.LockPID, &state.LockStarted)
 		if err != nil {
 			return err
 		}

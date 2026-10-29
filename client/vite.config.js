@@ -10,13 +10,13 @@ const resourcePolicy = [
   "object-src 'none'",
   "base-uri 'self'",
 ];
-const localConnections = "connect-src 'self' http://127.0.0.1:8545";
+const localConnections = "connect-src 'self' http://127.0.0.1:18545";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, fileURLToPath(new URL('..', import.meta.url)), '');
   const proxy = {
     '/api': {
-      target: `http://${process.env.HTTP_ADDRESS || env.HTTP_ADDRESS || '127.0.0.1:8080'}`,
+      target: `http://${process.env.HTTP_ADDRESS || env.HTTP_ADDRESS || '127.0.0.1:18081'}`,
       rewrite: (path) => path.replace(/^\/api/, ''),
       configure(proxy) {
         proxy.on('proxyRes', (upstream, _request, downstream) => {

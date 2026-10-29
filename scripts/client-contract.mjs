@@ -13,13 +13,13 @@ const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const abiFile = resolve(projectRoot, "client/src/generated/arena.ts");
 const deploymentFile = resolve(projectRoot, "client/public/deployment.json");
 
-async function latestContractChange(directory) {
+async function latestSourceChange(directory, suffixes) {
   let latest = 0;
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const file = resolve(directory, entry.name);
     if (entry.isDirectory())
-      latest = Math.max(latest, await latestContractChange(file));
-    else if (entry.name.endsWith(".sol"))
+      latest = Math.max(latest, await latestSourceChange(file, suffixes));
+    else if (suffixes.some((suffix) => entry.name.endsWith(suffix)))
       latest = Math.max(latest, (await stat(file)).mtimeMs);
   }
   return latest;
@@ -36,17 +36,38 @@ async function requireCurrentDeployment() {
   const artifact = await stat(
     resolve(projectRoot, "contracts/out/Arena.sol/Arena.json"),
   );
-  const changed = await latestContractChange(
+  const changed = await latestSourceChange(
     resolve(projectRoot, "contracts/src"),
+    [".sol"],
   );
-  const launcher = await stat(resolve(projectRoot, "scripts/run-backend.sh"));
-  const chain = await stat(resolve(projectRoot, "scripts/local-chain.sh"));
+  const backend = await latestSourceChange(resolve(projectRoot, "server"), [
+    ".go",
+    ".sql",
+    "go.mod",
+    "go.sum",
+  ]);
+  const runtime = await Promise.all(
+    [
+      "Dockerfile",
+      "compose.yaml",
+      ".dockerignore",
+      "scripts/run-backend.sh",
+      "scripts/local-chain.sh",
+      "scripts/local-indexer.sh",
+      "scripts/local-compose.sh",
+      "scripts/container-backend.sh",
+    ].map((file) => stat(resolve(projectRoot, file))),
+  );
   if (
-    Math.max(changed, artifact.mtimeMs, launcher.mtimeMs, chain.mtimeMs) >
-    deployment.mtimeMs
+    Math.max(
+      changed,
+      backend,
+      artifact.mtimeMs,
+      ...runtime.map((file) => file.mtimeMs),
+    ) > deployment.mtimeMs
   ) {
     throw new Error(
-      "The Arena contracts or backend launcher changed after this local deployment. Restart ./scripts/run-backend.sh, wait for its ready message, then run ./scripts/run-frontend.sh.",
+      "The contracts or backend runtime changed after this local deployment. Restart ./scripts/run-backend.sh, wait for its ready message, then run ./scripts/run-frontend.sh.",
     );
   }
 }

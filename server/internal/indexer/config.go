@@ -35,8 +35,14 @@ func readConfig(root string) (config, error) {
 	if err = json.Unmarshal(data, &cfg); err != nil {
 		return cfg, err
 	}
-	if cfg.ChainID != 31337 || cfg.RPC != "http://127.0.0.1:8545" || !common.IsHexAddress(cfg.Arena) {
+	if cfg.ChainID != 31337 || cfg.RPC != "http://127.0.0.1:18545" || !common.IsHexAddress(cfg.Arena) {
 		return cfg, fmt.Errorf("invalid local deployment configuration")
+	}
+	if internal := os.Getenv("BACKEND_RPC_URL"); internal != "" {
+		if internal != "http://host.docker.internal:18545" {
+			return cfg, fmt.Errorf("BACKEND_RPC_URL must address the managed Anvil on the Docker Desktop host")
+		}
+		cfg.RPC = internal
 	}
 	cfg.Arena = strings.ToLower(cfg.Arena)
 	cfg.From, err = strconv.ParseUint(cfg.DeploymentBlock, 10, 63)
@@ -45,11 +51,11 @@ func readConfig(root string) (config, error) {
 	}
 	cfg.Database = os.Getenv("DATABASE_URL")
 	if cfg.Database == "" {
-		cfg.Database = "postgres://localhost:5432/onchain_arena?sslmode=disable"
+		cfg.Database = "postgres://arena@127.0.0.1:55432/onchain_arena?sslmode=disable"
 	}
 	cfg.HTTP = os.Getenv("HTTP_ADDRESS")
 	if cfg.HTTP == "" {
-		cfg.HTTP = "127.0.0.1:8080"
+		cfg.HTTP = "127.0.0.1:18081"
 	}
 	cfg.KeeperEnabled = true
 	if value := os.Getenv("KEEPER_ENABLED"); value != "" {

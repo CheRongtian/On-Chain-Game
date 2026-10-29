@@ -247,17 +247,13 @@ func (c *checker) checkStreamCrash(after string) error {
 	if err != nil {
 		return err
 	}
-	process, err := os.FindProcess(meta.ProcessID)
-	if err != nil {
-		return err
-	}
 	oldStream, err := c.openStream(after)
 	if err != nil {
 		return err
 	}
 	defer oldStream.close()
 	log.Print("Deliberately terminating Go without a restart request; the launcher must retain Anvil and recover it.")
-	if err = process.Signal(syscall.SIGKILL); err != nil {
+	if err = c.signalIndexer(meta.ProcessID, "KILL"); err != nil {
 		return err
 	}
 	if _, readErr := oldStream.next("change", ""); readErr == nil || errors.Is(readErr, context.DeadlineExceeded) || errors.Is(readErr, context.Canceled) {
@@ -414,7 +410,7 @@ func (c *checker) checkStreamDatabase() error {
 	if !reflect.DeepEqual(before, after) {
 		return fmt.Errorf("project database reconnection changed canonical records")
 	}
-	c.recordStream("project database connections and Indexer lock recover without restarting shared PostgreSQL", started)
+	c.recordStream("project database connections and Indexer lock recover without restarting the database container", started)
 	return nil
 }
 

@@ -1,0 +1,6 @@
+**
+!.local/
+!.local/bin/
+!.local/bin/arena-server-linux
+!scripts/
+!scripts/container-backend.sh

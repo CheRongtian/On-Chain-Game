@@ -6,17 +6,7 @@ prepare_frontend_checks() {
         return 1
     fi
     node "$project_root/client/scripts/browser.mjs"
-    if [[ ! -f /Library/LaunchDaemons/postgresql-16.plist ]]; then
-        printf 'The existing PostgreSQL 16 LaunchDaemon is required for database restart acceptance.\n' >&2
-        return 1
-    fi
-    if ! /usr/bin/sudo -n -l /bin/launchctl kill SIGINT system/postgresql-16 > /dev/null 2>&1 ||
-       ! /usr/bin/sudo -n -l /bin/launchctl kickstart system/postgresql-16 > /dev/null 2>&1 ||
-       ! /usr/bin/sudo -n /bin/launchctl print system/postgresql-16 > /dev/null 2>&1; then
-        printf 'Password-free PostgreSQL test control is unavailable. Apply the one-time fixed-command setup in the root README before running test.\n' >&2
-        return 1
-    fi
-    printf 'PostgreSQL test control is available. Test will briefly restart the shared service and disconnect its clients.\n'
+    printf "Database restart acceptance controls only this project's PostgreSQL container.\n"
 }
 
 run_frontend_checks() {

@@ -1,0 +1,55 @@
+name: onchain-arena
+
+services:
+  db:
+    image: postgres:16-alpine
+    pull_policy: never
+    environment:
+      POSTGRES_DB: onchain_arena
+      POSTGRES_USER: arena
+      POSTGRES_PASSWORD: ${ARENA_DATABASE_PASSWORD:-arena_local}
+    ports:
+      - "127.0.0.1:${ARENA_DATABASE_PORT:-55432}:5432"
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arena -d onchain_arena"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    stop_grace_period: 20s
+
+  api:
+    platform: ${ARENA_API_PLATFORM:-}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    environment:
+      DATABASE_URL: postgres://arena@db:5432/onchain_arena?sslmode=disable
+      PGPASSWORD: ${ARENA_DATABASE_PASSWORD:-arena_local}
+      HTTP_ADDRESS: 0.0.0.0:8080
+      BACKEND_RPC_URL: http://host.docker.internal:18545
+      CONFIRMATION_DEPTH: ${CONFIRMATION_DEPTH:-0}
+      KEEPER_ENABLED: ${KEEPER_ENABLED:-true}
+      KEEPER_PRIVATE_KEY: ${KEEPER_PRIVATE_KEY:-}
+    ports:
+      - "${HTTP_ADDRESS:-127.0.0.1:18081}:8080"
+    volumes:
+      - ./.local:/workspace/.local
+      - ./client/public:/workspace/client/public:ro
+      - ./contracts/out:/workspace/contracts/out:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "arena-server", "check-ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    stop_grace_period: 20s
+
+volumes:
+  database:

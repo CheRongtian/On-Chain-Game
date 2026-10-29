@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"syscall"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -377,15 +376,11 @@ func (c *checker) checkCrashBranch() error {
 		return err
 	}
 	c.recordHistory("commit-timeout-draw", entry.ID, draw)
-	process, err := os.FindProcess(meta.ProcessID)
-	if err != nil {
-		return err
-	}
-	if err = process.Signal(syscall.SIGSTOP); err != nil {
+	if err = c.signalIndexer(meta.ProcessID, "STOP"); err != nil {
 		return err
 	}
 	// Resume on an interrupted check so a reused backend is never left suspended.
-	defer func() { _ = process.Signal(syscall.SIGCONT) }()
+	defer func() { _ = c.signalIndexer(meta.ProcessID, "CONT") }()
 	if err = c.revert(snapshot); err != nil {
 		return err
 	}
@@ -404,12 +399,11 @@ func (c *checker) checkCrashBranch() error {
 	if err = c.request("restart"); err != nil {
 		return err
 	}
-	// The launcher must enter its restart handler before the stopped process exits.
-	// That handler remains in control of Anvil throughout the crash scenario.
+	// The container supervisor must consume the restart request before Go exits.
 	if err = c.waitRestartHandler(); err != nil {
 		return err
 	}
-	if err = process.Signal(syscall.SIGKILL); err != nil {
+	if err = c.signalIndexer(meta.ProcessID, "KILL"); err != nil {
 		return err
 	}
 	if _, err = c.waitAtTip(meta.ProcessID); err != nil {

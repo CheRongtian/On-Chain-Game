@@ -67,7 +67,7 @@ type preparedOrders struct {
 }
 
 func main() {
-	rpc := flag.String("rpc", "http://127.0.0.1:8545", "Local Anvil RPC URL")
+	rpc := flag.String("rpc", "http://127.0.0.1:18545", "Local Anvil RPC URL")
 	arena := flag.String("arena", "", "Deployed Arena address")
 	output := flag.String("output", "../.local/demo", "Directory for public local demo records")
 	flag.Parse()

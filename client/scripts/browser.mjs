@@ -30,20 +30,5 @@ export async function installedBrowser() {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   await import('playwright');
   await import('vite');
-  let database;
-  try {
-    database = new URL(
-      process.env.DATABASE_URL || 'postgres://localhost:5432/onchain_arena?sslmode=disable',
-    );
-  } catch {
-    throw new Error('DATABASE_URL must be a valid local PostgreSQL connection URL.');
-  }
-  if (
-    !['localhost', '127.0.0.1', '[::1]'].includes(database.hostname) ||
-    (database.port && database.port !== '5432')
-  )
-    throw new Error(
-      'Database restart acceptance requires the existing local PostgreSQL 16 service on port 5432.',
-    );
   console.log(`Using installed headless shell: ${await installedBrowser()}`);
 }

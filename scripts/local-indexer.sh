@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
-# Sourced by the backend launcher; operations keep its existing Anvil chain alive.
+# Host-side control; Go process recovery runs inside the API container.
+source "$project_root/scripts/local-compose.sh"
 indexer_pid=""
-indexer_operation=""
-indexer_restarts=0
-indexer_restart_window=$SECONDS
+indexer_log_pid=""
+compose_log_since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 backend_test_pid=""
 backend_pid_file="$project_root/.local/backend.pid"
 indexer_command_file="$project_root/.local/indexer-command"
@@ -14,7 +14,14 @@ build_go_backend() {
     cd "$project_root/server"
     mkdir -p "$project_root/.local/bin"
     printf 'Building Go backend...\n'
-    go build -mod=mod -o "$indexer_binary" ./cmd/arena-server
+    GOTOOLCHAIN=local GOPROXY=off go build -mod=readonly -o "$indexer_binary" ./cmd/arena-server
+}
+
+build_linux_backend() {
+    cd "$project_root/server"
+    printf 'Building the Linux backend for %s with the installed Go and module cache...\n' "$ARENA_API_PLATFORM"
+    GOTOOLCHAIN=local GOPROXY=off CGO_ENABLED=0 GOOS=linux GOARCH="${ARENA_API_PLATFORM#linux/}" \
+        go build -mod=readonly -o "$project_root/.local/bin/arena-server-linux" ./cmd/arena-server
 }
 
 wait_for_backend_ready() {
@@ -24,8 +31,12 @@ wait_for_backend_ready() {
             printf 'The backend process exited before its read API became ready.\n' >&2
             return 1
         fi
+        if [[ -f "$project_root/.local/indexer-failure" ]]; then
+            cat "$project_root/.local/indexer-failure" >&2
+            return 1
+        fi
         if curl --fail --silent --max-time 1 --output /dev/null \
-            "http://${HTTP_ADDRESS:-127.0.0.1:8080}/ready"; then
+            "http://${HTTP_ADDRESS:-127.0.0.1:18081}/ready"; then
             printf 'Backend services are ready for checks.\n'
             return 0
         fi
@@ -42,7 +53,8 @@ run_backend_check() {
     backend_test_pid=$!
     while kill -0 "$backend_test_pid" 2>/dev/null; do
         if [[ -n "$indexer_pid" ]] && ! kill -0 "$indexer_pid" 2>/dev/null; then
-            recover_go_indexer || return 1
+            printf 'The API container stopped during acceptance. Inspect the preceding service logs.\n' >&2
+            return 1
         fi
         sleep 0.1
     done
@@ -77,78 +89,38 @@ request_indexer_operation() {
 }
 
 start_go_indexer() {
-    local operation="${1:-}"
-    indexer_operation="$operation"
-    printf 'Starting Go Indexer and read API...\n'
-    if [[ -n "$operation" ]]; then
-        "$indexer_binary" serve "$operation" &
-    else
-        "$indexer_binary" serve &
+    local container_id
+    rm -f "$project_root/.local/indexer-failure" "$project_root/.local/container-exit"
+    printf 'Starting the Go Indexer and read API container...\n'
+    arena_compose up -d --no-deps --force-recreate api
+    arena_compose logs --follow --since "$compose_log_since" db api &
+    indexer_log_pid=$!
+    container_id="$(arena_compose ps -q api)"
+    if [[ -z "$container_id" ]]; then
+        printf 'Compose did not create the API container.\n' >&2
+        return 1
     fi
+    docker wait "$container_id" > "$project_root/.local/container-exit" &
     indexer_pid=$!
 }
 
-recover_go_indexer() {
-    local service_status=0
-    wait "$indexer_pid" 2>/dev/null || service_status=$?
-    if [[ -n "$indexer_operation" ]]; then
-        printf 'Go indexing maintenance failed with status %d. Inspect the saved comparison report.\n' "$service_status" >&2
-        return 1
-    fi
-    if (( SECONDS - indexer_restart_window >= 60 )); then
-        indexer_restarts=0
-        indexer_restart_window=$SECONDS
-    fi
-    while (( indexer_restarts < 3 )); do
-        indexer_restarts=$((indexer_restarts + 1))
-        printf 'Go services exited with status %d. Keeping Anvil and rooms; recovery attempt %d/3.\n' "$service_status" "$indexer_restarts" >&2
-        sleep 1
-        start_go_indexer
-        if wait_for_backend_ready "$indexer_pid"; then
-            return 0
-        fi
-        # A live but unready process must be stopped before binding the API again.
-        stop_go_indexer
-        service_status=1
-    done
-    printf 'Go recovery failed repeatedly. Stopping the backend; inspect the preceding errors.\n' >&2
-    return 1
-}
-
-stop_go_indexer() {
-    if [[ -n "$indexer_pid" ]]; then
-        kill -TERM "$indexer_pid" 2>/dev/null || true
-        wait "$indexer_pid" 2>/dev/null || true
-        indexer_pid=""
-    fi
-}
-
 restart_go_indexer() {
-    local operation
-    if [[ ! -f "$indexer_command_file" ]]; then
-        return
-    fi
-    read -r operation < "$indexer_command_file"
-    rm -f "$indexer_command_file"
-    case "$operation" in
-        restart|rescan|reindex) ;;
-        *) printf 'Unknown indexing operation: %s\n' "$operation" >&2; return 1 ;;
-    esac
-    printf 'Restarting Go services; the local chain and browser rooms remain running.\n'
-    stop_go_indexer
-    if [[ "$operation" == "restart" ]]; then
-        start_go_indexer
-    else
-        start_go_indexer "$operation"
-        wait_for_backend_ready "$indexer_pid"
-        indexer_operation=""
-    fi
+    [[ -f "$indexer_command_file" ]] || return
+    arena_compose kill --signal USR1 api
 }
 
 stop_backend() {
     trap '' USR1
     stop_backend_tests
-    stop_go_indexer
+    arena_compose down || true
+    if [[ -n "$indexer_log_pid" ]]; then
+        kill -TERM "$indexer_log_pid" 2>/dev/null || true
+        wait "$indexer_log_pid" 2>/dev/null || true
+    fi
+    if [[ -n "$indexer_pid" ]]; then
+        kill -TERM "$indexer_pid" 2>/dev/null || true
+        wait "$indexer_pid" 2>/dev/null || true
+    fi
     stop_local_chain
     rm -f "$backend_pid_file" "$indexer_command_file"
 }

@@ -14,7 +14,7 @@ const root = fileURLToPath(new URL('../..', import.meta.url));
 const output = resolve(root, '.local/browser');
 const binary = resolve(root, '.local/bin/arena-server');
 const run = promisify(execFile);
-const backend = `http://${process.env.HTTP_ADDRESS || '127.0.0.1:8080'}`;
+const backend = `http://${process.env.HTTP_ADDRESS || '127.0.0.1:18081'}`;
 const base = 'http://127.0.0.1:5174';
 const acceptance = JSON.parse(
   await readFile(resolve(root, '.local/indexer/acceptance.json'), 'utf8'),
@@ -109,19 +109,28 @@ async function databaseState() {
   });
   return JSON.parse(stdout);
 }
-async function launchctl(...args) {
-  return run('/usr/bin/sudo', ['-n', '/bin/launchctl', ...args, 'system/postgresql-16'], {
-    timeout: 20_000,
-  });
+async function compose(...args) {
+  return run(
+    'docker',
+    [
+      'compose',
+      '--project-name',
+      'onchain-arena',
+      '--project-directory',
+      root,
+      '-f',
+      resolve(root, 'compose.yaml'),
+      ...args,
+    ],
+    {
+      timeout: 90_000,
+    },
+  );
 }
 async function startDatabase() {
   if (!databaseStopped) return;
-  await waitFor(async () => {
-    const { stdout } = await launchctl('print');
-    return !/^\s*pid = [1-9]\d*\s*$/m.test(stdout);
-  }, 'PostgreSQL did not finish its requested shutdown.');
-  console.log('Starting the existing PostgreSQL 16 service again...');
-  await launchctl('kickstart');
+  console.log('Starting the project PostgreSQL container again...');
+  await compose('start', 'db');
   databaseStopped = false;
   await ready();
 }
@@ -301,11 +310,10 @@ try {
   const loadsBeforeDatabase = documentLoads,
     readsBeforeDatabase = replayReads;
   console.log(
-    'Deliberately stopping shared PostgreSQL 16 to check the real outage and browser recovery.',
+    'Deliberately stopping the project PostgreSQL container to check the real outage and browser recovery.',
   );
   databaseStopped = true;
-  // SIGINT requests PostgreSQL fast shutdown, including its active sessions.
-  await launchctl('kill', 'SIGINT');
+  await compose('stop', '--timeout', '10', 'db');
   await waitFor(async () => {
     const response = await fetch(`${backend}/health`, { signal: AbortSignal.timeout(4_000) });
     const state = await response.json();
@@ -328,7 +336,9 @@ try {
     'The PostgreSQL server itself must restart.',
   );
   assert.ok(
-    database.indexerLockPid > 0 && database.indexerLockPid !== baseline.indexerLockPid,
+    database.indexerLockPid > 0 &&
+      database.indexerLockStartedAt &&
+      database.indexerLockStartedAt !== baseline.indexerLockStartedAt,
     'Indexer must reacquire its session lock.',
   );
   assert.equal(recovered.processId, initial.processId, 'Database recovery must keep Go running.');
@@ -360,6 +370,8 @@ try {
     after: database.startedAt,
     oldLockPid: baseline.indexerLockPid,
     newLockPid: database.indexerLockPid,
+    oldLockStartedAt: baseline.indexerLockStartedAt,
+    newLockStartedAt: database.indexerLockStartedAt,
     processId: recovered.processId,
   };
   passed(
@@ -436,7 +448,8 @@ try {
     readsBeforeGo = replayReads,
     endedBeforeGo = report.connections.length;
   console.log('Deliberately terminating Go while its history page stays open.');
-  process.kill(oldGo.processId, 'SIGKILL');
+  assert.ok(oldGo.processId > 1, 'Go must run as a child inside its container.');
+  await compose('exec', '-T', 'api', 'sh', '-c', 'kill -KILL "$1"', 'sh', String(oldGo.processId));
   await waitFor(
     () => report.connections.length > endedBeforeGo,
     'The API proxy did not close the browser SSE connection after Go exited.',
@@ -574,7 +587,7 @@ try {
     process.exitCode = 1;
     console.error(`Browser recovery cleanup failed: ${error.message}`);
     if (databaseStopped)
-      console.error('Restore PostgreSQL with: sudo launchctl kickstart system/postgresql-16');
+      console.error('Restore the project database with: docker compose start db');
   }
   if (keeper) {
     keeper.stdin.end();

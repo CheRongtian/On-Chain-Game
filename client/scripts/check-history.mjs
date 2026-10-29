@@ -12,7 +12,7 @@ const root = fileURLToPath(new URL('../..', import.meta.url));
 const clientRoot = resolve(root, 'client');
 const output = resolve(root, '.local/browser');
 const run = promisify(execFile);
-const backend = `http://${process.env.HTTP_ADDRESS || '127.0.0.1:8080'}`;
+const backend = `http://${process.env.HTTP_ADDRESS || '127.0.0.1:18081'}`;
 const acceptance = JSON.parse(
   await readFile(resolve(root, '.local/indexer/acceptance.json'), 'utf8'),
 );
@@ -41,7 +41,7 @@ async function api(path) {
   return response.json();
 }
 async function rpc(method, params = []) {
-  const response = await fetch('http://127.0.0.1:8545', {
+  const response = await fetch('http://127.0.0.1:18545', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
