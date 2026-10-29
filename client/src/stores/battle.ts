@@ -36,11 +36,13 @@ import {
 import type { OrderSecret } from '../lib/secrets';
 import { useTransactionStore } from './transaction';
 import { useUpdatesStore } from './updates';
+import { useArenaStore } from './arena';
 
 type Interaction = 'idle' | 'details' | 'target' | 'review';
 export const useBattleStore = defineStore('battle', () => {
   const transaction = useTransactionStore();
   const updates = useUpdatesStore();
+  const arena = useArenaStore();
   const snapshot = shallowRef<BattleSnapshot>();
   const drafts = shallowRef<DraftBundle>(emptyDrafts());
   const selectedId = ref<number>();
@@ -227,6 +229,7 @@ export const useBattleStore = defineStore('battle', () => {
   const canUndo = computed(() => editable.value && history.value.length > 0);
   const canCommit = computed(
     () =>
+      arena.online &&
       !busy.value &&
       !loading.value &&
       !animating.value &&
@@ -241,6 +244,7 @@ export const useBattleStore = defineStore('battle', () => {
   );
   const canReveal = computed(
     () =>
+      arena.online &&
       !busy.value &&
       !loading.value &&
       !error.value &&
@@ -253,6 +257,7 @@ export const useBattleStore = defineStore('battle', () => {
   );
   const canSettle = computed(
     () =>
+      arena.online &&
       !busy.value &&
       !loading.value &&
       !error.value &&
@@ -261,6 +266,7 @@ export const useBattleStore = defineStore('battle', () => {
   );
   const canTimeout = computed(
     () =>
+      arena.online &&
       !busy.value &&
       !loading.value &&
       !error.value &&
@@ -592,6 +598,15 @@ export const useBattleStore = defineStore('battle', () => {
     const action = room.value?.phase === 4 ? 'settle' : 'reveal';
     await submit(action);
   }
+  async function checkTransaction() {
+    const target = context.value;
+    const confirmed = await transaction.checkConfirmation();
+    if (context.value !== target || confirmed === undefined) return;
+    progressPaused.value = false;
+    actionError.value = '';
+    await refresh();
+    if (context.value === target) await continueRound();
+  }
   async function restoreBackup(file: File, password: string) {
     const target = context.value;
     const secretKey = currentSecretContext();
@@ -796,6 +811,7 @@ export const useBattleStore = defineStore('battle', () => {
     boardRevision,
     submit,
     retryRound,
+    checkTransaction,
     restoreBackup,
     animationComplete,
     tick,

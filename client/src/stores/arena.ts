@@ -10,7 +10,7 @@ export const useArenaStore = defineStore('arena', () => {
   const address = ref<Address>();
   const refreshing = ref(false);
   const error = ref('');
-  const online = computed(() => !!connection.value);
+  const online = computed(() => !!connection.value && !error.value);
   const epoch = computed(() => connection.value?.deployment.deployedAt ?? 'offline');
   const selected = computed(() =>
     connection.value?.accounts.find((account) => account.address === address.value),
@@ -39,7 +39,6 @@ export const useArenaStore = defineStore('arena', () => {
       }
       error.value = '';
     } catch (cause) {
-      connection.value = undefined;
       error.value = errorMessage(cause);
     } finally {
       refreshing.value = false;

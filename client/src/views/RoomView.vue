@@ -5,6 +5,7 @@ import { zeroAddress } from 'viem';
 import AppIcon from '../components/AppIcon.vue';
 import CurrentAccount from '../components/CurrentAccount.vue';
 import UpdateStatus from '../components/UpdateStatus.vue';
+import TransactionNotice from '../components/TransactionNotice.vue';
 import { readRoom, requireHostStart } from '../lib/arena';
 import type { Room } from '../lib/arena';
 import { errorMessage } from '../lib/errors';
@@ -36,6 +37,7 @@ const expired = computed(
 );
 const mayStart = computed(
   () =>
+    arena.online &&
     isHost.value &&
     waiting.value &&
     opponentJoined.value &&
@@ -45,6 +47,7 @@ const mayStart = computed(
 );
 const mayJoin = computed(
   () =>
+    arena.online &&
     waiting.value &&
     !isHost.value &&
     !opponentJoined.value &&
@@ -193,12 +196,21 @@ async function copyInvitation() {
     <section v-if="matchId === undefined" class="notice" role="alert">
       <h2>Invalid room ID</h2>
     </section>
-    <section v-else-if="!arena.online" class="notice" role="status">
+    <section v-else-if="!arena.connection" class="notice" role="status">
       <h2>Waiting for the backend</h2>
-      <p>Start the backend and wait for its ready message.</p>
+      <p>{{ arena.error || 'Start the backend and wait for its ready message.' }}</p>
+      <button class="button secondary" :disabled="arena.refreshing" @click="arena.refresh()">
+        Retry connection
+      </button>
     </section>
     <template v-else>
+      <p v-if="arena.error" class="failure" role="alert">
+        {{ arena.error }} Showing the last confirmed room.
+      </p>
       <p v-if="error" class="failure" role="alert">{{ error }}</p>
+      <TransactionNotice
+        v-if="transaction.roomId === String(matchId) && transaction.status !== 'confirmed'"
+      />
       <template v-if="room">
         <section
           v-if="waiting && isHost"
@@ -256,9 +268,6 @@ async function copyInvitation() {
             {{ joining ? 'Joining…' : 'Join room' }}
           </button>
         </section>
-        <p v-if="transaction.status === 'failed'" class="failure" role="alert">
-          {{ transaction.message }}
-        </p>
         <div class="seats">
           <article v-for="player in [0, 1] as const" :key="player">
             <h3>

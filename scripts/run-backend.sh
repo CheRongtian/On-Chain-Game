@@ -30,7 +30,7 @@ run_backend_tests() {
     run_safety_checks
     run_indexer_checks keeper
     run_frontend_checks
-    printf 'PASS: all backend and browser recovery checks completed.\n'
+    printf 'PASS: all backend, browser gameplay, and recovery checks completed.\n'
 }
 
 case "$mode" in

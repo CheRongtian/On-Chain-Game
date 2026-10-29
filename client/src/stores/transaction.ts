@@ -25,7 +25,7 @@ const confirmations: Record<Operation, string> = {
   settle: 'Round complete.',
   timeout: 'Timeout finalized on the chain.',
 };
-type Status = 'idle' | 'sending' | 'pending' | 'confirmed' | 'failed';
+type Status = 'idle' | 'sending' | 'pending' | 'unconfirmed' | 'confirmed' | 'failed';
 
 export const useTransactionStore = defineStore('transaction', () => {
   const status = ref<Status>('idle');
@@ -33,8 +33,9 @@ export const useTransactionStore = defineStore('transaction', () => {
   const hash = ref<Hash>();
   const roomId = ref<string>();
   const message = ref('');
-  const busy = computed(() => status.value === 'sending' || status.value === 'pending');
+  const busy = computed(() => ['sending', 'pending', 'unconfirmed'].includes(status.value));
   let generation = 0;
+  let checkReceipt: ((wait: boolean) => Promise<bigint | undefined>) | undefined;
 
   function reset() {
     generation++;
@@ -43,6 +44,7 @@ export const useTransactionStore = defineStore('transaction', () => {
     hash.value = undefined;
     roomId.value = undefined;
     message.value = '';
+    checkReceipt = undefined;
   }
 
   async function send(command: Command, matchId?: bigint): Promise<bigint | undefined> {
@@ -51,7 +53,7 @@ export const useTransactionStore = defineStore('transaction', () => {
     const arena = useArenaStore();
     const deployment = arena.connection?.deployment;
     const account = arena.selected?.address;
-    if (!deployment || !account) return;
+    if (!arena.online || !deployment || !account) return;
     reset();
     const token = generation;
     const epoch = arena.epoch;
@@ -124,25 +126,44 @@ export const useTransactionStore = defineStore('transaction', () => {
       }
       if (!current()) return;
       hash.value = submitted;
-      status.value = 'pending';
-      const receipt = await reader.waitForTransactionReceipt({
-        hash: submitted,
-        confirmations: 1,
-        timeout: 120_000,
-        onReplaced: ({ transaction }) => {
-          if (current()) hash.value = transaction.hash;
-        },
-      });
-      if (!current()) return;
-      if (receipt.status !== 'success')
-        throw new Error('The transaction reverted. Refresh the room before retrying.');
-      const id = action === 'create' ? createdRoomId(deployment, receipt) : matchId!;
-      hash.value = receipt.transactionHash;
-      roomId.value = id.toString();
-      message.value = confirmations[action];
-      status.value = 'confirmed';
-      void arena.refresh();
-      return id;
+      checkReceipt = async (wait) => {
+        if (!current() || !hash.value) return;
+        status.value = 'pending';
+        message.value = '';
+        try {
+          const receipt = wait
+            ? await reader.waitForTransactionReceipt({
+                hash: hash.value,
+                confirmations: 1,
+                timeout: 120_000,
+                onReplaced: ({ transaction }) => {
+                  if (current()) hash.value = transaction.hash;
+                },
+              })
+            : await reader.getTransactionReceipt({ hash: hash.value });
+          if (!current()) return;
+          if (receipt.status !== 'success') {
+            checkReceipt = undefined;
+            status.value = 'failed';
+            message.value = 'The transaction reverted. Refresh the room before retrying.';
+            return;
+          }
+          const id = action === 'create' ? createdRoomId(deployment, receipt) : matchId!;
+          checkReceipt = undefined;
+          hash.value = receipt.transactionHash;
+          roomId.value = id.toString();
+          message.value = confirmations[action];
+          status.value = 'confirmed';
+          void arena.refresh();
+          return id;
+        } catch {
+          if (!current()) return;
+          status.value = 'unconfirmed';
+          message.value =
+            'Transaction submitted. Confirmation is unavailable. Check confirmation to query the same transaction again.';
+        }
+      };
+      return await checkReceipt(true);
     } catch (cause) {
       if (
         current() &&
@@ -168,6 +189,10 @@ export const useTransactionStore = defineStore('transaction', () => {
         message.value = errorMessage(cause);
       }
     }
+  }
+
+  function checkConfirmation() {
+    if (status.value === 'unconfirmed') return checkReceipt?.(false);
   }
 
   function createRoom() {
@@ -200,6 +225,7 @@ export const useTransactionStore = defineStore('transaction', () => {
     message,
     busy,
     reset,
+    checkConfirmation,
     createRoom,
     joinRoom,
     startGame,

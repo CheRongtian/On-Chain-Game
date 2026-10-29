@@ -12,7 +12,7 @@ const messages: Record<string, string> = {
   UnknownMap: 'This map is unavailable.',
   NotPlayer: 'Only seated players can submit orders.',
   StaleRound: 'The round has advanced. Refresh before continuing.',
-  AlreadyCommitted: 'Your orders are already committed. Refresh to restore the Reveal controls.',
+  AlreadyCommitted: 'Your orders are already confirmed. Refresh to continue the round.',
   AlreadyRevealed: 'Your orders are already revealed. Refresh to see the next step.',
   CommitmentMismatch:
     'These orders or their Salt do not match your commitment. Import the original backup.',

@@ -208,8 +208,8 @@ h2 {
   color: var(--text-muted);
 }
 .dismiss {
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   flex-shrink: 0;
   display: grid;
   place-content: center;
@@ -302,7 +302,7 @@ dd {
   font-size: 0.75rem;
 }
 .minor {
-  min-height: 32px;
+  min-height: 44px;
   width: 100%;
   padding: 4px;
   margin-top: 4px;
@@ -313,5 +313,29 @@ dd {
 }
 button:disabled {
   opacity: 0.5;
+}
+@media (max-width: 600px) {
+  .drawer-panel {
+    padding: 8px;
+    top: 8px;
+    right: 8px;
+    max-height: calc(100% - 16px);
+  }
+  .drawer-panel.drawer-left {
+    left: 8px;
+  }
+  header {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .dismiss {
+    align-self: flex-end;
+  }
+  .stats {
+    grid-template-columns: 1fr;
+  }
+  .actions button {
+    padding: 8px 4px;
+  }
 }
 </style>

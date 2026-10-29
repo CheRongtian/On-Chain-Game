@@ -94,6 +94,12 @@ watch(
     if (unitId !== undefined) lastUnit.value = unitId;
   },
 );
+watch(
+  () => arena.online,
+  (online) => {
+    if (online) void battle.refresh();
+  },
+);
 function focusBoard() {
   void nextTick(() => board.value?.focusUnit(lastUnit.value));
 }
@@ -295,8 +301,8 @@ h1 {
   font-size: 0.6875rem;
 }
 .refresh {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   padding: 6px;
   color: var(--text-muted);
   background: transparent;
@@ -429,6 +435,7 @@ h1 {
   min-height: 28px;
   font-size: 0.6875rem;
   color: var(--text-muted);
+  flex-wrap: wrap;
 }
 .dock-status p {
   margin: 0;
@@ -452,6 +459,7 @@ h1 {
   justify-content: space-between;
   gap: 12px;
   min-height: 48px;
+  flex-wrap: wrap;
 }
 .targeting > div:first-child {
   min-width: 0;

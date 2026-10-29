@@ -9,6 +9,7 @@ const labels = {
   idle: '',
   sending: 'Sending your transaction',
   pending: 'Waiting for confirmation',
+  unconfirmed: 'Confirmation needs checking',
   confirmed: 'Confirmed on the local chain',
   failed: 'Transaction unsuccessful',
 } as const;
@@ -29,12 +30,14 @@ const detail = computed(() =>
     aria-labelledby="transaction-title"
   >
     <div class="notice-heading">
-      <span class="notice-icon" :class="{ spinning: transaction.busy }"
+      <span
+        class="notice-icon"
+        :class="{ spinning: transaction.status === 'pending' || transaction.status === 'sending' }"
         ><AppIcon
           :name="
             transaction.status === 'confirmed'
               ? 'check'
-              : transaction.status === 'failed'
+              : transaction.status === 'failed' || transaction.status === 'unconfirmed'
                 ? 'clock'
                 : 'refresh'
           "
@@ -44,7 +47,20 @@ const detail = computed(() =>
         Dismiss
       </button>
     </div>
-    <p role="status">{{ detail }}</p>
+    <p
+      :role="
+        transaction.status === 'failed' || transaction.status === 'unconfirmed' ? 'alert' : 'status'
+      "
+    >
+      {{ detail }}
+    </p>
+    <button
+      v-if="transaction.status === 'unconfirmed'"
+      class="button secondary"
+      @click="transaction.checkConfirmation()"
+    >
+      Check confirmation
+    </button>
     <p v-if="transaction.hash" class="address transaction-hash">{{ transaction.hash }}</p>
     <RouterLink v-if="transaction.roomId" class="inline-link" :to="`/rooms/${transaction.roomId}`"
       >Open room #{{ transaction.roomId }} <AppIcon name="arrow"

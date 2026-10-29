@@ -13,6 +13,7 @@ const transaction = useTransactionStore();
 const route = useRoute();
 const arena = useArenaStore();
 const dialog = ref<HTMLDialogElement>();
+const backupTrigger = ref<HTMLButtonElement>();
 const confirmation = ref<HTMLDialogElement>();
 const confirmTrigger = ref<HTMLButtonElement>();
 const skipConfirmation = ref(false);
@@ -43,6 +44,8 @@ const deadline = computed(() =>
 );
 const heading = computed(() => {
   if (battle.room?.outcome) return 'Match finished';
+  if (!arena.online) return 'Local chain unavailable · orders retained';
+  if (transaction.status === 'unconfirmed') return 'Check your submitted transaction';
   if (battle.phaseExpired) return 'Deadline reached · confirm timeout on chain';
   if (battle.playerIndex === undefined) return 'Spectating this match';
   if (battle.progressPaused) return 'Round processing paused';
@@ -59,6 +62,7 @@ const roundOperation = computed(
 );
 const feedback = computed(
   () =>
+    arena.error ||
     battle.actionError ||
     battle.secretError ||
     battle.actionMessage ||
@@ -72,9 +76,10 @@ const feedback = computed(
 );
 const failed = computed(
   () =>
+    !!arena.error ||
     !!battle.actionError ||
     !!battle.secretError ||
-    (roundOperation.value && transaction.status === 'failed'),
+    (roundOperation.value && ['failed', 'unconfirmed'].includes(transaction.status)),
 );
 watch(
   preferenceKey,
@@ -136,6 +141,11 @@ function closeBackup() {
   password.value = '';
   file.value = undefined;
 }
+function restoreBackupFocus() {
+  password.value = '';
+  file.value = undefined;
+  void nextTick(() => backupTrigger.value?.focus({ preventScroll: true }));
+}
 function chooseFile(event: Event) {
   file.value = (event.target as HTMLInputElement).files?.[0];
 }
@@ -176,13 +186,10 @@ async function restoreBackup() {
     processing.value = false;
   }
 }
-watch(
-  () => [battle.room?.round, battle.room?.phase, battle.playerIndex],
-  () => {
-    closeBackup();
-    closeConfirmation();
-  },
-);
+watch([() => battle.room?.round, () => battle.room?.phase, () => battle.playerIndex], () => {
+  closeBackup();
+  closeConfirmation();
+});
 onBeforeUnmount(() => {
   clearInterval(timer);
   dialog.value?.close();
@@ -202,14 +209,22 @@ onBeforeUnmount(() => {
       <div class="round-actions">
         <button
           v-if="battle.playerIndex !== undefined && !battle.room?.outcome"
+          ref="backupTrigger"
           class="secondary-action"
-          :disabled="battle.busy || processing"
+          :disabled="(battle.busy && transaction.status !== 'unconfirmed') || processing"
           @click="openBackup"
         >
           Orders backup
         </button>
         <button
-          v-if="battle.room?.phase === 2 && battle.playerIndex !== undefined"
+          v-if="roundOperation && transaction.status === 'unconfirmed'"
+          class="primary-action"
+          @click="battle.checkTransaction()"
+        >
+          Check confirmation
+        </button>
+        <button
+          v-else-if="battle.room?.phase === 2 && battle.playerIndex !== undefined"
           ref="confirmTrigger"
           class="primary-action"
           :disabled="!battle.canCommit"
@@ -240,6 +255,8 @@ onBeforeUnmount(() => {
             !battle.progressPaused &&
             !battle.missingSecret &&
             !battle.secretError &&
+            arena.online &&
+            transaction.status !== 'unconfirmed' &&
             !battle.error
           "
           class="processing-status"
@@ -275,6 +292,12 @@ onBeforeUnmount(() => {
     <p v-if="battle.phaseExpired" class="timeout-hint">
       Countdown uses local time and the chain deadline. Your click updates idle local-chain time if
       needed; the contract confirms expiry.
+    </p>
+    <p
+      v-if="roundOperation && transaction.status === 'unconfirmed' && transaction.hash"
+      class="transaction-hash"
+    >
+      Submitted transaction: {{ transaction.hash }}
     </p>
   </section>
 
@@ -321,6 +344,7 @@ onBeforeUnmount(() => {
     aria-labelledby="backup-title"
     @cancel.prevent="closeBackup"
     @click.self="closeBackup"
+    @close="restoreBackupFocus"
   >
     <section class="backup-panel">
       <header>
@@ -342,6 +366,7 @@ onBeforeUnmount(() => {
         id="backup-password"
         v-model="password"
         type="password"
+        autofocus
         autocomplete="off"
         :disabled="processing"
       />
@@ -409,9 +434,14 @@ onBeforeUnmount(() => {
   font-variant-numeric: tabular-nums;
 }
 button {
-  min-height: 40px;
+  min-height: 44px;
   padding: 8px 12px;
   border-radius: 6px;
+  font-size: 0.75rem;
+}
+.transaction-hash {
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
   font-size: 0.75rem;
 }
 button:disabled {

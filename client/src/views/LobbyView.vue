@@ -22,11 +22,16 @@ watch(
     inputError.value = '';
   },
 );
+watch(
+  () => transaction.status,
+  (status) => {
+    if (status === 'confirmed' && transaction.operation === 'create' && transaction.roomId)
+      void router.push(`/rooms/${transaction.roomId}`);
+  },
+);
 
 async function createRoom() {
-  const id = await transaction.createRoom();
-  if (id !== undefined && router.currentRoute.value.name === 'lobby')
-    await router.push(`/rooms/${id}`);
+  await transaction.createRoom();
 }
 
 function findRoom() {
@@ -107,7 +112,12 @@ function findRoom() {
             aria-describedby="room-id-hint"
             @input="inputError = ''"
           />
-          <p id="room-id-hint" class="field-hint" :class="{ 'inline-error': inputError }">
+          <p
+            id="room-id-hint"
+            class="field-hint"
+            :class="{ 'inline-error': inputError }"
+            :role="inputError ? 'alert' : undefined"
+          >
             {{ inputError || 'Use a room ID or the link from Copy invitation.' }}
           </p>
           <button class="button secondary full-width" type="submit">

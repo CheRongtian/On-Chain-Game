@@ -100,7 +100,7 @@ function changeAccount(event: Event) {
 
     <div class="workspace" :class="{ 'history-workspace': route.name === 'history' }">
       <main id="main-content" tabindex="-1">
-        <div v-if="arena.error && route.name === 'lobby'" class="connection-alert" role="status">
+        <div v-if="arena.error && route.name === 'lobby'" class="connection-alert" role="alert">
           <div>
             <strong>Local chain unavailable</strong>
             <p>{{ arena.error }}</p>

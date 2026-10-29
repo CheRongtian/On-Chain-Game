@@ -1,6 +1,20 @@
 import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'node:url';
 import vue from '@vitejs/plugin-vue';
+import { replacePlugin } from 'rolldown/plugins';
+
+const phaserSource = fileURLToPath(
+  new URL('./src/phaser-esm.js', import.meta.resolve('phaser/package.json')),
+);
+// Phaser uses typeof expressions as compile-time switches in its source build.
+const phaserConstants = {
+  'typeof CANVAS_RENDERER': 'true',
+  'typeof WEBGL_RENDERER': 'true',
+  'typeof WEBGL_DEBUG': 'false',
+  'typeof FEATURE_SOUND': 'true',
+  'typeof PLUGIN_CAMERA3D': 'false',
+  'typeof PLUGIN_FBINSTANT': 'false',
+};
 
 const resourcePolicy = [
   "default-src 'self'",
@@ -31,6 +45,28 @@ export default defineConfig(({ mode }) => {
   };
   return {
     plugins: [vue()],
+    // The published engine is a single module; its source can be split into cached chunks.
+    resolve: { alias: [{ find: /^phaser$/, replacement: phaserSource }] },
+    optimizeDeps: {
+      rolldownOptions: { plugins: [replacePlugin(phaserConstants)] },
+    },
+    build: {
+      rolldownOptions: {
+        plugins: [replacePlugin(phaserConstants)],
+        output: {
+          strictExecutionOrder: true,
+          codeSplitting: {
+            groups: [
+              {
+                name: 'phaser',
+                test: /node_modules[\\/]phaser[\\/]src[\\/]/,
+                maxSize: 400_000,
+              },
+            ],
+          },
+        },
+      },
+    },
     server: {
       proxy,
       host: '127.0.0.1',

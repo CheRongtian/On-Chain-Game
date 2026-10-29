@@ -724,6 +724,13 @@ dd {
 .transaction-failed .notice-icon {
   color: var(--error);
 }
+.transaction-unconfirmed {
+  background: var(--amber-surface);
+  border-color: var(--amber);
+}
+.transaction-notice .button {
+  margin-top: var(--space-3);
+}
 .inline-link {
   display: inline-flex;
   align-items: center;

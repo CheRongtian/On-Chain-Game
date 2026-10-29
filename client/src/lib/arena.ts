@@ -14,7 +14,7 @@ export const localChain = defineChain({
   id: 31337,
   name: 'Local Arena',
   nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: { default: { http: ['http://127.0.0.1:8545'] } },
+  rpcUrls: { default: { http: ['http://127.0.0.1:18545'] } },
   testnet: true,
 });
 
@@ -38,8 +38,8 @@ export interface Connection {
 }
 export type Room = ContractFunctionReturnType<typeof arenaAbi, 'view', 'getMatch'>;
 export type BattleState = ContractFunctionReturnType<typeof arenaAbi, 'view', 'getBattleState'>;
-export type BattleMap = ContractFunctionReturnType<typeof arenaAbi, 'view', 'getMap'>;
-export type BattleRules = ContractFunctionReturnType<typeof arenaAbi, 'view', 'getRules'>;
+export type BattleMap = ContractFunctionReturnType<typeof arenaAbi, 'pure', 'getMap'>;
+export type BattleRules = ContractFunctionReturnType<typeof arenaAbi, 'pure', 'getRules'>;
 export type RoundStatus = ContractFunctionReturnType<typeof arenaAbi, 'view', 'getRoundStatus'>;
 export interface RoundResolution {
   blockNumber: bigint;
