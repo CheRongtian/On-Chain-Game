@@ -265,7 +265,7 @@ contract ArenaSafetyTest is SafetySupport {
 
     // Each of at most twenty rounds must execute and assert the actual local protocol.
     // forge-lint: disable-next-item(calls-loop, require-revert-in-loop)
-    function testFuzzCompleteLegalGame(uint64 seed) public {
+    function testFuzzCompleteLegalGame(uint64 seed, bool guestFirst) public {
         uint256 id = room();
         for (uint256 index = 0; index < GameTypes.MAX_ROUNDS; ++index) {
             GameTypes.BattleState memory beforeState = arena.getBattleState(id);
@@ -288,20 +288,25 @@ contract ArenaSafetyTest is SafetySupport {
                 IArena.InvalidPhase.selector
             );
             commit(id, GUEST, b, SALT_B);
-            reveal(id, HOST, a, SALT_A);
-            rejected(
-                id,
-                HOST,
-                abi.encodeCall(Arena.revealActions, (id, beforeState.round, a, SALT_A)),
-                IArena.AlreadyRevealed.selector
-            );
-            rejected(
-                id,
-                OBSERVER,
-                abi.encodeCall(Arena.settleRound, (id, beforeState.round)),
-                IArena.InvalidPhase.selector
-            );
-            reveal(id, GUEST, b, SALT_B);
+            {
+                (address player, GameTypes.Action[3] memory orders, bytes32 salt) =
+                    guestFirst ? (GUEST, b, SALT_B) : (HOST, a, SALT_A);
+                reveal(id, player, orders, salt);
+                rejected(
+                    id,
+                    player,
+                    abi.encodeCall(Arena.revealActions, (id, beforeState.round, orders, salt)),
+                    IArena.AlreadyRevealed.selector
+                );
+                rejected(
+                    id,
+                    OBSERVER,
+                    abi.encodeCall(Arena.settleRound, (id, beforeState.round)),
+                    IArena.InvalidPhase.selector
+                );
+                (player, orders, salt) = guestFirst ? (HOST, a, SALT_A) : (GUEST, b, SALT_B);
+                reveal(id, player, orders, salt);
+            }
             (GameTypes.BattleState memory expected,) = BattleResolver.resolve(beforeState, a, b);
             if (beforeState.round > 1) {
                 rejected(

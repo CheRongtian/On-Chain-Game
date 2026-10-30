@@ -9,12 +9,16 @@ import { IArena } from "./IArena.sol";
 
 library TurnProtocol {
     uint256 private constant SQUAD_SIZE = 3;
+    uint256 private constant BYTE_BITS = 8;
+    uint256 private constant ACTION_HEADER_BYTES = 3;
+    uint256 private constant ACTION_BITS = 56;
 
     struct MatchData {
         GameTypes.MatchSummary summary;
         GameTypes.BattleState battle;
         GameTypes.RoundStatus roundStatus;
-        GameTypes.Action[SQUAD_SIZE][2] revealedActions;
+        // Each validated three-action bundle occupies 21 bytes in one storage word.
+        uint256[2] revealedActions;
     }
 
     function commit(MatchData storage matchData, uint256 matchId, uint8 round, bytes32 commitment)
@@ -52,7 +56,7 @@ library TurnProtocol {
         if (commitment != status.commitments[player]) revert IArena.CommitmentMismatch();
         UnitRules.validateActions(matchData.battle, player, actions);
 
-        _storeActions(matchData.revealedActions[player], actions);
+        matchData.revealedActions[player] = _packActions(actions);
         status.revealed[player] = true;
         emit IArena.ActionRevealed(matchId, round, msg.sender, actions, salt);
         if (status.revealed[0] && status.revealed[1]) {
@@ -66,7 +70,9 @@ library TurnProtocol {
         _requireRound(summary, round);
         bytes32 beforeHash = summary.stateHash;
         (GameTypes.BattleState memory next,) = BattleResolver.resolve(
-            matchData.battle, matchData.revealedActions[0], matchData.revealedActions[1]
+            matchData.battle,
+            _unpackActions(matchData.revealedActions[0]),
+            _unpackActions(matchData.revealedActions[1])
         );
         storeBattle(matchData.battle, next);
         summary.round = next.round;
@@ -194,16 +200,37 @@ library TurnProtocol {
         return submittedA ? GameTypes.Outcome.PlayerA : GameTypes.Outcome.PlayerB;
     }
 
-    function _storeActions(
-        GameTypes.Action[SQUAD_SIZE] storage destination,
-        GameTypes.Action[SQUAD_SIZE] calldata source
-    ) private {
-        for (uint256 slot = 0; slot < GameTypes.SQUAD_SIZE; ++slot) {
-            destination[slot].kind = source[slot].kind;
-            destination[slot].targetCell = source[slot].targetCell;
-            destination[slot].pathLength = source[slot].pathLength;
+    function _packActions(GameTypes.Action[SQUAD_SIZE] calldata source)
+        private
+        pure
+        returns (uint256 packed)
+    {
+        for (uint256 slot = 0; slot < SQUAD_SIZE; ++slot) {
+            GameTypes.Action calldata action = source[slot];
+            uint256 value = uint256(action.kind) | (uint256(action.targetCell) << BYTE_BITS)
+                | (uint256(action.pathLength) << (2 * BYTE_BITS));
             for (uint256 step = 0; step < GameTypes.MAX_PATH_LENGTH; ++step) {
-                destination[slot].path[step] = source[slot].path[step];
+                value |= uint256(action.path[step]) << ((ACTION_HEADER_BYTES + step) * BYTE_BITS);
+            }
+            packed |= value << (slot * ACTION_BITS);
+        }
+    }
+
+    // Every narrowed field is masked to one byte; only validated actions reach this storage.
+    // forge-lint: disable-next-item(unsafe-typecast)
+    function _unpackActions(uint256 packed)
+        private
+        pure
+        returns (GameTypes.Action[SQUAD_SIZE] memory actions)
+    {
+        for (uint256 slot = 0; slot < SQUAD_SIZE; ++slot) {
+            uint256 value = packed >> (slot * ACTION_BITS);
+            actions[slot].kind = GameTypes.ActionKind(value & type(uint8).max);
+            actions[slot].targetCell = uint8((value >> BYTE_BITS) & type(uint8).max);
+            actions[slot].pathLength = uint8((value >> (2 * BYTE_BITS)) & type(uint8).max);
+            for (uint256 step = 0; step < GameTypes.MAX_PATH_LENGTH; ++step) {
+                actions[slot].path[step] =
+                    uint8((value >> ((ACTION_HEADER_BYTES + step) * BYTE_BITS)) & type(uint8).max);
             }
         }
     }

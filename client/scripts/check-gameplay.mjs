@@ -6,7 +6,16 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { chromium } from 'playwright';
 import { preview } from 'vite';
-import { createPublicClient, getAddress, http, parseEventLogs, toFunctionSelector } from 'viem';
+import {
+  createPublicClient,
+  getAddress,
+  http,
+  keccak256,
+  parseEventLogs,
+  parseTransaction,
+  recoverTransactionAddress,
+  toFunctionSelector,
+} from 'viem';
 import { anvil } from 'viem/chains';
 import { installedBrowser } from './browser.mjs';
 
@@ -113,17 +122,39 @@ async function createPlayer(index, account) {
     receiptBlocked: false,
     failSends: 0,
     blockReveal: false,
+    snapshotGate: undefined,
+    snapshotHeld: false,
     writes: [],
   };
   await context.route(deployment.rpcUrl, async (route) => {
     const request = route.request();
     if (request.method() !== 'POST') return route.continue();
     const body = request.postDataJSON();
-    const transaction = body.method === 'eth_sendTransaction' ? body.params[0] : undefined;
-    const data = transaction?.data ?? transaction?.input ?? '';
-    if (transaction) player.writes.push({ selector: data.slice(0, 10), from: transaction.from });
+    if (
+      player.snapshotGate &&
+      body.method === 'eth_call' &&
+      body.params[0].data?.startsWith(selectors.getRoundStatus)
+    ) {
+      player.snapshotHeld = true;
+      await player.snapshotGate;
+    }
+    const nodeSigning =
+      body.method === 'eth_sendTransaction' || body.method === 'wallet_sendTransaction';
+    if (nodeSigning) report.errors.push('Browser gameplay requested node-managed signing.');
+    const serializedTransaction =
+      body.method === 'eth_sendRawTransaction' ? body.params[0] : undefined;
+    const transaction = serializedTransaction ? parseTransaction(serializedTransaction) : undefined;
+    const data = transaction?.data ?? '';
+    if (transaction)
+      player.writes.push({
+        hash: keccak256(serializedTransaction),
+        selector: data.slice(0, 10),
+        from: await recoverTransactionAddress({ serializedTransaction }),
+        chainId: transaction.chainId,
+      });
     const failed =
       player.offline ||
+      nodeSigning ||
       (player.receiptBlocked && body.method === 'eth_getTransactionReceipt') ||
       (transaction && player.blockReveal && data.startsWith(selectors.revealActions)) ||
       (transaction && player.failSends > 0);
@@ -136,7 +167,12 @@ async function createPlayer(index, account) {
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: body.id,
-        error: { code: -32000, message: 'Controlled browser RPC interruption' },
+        error: {
+          code: -32000,
+          message: nodeSigning
+            ? 'Browser gameplay requires local wallet signing.'
+            : 'Controlled browser RPC interruption',
+        },
       }),
     });
   });
@@ -160,6 +196,7 @@ async function confirm(player) {
   const dialog = player.page.getByRole('dialog', { name: 'Confirm orders?', exact: true });
   await dialog.waitFor();
   await dialog.getByRole('button', { name: 'Confirm', exact: true }).click();
+  await dialog.waitFor({ state: 'hidden' });
 }
 async function createMatch({ uncertain = false } = {}) {
   const [host, guest] = players;
@@ -346,11 +383,40 @@ async function recovery(id) {
     .click();
   assert.equal(host.writes.length, before, 'Cancelling the reminder must not submit anything.');
   host.failSends = 1;
-  await confirm(host);
+  await host.page.getByRole('button', { name: 'Confirm orders', exact: true }).click();
+  await confirmation.waitFor();
+  let releaseSnapshot;
+  host.snapshotGate = new Promise((done) => {
+    releaseSnapshot = done;
+  });
+  try {
+    await waitFor(() => host.snapshotHeld, 'The background snapshot read did not start.');
+    const confirmButton = confirmation.getByRole('button', { name: 'Confirm', exact: true });
+    assert.equal(
+      await confirmButton.isEnabled(),
+      true,
+      'A background snapshot read must not disable confirmation of valid orders.',
+    );
+    await confirmButton.click();
+    await confirmation.waitFor({ state: 'hidden' });
+    assert.equal(
+      host.writes.length,
+      before,
+      'Confirmation must await the pending snapshot before sending a transaction.',
+    );
+  } finally {
+    host.snapshotGate = undefined;
+    host.snapshotHeld = false;
+    releaseSnapshot();
+  }
   await host.page.getByRole('button', { name: 'Retry confirmation', exact: true }).waitFor();
   assert.equal((await read('getRoundStatus', [id])).committed[0], false);
   await host.page.getByRole('button', { name: 'Retry confirmation', exact: true }).click();
   await committed(id, 0);
+  assert.equal(host.writes.length, before + 2, 'One failed send and one successful retry only.');
+  passed(
+    'confirmation during a pending snapshot read closes the dialog, waits for refresh, and commits once after a failed-send retry',
+  );
   const writesAfterCommit = host.writes.length;
   await host.page.reload();
   await host.page.getByText('Orders confirmed', { exact: true }).waitFor();
@@ -464,15 +530,24 @@ async function verifyMatch(id, outcome, reason) {
     const receipt = await chain.getTransactionReceipt({ hash });
     assert.equal(receipt.status, 'success');
     const transaction = await chain.getTransaction({ hash });
-    assert.ok(
-      players.some((player) => player.account.toLowerCase() === transaction.from.toLowerCase()),
-      'Gameplay must come from the selected browser accounts.',
+    const player = players.find(
+      (entry) => entry.account.toLowerCase() === transaction.from.toLowerCase(),
+    );
+    assert.ok(player, 'Gameplay must come from the selected browser wallets.');
+    const signed = player.writes.find((write) => write.hash === hash);
+    assert.ok(signed, 'Every gameplay receipt must match a browser-signed raw transaction.');
+    assert.equal(signed.from, player.account, 'The signature must belong to the selected wallet.');
+    assert.equal(
+      signed.chainId,
+      deployment.chainId,
+      'Signed gameplay must target the local chain.',
     );
     report.receipts.push({
       match: id.toString(),
       hash,
       block: receipt.blockNumber.toString(),
       from: transaction.from,
+      broadcastMethod: 'eth_sendRawTransaction',
     });
   }
   const commits = parseEventLogs({ abi, logs, eventName: 'ActionCommitted' }).filter(
@@ -700,6 +775,9 @@ try {
   await timeout(3);
   await timeout(2, true);
   await timeout(3, true);
+  passed(
+    'all gameplay receipts match locally signed raw transactions from the selected wallets on chain 31337; node-managed browser signing is rejected',
+  );
   assert.deepEqual(report.errors, [], 'Uncaught browser errors');
   report.status = 'passed';
 } catch (error) {

@@ -122,8 +122,11 @@ func Safety(ctx context.Context, root string, output io.Writer) (failure error) 
 		fmt.Fprintf(output, "Gas %s: measured call=%d; including intrinsic allowance=%d; local block limit=%d.\n", name, sample.Execution, sample.WithIntrinsic, sample.Limit)
 		if sample.Budget > 0 && sample.WithIntrinsic >= sample.Budget {
 			report.BudgetMisses = append(report.BudgetMisses, name)
-			fmt.Fprintf(output, "INITIAL BUDGET MISSED: %s measured upper bound %d; target below %d.\n", name, sample.WithIntrinsic, sample.Budget)
+			fmt.Fprintf(output, "GAS BUDGET EXCEEDED: %s measured upper bound %d; target below %d.\n", name, sample.WithIntrinsic, sample.Budget)
 		}
+	}
+	if len(report.BudgetMisses) > 0 {
+		return fmt.Errorf("gas budgets exceeded: %v", report.BudgetMisses)
 	}
 	var reads struct {
 		Cold uint64 `json:"coldExecutionGas"`
@@ -136,6 +139,6 @@ func Safety(ctx context.Context, root string, output io.Writer) (failure error) 
 		return fmt.Errorf("repeated-read gas sample did not demonstrate warm access")
 	}
 	fmt.Fprintf(output, "PASS: repeated state access measured cold=%d warm=%d execution gas.\n", reads.Cold, reads.Warm)
-	fmt.Fprintf(output, "PASS: safety comparisons completed; %d games, %d rounds, %d rejection fixtures, %d transaction gas samples. Initial budget misses: %d. Local safety evidence saved.\n", report.Games, report.Rounds, len(report.Rejected), len(report.Gas), len(report.BudgetMisses))
+	fmt.Fprintf(output, "PASS: safety comparisons completed; %d games, %d rounds, %d rejection fixtures, %d transaction gas samples. All configured gas budgets passed. Local safety evidence saved.\n", report.Games, report.Rounds, len(report.Rejected), len(report.Gas))
 	return nil
 }

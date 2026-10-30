@@ -65,7 +65,11 @@ export const useTransactionStore = defineStore('transaction', () => {
     try {
       const reader = publicClient(deployment);
       const writer = accountClient(deployment, account);
-      const contract = { abi: arenaAbi, address: deployment.arenaAddress, account } as const;
+      const contract = {
+        abi: arenaAbi,
+        address: deployment.arenaAddress,
+        account: writer.account,
+      } as const;
       let submitted: Hash;
       if (command.action === 'create') {
         const { request } = await reader.simulateContract({

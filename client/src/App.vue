@@ -70,7 +70,7 @@ function changeAccount(event: Event) {
           @change="changeAccount"
         >
           <option v-if="!arena.connection?.accounts.length" value="">
-            Waiting for local accounts…
+            Waiting for local wallets…
           </option>
           <option
             v-for="(account, index) in arena.connection?.accounts"
@@ -120,7 +120,8 @@ function changeAccount(event: Event) {
             }}</span>
           </div>
           <p class="small muted">
-            Choose an account above to take a seat. Each tab keeps its own selection.
+            Choose a local test wallet above. Your browser signs transactions; each tab keeps its
+            own selection. Balances are fictitious ETH.
           </p>
           <dl class="session-facts">
             <div>

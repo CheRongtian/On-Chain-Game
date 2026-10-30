@@ -231,7 +231,6 @@ export const useBattleStore = defineStore('battle', () => {
     () =>
       arena.online &&
       !busy.value &&
-      !loading.value &&
       !animating.value &&
       !error.value &&
       secretReady.value &&

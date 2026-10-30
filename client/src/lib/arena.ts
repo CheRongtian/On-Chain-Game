@@ -8,7 +8,15 @@ import {
   parseEventLogs,
 } from 'viem';
 import type { Address, ContractFunctionReturnType, TransactionReceipt } from 'viem';
+import { mnemonicToAccount } from 'viem/accounts';
 import { arenaAbi } from '../generated/arena';
+
+// Public Anvil development seed, shared with scripts/local-chain.sh.
+const localWallets = [0, 1].map((addressIndex) =>
+  mnemonicToAccount('test test test test test test test test test test test junk', {
+    addressIndex,
+  }),
+);
 
 export const localChain = defineChain({
   id: 31337,
@@ -71,7 +79,9 @@ export function publicClient(deployment: Deployment) {
   });
 }
 
-export function accountClient(deployment: Deployment, account: Address) {
+export function accountClient(deployment: Deployment, address: Address) {
+  const account = localWallets.find((wallet) => wallet.address === address);
+  if (!account) throw new Error('Select an available local test wallet.');
   return createWalletClient({
     account,
     chain: localChain,
@@ -105,19 +115,14 @@ export async function readConnection(): Promise<Connection> {
   }
   const deployment = data as Deployment;
   const client = publicClient(deployment);
-  const node = createWalletClient({
-    chain: localChain,
-    transport: http(deployment.rpcUrl, { retryCount: 0, timeout: 8_000 }),
-  });
-  const [chainId, block, addresses] = await Promise.all([
-    client.getChainId(),
-    client.getBlock(),
-    node.getAddresses(),
-  ]);
+  const [chainId, block] = await Promise.all([client.getChainId(), client.getBlock()]);
   if (chainId !== localChain.id)
     throw new Error('The RPC is serving a different chain. Restart the local backend.');
   const accounts = await Promise.all(
-    addresses.map(async (address) => ({ address, balance: await client.getBalance({ address }) })),
+    localWallets.map(async ({ address }) => ({
+      address,
+      balance: await client.getBalance({ address }),
+    })),
   );
   return { deployment, accounts, blockNumber: block.number, timestamp: block.timestamp };
 }
