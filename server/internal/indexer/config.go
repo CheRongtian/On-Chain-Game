@@ -3,6 +3,7 @@ package indexer
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,17 +14,18 @@ import (
 )
 
 type config struct {
-	ChainID         uint64 `json:"chainId"`
-	RPC             string `json:"rpcUrl"`
-	Arena           string `json:"arenaAddress"`
-	DeploymentBlock string `json:"deploymentBlock"`
-	From            uint64
-	Database        string
-	HTTP            string
-	Confirmations   uint64
-	ABI             abi.ABI
-	KeeperEnabled   bool
-	KeeperKey       string `json:"-"`
+	ChainID          uint64 `json:"chainId"`
+	RPC              string `json:"rpcUrl"`
+	Arena            string `json:"arenaAddress"`
+	DeploymentBlock  string `json:"deploymentBlock"`
+	From             uint64
+	Database         string
+	HTTP             string
+	Confirmations    uint64
+	ABI              abi.ABI
+	KeeperEnabled    bool
+	KeeperKey        string          `json:"-"`
+	PublicDeployment json.RawMessage `json:"-"`
 }
 
 func readConfig(root string) (config, error) {
@@ -35,11 +37,13 @@ func readConfig(root string) (config, error) {
 	if err = json.Unmarshal(data, &cfg); err != nil {
 		return cfg, err
 	}
-	if cfg.ChainID != 31337 || cfg.RPC != "http://127.0.0.1:18545" || !common.IsHexAddress(cfg.Arena) {
+	endpoint, parseErr := url.Parse(cfg.RPC)
+	if parseErr != nil || endpoint.Scheme != "http" || endpoint.Hostname() != "127.0.0.1" || endpoint.Port() == "" || cfg.ChainID != 31337 || !common.IsHexAddress(cfg.Arena) {
 		return cfg, fmt.Errorf("invalid local deployment configuration")
 	}
+	cfg.PublicDeployment = append(json.RawMessage(nil), data...)
 	if internal := os.Getenv("BACKEND_RPC_URL"); internal != "" {
-		if internal != "http://host.docker.internal:18545" {
+		if internal != "http://host.docker.internal:"+endpoint.Port() {
 			return cfg, fmt.Errorf("BACKEND_RPC_URL must address the managed Anvil on the Docker Desktop host")
 		}
 		cfg.RPC = internal

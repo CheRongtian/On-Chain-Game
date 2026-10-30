@@ -19,4 +19,6 @@ run_frontend_checks() {
     run_backend_check node "$project_root/client/scripts/check-gameplay.mjs"
     printf 'Running browser reconnection, automatic refresh, and database restart acceptance...\n'
     run_backend_check node "$project_root/client/scripts/check-updates.mjs"
+    printf 'Checking saved-chain restart, deployment reuse, original order secrets, and historical rebuild...\n'
+    run_backend_check node "$project_root/client/scripts/check-persistence.mjs"
 }

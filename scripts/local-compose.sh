@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Internal Compose operations shared by the two launchers and acceptance tools.
 arena_compose() {
-    docker compose --project-name onchain-arena --project-directory "$project_root" \
+    docker compose --project-name "${ARENA_COMPOSE_PROJECT:-onchain-arena}" --project-directory "$project_root" \
         -f "$project_root/compose.yaml" "$@"
 }
 
@@ -42,12 +42,19 @@ require_local_images() {
 
 reset_local_demo() {
     local answer managed_pid deadline
-    printf "Reset will remove this project's Compose containers and database volume, contract build output, published deployment, and local demo/recovery/safety reports, including generated simulation inputs and Foundry failure corpora.\n"
+    printf "Reset will remove this project's chain checkpoints, deployment baselines, Compose database volume, contract build output, published deployment, and generated acceptance/demo/recovery/safety reports. Browser order secrets for the old deployment cannot be reused after reset.\n"
     printf 'The local environment, downloaded tools, and macOS PostgreSQL installation are retained.\n'
     read -r -p 'Type reset to continue: ' answer
     if [[ "$answer" != "reset" ]]; then
         printf 'Reset cancelled.\n'
         return
+    fi
+    if [[ -f "$project_root/.local/test/.local/backend.pid" ]]; then
+        read -r managed_pid < "$project_root/.local/test/.local/backend.pid"
+        if [[ "$managed_pid" =~ ^[0-9]+$ ]] && kill -0 "$managed_pid" 2>/dev/null; then
+            printf 'Stop the running test command before resetting its workspace.\n' >&2
+            return 1
+        fi
     fi
     if [[ -f "$backend_pid_file" ]]; then
         read -r managed_pid < "$backend_pid_file"
@@ -65,13 +72,19 @@ reset_local_demo() {
     fi
     if [[ -f "$project_root/.local/anvil.pid" ]]; then
         read -r managed_pid < "$project_root/.local/anvil.pid"
-        if [[ "$managed_pid" =~ ^[0-9]+$ ]] && lsof -nP -a -p "$managed_pid" -iTCP:18545 -sTCP:LISTEN >/dev/null 2>&1; then
+        if [[ "$managed_pid" =~ ^[0-9]+$ ]] && lsof -nP -a -p "$managed_pid" -iTCP:"${ARENA_RPC_PORT:-18545}" -sTCP:LISTEN >/dev/null 2>&1; then
             kill -CONT "$managed_pid" 2>/dev/null || true
             kill -TERM "$managed_pid"
         fi
     fi
     arena_compose down --volumes
+    if [[ -f "$project_root/.local/test/compose.yaml" ]]; then
+        docker compose --project-name onchain-arena-test --project-directory "$project_root/.local/test" \
+            -f "$project_root/.local/test/compose.yaml" down --volumes
+    fi
     rm -rf "$project_root/.local/indexer" "$project_root/.local/browser" "$project_root/.local/demo" \
+        "$project_root/.local/chain" "$project_root/.local/deployments" \
+        "$project_root/.local/test" \
         "$project_root/.local/safety" "$project_root/.local/simulation" \
         "$project_root/contracts/out" "$project_root/contracts/cache" "$project_root/contracts/broadcast"
     rm -f "$backend_pid_file" "$indexer_command_file" "$project_root/.local/indexer-failure" \

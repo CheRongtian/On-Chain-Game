@@ -3,7 +3,9 @@ set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 : > "$project_root/record.log"
-exec > >(tee -a "$project_root/record.log") 2>&1
+if [[ "${ARENA_TEST_PROJECT_ROOT:-}" != "$project_root" ]]; then
+    exec > >(tee -ai "$project_root/record.log") 2>&1
+fi
 
 mode="${1:-start}"
 if (( $# > 0 )); then
@@ -16,6 +18,12 @@ esac
 if [[ "$mode" != "verify" && "$mode" != "simulate" ]] && (( $# > 0 )); then
     printf 'The %s mode takes no additional arguments.\n' "$mode" >&2
     exit 1
+fi
+
+if [[ "$mode" == "test" && "${ARENA_TEST_PROJECT_ROOT:-}" != "$project_root" ]]; then
+    node "$project_root/scripts/test-workspace.mjs"
+    export ARENA_TEST_PROJECT_ROOT="$project_root/.local/test"
+    exec "$ARENA_TEST_PROJECT_ROOT/scripts/run-backend.sh" test
 fi
 
 if [[ -f "$project_root/.env" ]]; then
@@ -54,6 +62,9 @@ fi
 
 require_compose
 configure_local_database
+if [[ "$mode" == "test" ]]; then
+    arena_compose down --volumes
+fi
 
 if [[ "$mode" == "reset" ]]; then
     reset_local_demo
@@ -81,6 +92,11 @@ if backend_running_for_checks; then
         printf 'The existing launcher uses the old runtime. Stop it, then start this Compose backend again.\n' >&2
         exit 1
     fi
+    if [[ ! -f "$project_root/.local/chain/deployment.json" ]]; then
+        node "$project_root/scripts/client-contract.mjs" preserve
+        printf 'Keep game tabs idle. Stop the old backend terminal, then run this same entry again to restore the saved chain with the current runtime.\n'
+        exit
+    fi
     node "$project_root/scripts/client-contract.mjs" ready
     wait_for_backend_ready "$existing_backend_pid"
     if [[ "$mode" == "start" ]]; then
@@ -91,7 +107,7 @@ if backend_running_for_checks; then
     trap 'exit 143' TERM
     trap stop_backend_tests EXIT
     if [[ "$mode" == "demo" ]]; then
-        run_indexer_checks
+        run_indexer_checks demo
         printf 'Demo is ready. Keep the existing backend running, then start ./scripts/run-frontend.sh and open History.\n'
     else
         run_backend_tests
@@ -110,6 +126,7 @@ mkdir -p "$project_root/.local" "$project_root/client/public"
 trap stop_backend EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+trap 'exit 129' HUP
 printf '%s\n' "$$" > "$backend_pid_file"
 node "$project_root/scripts/client-contract.mjs" clear
 
@@ -126,14 +143,17 @@ fi
 start_local_chain
 deploy_local_arena
 
-node "$project_root/scripts/client-contract.mjs" publish \
-    "$local_rpc_url" "$arena_address" "$deployment_block"
+start_chain_checkpoints
 
 cd "$project_root/server"
 start_go_indexer
 trap restart_go_indexer USR1
 wait_for_backend_ready "$indexer_pid"
-printf 'Local Arena is ready. Read API: http://%s. Start ./scripts/run-frontend.sh in another terminal.\n' "${HTTP_ADDRESS:-127.0.0.1:18081}"
+if [[ "$mode" == "test" ]]; then
+    printf 'The isolated backend is ready. Running acceptance in this terminal...\n'
+else
+    printf 'Local Arena is ready. Read API: http://%s. Start ./scripts/run-frontend.sh in another terminal.\n' "${HTTP_ADDRESS:-127.0.0.1:18081}"
+fi
 if [[ "$mode" == "test" ]]; then
     run_backend_tests
     printf 'Backend checks completed. Stopping services started by this command.\n'
@@ -141,11 +161,11 @@ if [[ "$mode" == "test" ]]; then
 fi
 if [[ "$mode" == "demo" ]]; then
     printf 'Preparing two complete matches for browser replay...\n'
-    run_indexer_checks
+    run_indexer_checks demo
     printf 'Demo is ready. Start ./scripts/run-frontend.sh in another terminal and open History. This backend stays running until Ctrl+C.\n'
 fi
 
-printf 'Press Ctrl+C to stop this backend. The project database volume is retained.\n'
+printf 'Press Ctrl+C to save and stop this backend. The chain and project database are retained.\n'
 while kill -0 "$indexer_pid" 2>/dev/null; do
     wait "$indexer_pid" || true
 done

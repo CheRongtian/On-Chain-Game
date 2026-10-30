@@ -348,7 +348,16 @@ const valueText = (value: unknown) => (typeof value === 'string' ? value : JSON.
               </div>
               <div>
                 <dt>Source transaction</dt>
-                <dd>{{ history.current?.source.transactionHash ?? '—' }}</dd>
+                <dd>
+                  <RouterLink
+                    v-if="history.current"
+                    :to="`/transactions/${history.current.source.transactionHash}`"
+                    target="_blank"
+                    rel="noopener"
+                    class="inline-link"
+                    >{{ history.current.source.transactionHash }}</RouterLink
+                  ><span v-else>—</span>
+                </dd>
               </div>
             </dl>
           </div>

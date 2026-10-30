@@ -57,12 +57,16 @@ func run(args []string) error {
 		}
 		return indexer.BrowserFault(root, args[1])
 	case "check-indexer":
-		if len(args) > 2 || len(args) == 2 && args[1] != "keeper" {
-			return fmt.Errorf("check-indexer accepts only the optional keeper scope")
+		if len(args) > 2 || len(args) == 2 && args[1] != "keeper" && args[1] != "demo" {
+			return fmt.Errorf("check-indexer accepts only the optional keeper or demo scope")
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		return indexer.Check(ctx, root, len(args) == 2)
+		scope := ""
+		if len(args) == 2 {
+			scope = args[1]
+		}
+		return indexer.Check(ctx, root, scope)
 	case "serve":
 		operation := ""
 		if len(args) > 2 {

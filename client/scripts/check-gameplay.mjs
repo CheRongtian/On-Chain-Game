@@ -19,9 +19,10 @@ import {
 import { anvil } from 'viem/chains';
 import { installedBrowser } from './browser.mjs';
 
+const browserPort = Number(process.env.ARENA_BROWSER_PORT || 5174);
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const output = resolve(root, '.local/browser');
-const base = 'http://127.0.0.1:5174';
+const base = `http://127.0.0.1:${browserPort}`;
 const backend = `http://${process.env.HTTP_ADDRESS || '127.0.0.1:18081'}`;
 const binary = resolve(root, '.local/bin/arena-server');
 const run = promisify(execFile);
@@ -734,7 +735,7 @@ try {
   server = await preview({
     root: resolve(root, 'client'),
     configFile: resolve(root, 'client/vite.config.js'),
-    preview: { host: '127.0.0.1', port: 5174, strictPort: true },
+    preview: { host: '127.0.0.1', port: browserPort, strictPort: true },
     plugins: [
       {
         name: 'gameplay-api-outage',

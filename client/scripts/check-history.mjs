@@ -8,6 +8,7 @@ import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { installedBrowser } from './browser.mjs';
 
+const browserPort = Number(process.env.ARENA_BROWSER_PORT || 5174);
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const clientRoot = resolve(root, 'client');
 const output = resolve(root, '.local/browser');
@@ -41,7 +42,7 @@ async function api(path) {
   return response.json();
 }
 async function rpc(method, params = []) {
-  const response = await fetch('http://127.0.0.1:18545', {
+  const response = await fetch(`http://127.0.0.1:${process.env.ARENA_RPC_PORT || 18545}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
@@ -108,13 +109,13 @@ try {
   server = await createServer({
     root: clientRoot,
     configFile: resolve(clientRoot, 'vite.config.js'),
-    server: { host: '127.0.0.1', port: 5174, strictPort: true, ws: { port: 5174 } },
+    server: { host: '127.0.0.1', port: browserPort, strictPort: true, ws: { port: browserPort } },
   });
   const headers = server.config.server.headers;
   if (headers?.['Content-Security-Policy'])
     headers['Content-Security-Policy'] = String(headers['Content-Security-Policy']).replace(
       'ws://127.0.0.1:5173',
-      'ws://127.0.0.1:5174',
+      `ws://127.0.0.1:${browserPort}`,
     );
   await server.listen();
   browser = await chromium.launch({ headless: true, executablePath });
@@ -124,7 +125,7 @@ try {
   });
   page = await context.newPage();
   page.on('pageerror', (error) => report.errors.push(error.message));
-  const base = 'http://127.0.0.1:5174';
+  const base = `http://127.0.0.1:${browserPort}`;
   const first = acceptance.matches[0];
   const pageNumber = Number((BigInt(first.id) - 1n) / 10n) + 1;
   await page.goto(`${base}/history?page=${pageNumber}`);

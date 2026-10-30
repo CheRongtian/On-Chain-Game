@@ -121,7 +121,8 @@ type checker struct {
 	gate     *sql.Conn
 }
 
-func Check(ctx context.Context, root string, withKeeper bool) (err error) {
+func Check(ctx context.Context, root string, scope string) (err error) {
+	withKeeper := scope == "keeper"
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	cfg, err := readConfig(root)
@@ -153,7 +154,11 @@ func Check(ctx context.Context, root string, withKeeper bool) (err error) {
 			}
 		}
 		if err == nil {
-			log.Printf("PASS: indexing, replay, recovery, and requested acceptance scenarios matched in %s. Local acceptance report saved.", report.Duration.Round(time.Millisecond))
+			if scope == "demo" {
+				log.Printf("PASS: two indexed and independently verified demo matches prepared in %s.", report.Duration.Round(time.Millisecond))
+			} else {
+				log.Printf("PASS: indexing, replay, recovery, and requested acceptance scenarios matched in %s. Local acceptance report saved.", report.Duration.Round(time.Millisecond))
+			}
 		}
 	}()
 	c := &checker{ctx: ctx, root: root, cfg: cfg, client: &http.Client{Timeout: 35 * time.Second}, report: report}
@@ -190,13 +195,15 @@ func Check(ctx context.Context, root string, withKeeper bool) (err error) {
 	if err != nil {
 		return err
 	}
-	log.Print("Loading the current Go build while keeping Anvil and existing rooms running.")
-	if err = c.request("restart"); err != nil {
-		return err
-	}
-	meta, err = c.waitReady(meta.ProcessID, uint64(meta.IndexedBlock))
-	if err != nil {
-		return err
+	if scope != "demo" {
+		log.Print("Loading the current Go build while keeping Anvil and existing rooms running.")
+		if err = c.request("restart"); err != nil {
+			return err
+		}
+		meta, err = c.waitReady(meta.ProcessID, uint64(meta.IndexedBlock))
+		if err != nil {
+			return err
+		}
 	}
 	values, err := c.read(nil, "getRulesHash")
 	if err != nil {
@@ -246,6 +253,16 @@ func Check(ctx context.Context, root string, withKeeper bool) (err error) {
 		return err
 	}
 	log.Print("PASS: both chain results, API details, raw events, rounds, revealed actions, and snapshots matched.")
+	if scope == "demo" {
+		for _, entry := range report.Matches {
+			if _, err = c.expectVerification(entry.ID, "Verified"); err != nil {
+				return err
+			}
+		}
+		report.Status = "passed"
+		log.Print("Demo matches are ready. No reorg, database rebuild, or failure injection was performed.")
+		return nil
+	}
 	baseline, err := c.store.export(ctx)
 	if err != nil {
 		return err

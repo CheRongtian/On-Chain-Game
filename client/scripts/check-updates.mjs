@@ -10,12 +10,13 @@ import { createPublicClient, createWalletClient, http, parseEventLogs } from 'vi
 import { anvil } from 'viem/chains';
 import { installedBrowser } from './browser.mjs';
 
+const browserPort = Number(process.env.ARENA_BROWSER_PORT || 5174);
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const output = resolve(root, '.local/browser');
 const binary = resolve(root, '.local/bin/arena-server');
 const run = promisify(execFile);
 const backend = `http://${process.env.HTTP_ADDRESS || '127.0.0.1:18081'}`;
-const base = 'http://127.0.0.1:5174';
+const base = `http://127.0.0.1:${browserPort}`;
 const acceptance = JSON.parse(
   await readFile(resolve(root, '.local/indexer/acceptance.json'), 'utf8'),
 );
@@ -115,7 +116,7 @@ async function compose(...args) {
     [
       'compose',
       '--project-name',
-      'onchain-arena',
+      process.env.ARENA_COMPOSE_PROJECT || 'onchain-arena',
       '--project-directory',
       root,
       '-f',
@@ -226,7 +227,7 @@ try {
     root: resolve(root, 'client'),
     configFile: resolve(root, 'client/vite.config.js'),
     cacheDir: resolve(output, 'vite'),
-    server: { host: '127.0.0.1', port: 5174, strictPort: true, ws: { port: 5174 } },
+    server: { host: '127.0.0.1', port: browserPort, strictPort: true, ws: { port: browserPort } },
     plugins: [
       {
         name: 'acceptance-stream-interruption',
@@ -259,7 +260,7 @@ try {
   if (headers?.['Content-Security-Policy'])
     headers['Content-Security-Policy'] = String(headers['Content-Security-Policy']).replace(
       'ws://127.0.0.1:5173',
-      'ws://127.0.0.1:5174',
+      `ws://127.0.0.1:${browserPort}`,
     );
   await server.listen();
   browser = await chromium.launch({ headless: true, executablePath });

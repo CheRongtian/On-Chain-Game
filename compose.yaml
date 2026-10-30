@@ -36,7 +36,7 @@ services:
       DATABASE_URL: postgres://arena@db:5432/onchain_arena?sslmode=disable
       PGPASSWORD: ${ARENA_DATABASE_PASSWORD:-arena_local}
       HTTP_ADDRESS: 0.0.0.0:8080
-      BACKEND_RPC_URL: http://host.docker.internal:18545
+      BACKEND_RPC_URL: http://host.docker.internal:${ARENA_RPC_PORT:-18545}
       CONFIRMATION_DEPTH: ${CONFIRMATION_DEPTH:-0}
       KEEPER_ENABLED: ${KEEPER_ENABLED:-true}
       KEEPER_PRIVATE_KEY: ${KEEPER_PRIVATE_KEY:-}

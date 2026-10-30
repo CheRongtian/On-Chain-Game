@@ -57,6 +57,8 @@ export interface RoundResolution {
   paths: readonly (readonly number[])[];
 }
 
+export class HistoricalStateUnavailable extends Error {}
+
 export interface BattleSnapshot {
   room: Room;
   blockNumber: bigint;
@@ -101,7 +103,8 @@ export async function readConnection(): Promise<Connection> {
     !('chainId' in data) ||
     data.chainId !== localChain.id ||
     !('rpcUrl' in data) ||
-    data.rpcUrl !== localChain.rpcUrls.default.http[0] ||
+    typeof data.rpcUrl !== 'string' ||
+    !/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/.test(data.rpcUrl) ||
     !('arenaAddress' in data) ||
     typeof data.arenaAddress !== 'string' ||
     !isAddress(data.arenaAddress) ||
@@ -245,9 +248,15 @@ export async function readResolutions(
         functionName: 'getBattleState',
         args: [matchId],
       } as const;
+      const stateAt = (blockNumber: bigint) =>
+        client.readContract({ ...request, blockNumber }).catch((error: unknown) => {
+          if (error instanceof Error && error.message.includes('Required data unavailable'))
+            throw new HistoricalStateUnavailable('The retained historical state has expired.');
+          throw error;
+        });
       const [before, after, reveals] = await Promise.all([
-        client.readContract({ ...request, blockNumber: event.blockNumber - 1n }),
-        client.readContract({ ...request, blockNumber: event.blockNumber }),
+        stateAt(event.blockNumber - 1n),
+        stateAt(event.blockNumber),
         client.getContractEvents({
           address: deployment.arenaAddress,
           abi: arenaAbi,

@@ -56,6 +56,7 @@ function changeAccount(event: Event) {
       <nav aria-label="Main navigation">
         <RouterLink to="/" class="nav-link">Lobby</RouterLink
         ><RouterLink to="/history" class="nav-link">History</RouterLink>
+        <RouterLink to="/chain" class="nav-link">Chain</RouterLink>
       </nav>
       <span class="local-tag">LOCAL</span>
     </header>
@@ -98,7 +99,7 @@ function changeAccount(event: Event) {
       </div>
     </section>
 
-    <div class="workspace" :class="{ 'history-workspace': route.name === 'history' }">
+    <div class="workspace" :class="{ 'history-workspace': route.name !== 'lobby' }">
       <main id="main-content" tabindex="-1">
         <div v-if="arena.error && route.name === 'lobby'" class="connection-alert" role="alert">
           <div>
@@ -141,6 +142,7 @@ function changeAccount(event: Event) {
             <summary>Connection details</summary>
             <p class="small address">{{ arena.connection.deployment.rpcUrl }}</p>
             <p class="small address">{{ arena.connection.deployment.arenaAddress }}</p>
+            <RouterLink to="/chain" class="inline-link">Deployment and transactions</RouterLink>
           </details>
           <button class="text-button" :disabled="arena.refreshing" @click="arena.refresh()">
             {{ arena.refreshing ? 'Refreshing…' : 'Refresh connection' }}
@@ -170,7 +172,7 @@ function changeAccount(event: Event) {
     </div>
     <footer class="site-footer">
       <span>On-chain Tactical Arena</span
-      ><span>Local chain state resets when the backend restarts.</span>
+      ><span>Local games are saved across backend restarts. Balances use fictitious ETH.</span>
     </footer>
   </div>
 </template>

@@ -1,82 +1,134 @@
 #!/usr/bin/env bash
 
 # Sourced by the backend launcher; this file has no standalone startup flow.
-local_rpc_url="http://127.0.0.1:18545"
+local_rpc_port="${ARENA_RPC_PORT:-18545}"
+local_rpc_url="http://127.0.0.1:$local_rpc_port"
+local_checkpoint_pid=""
 local_player_a="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 local_player_b="0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
 local_anvil_pid=""
+local_chain_verified=false
+local_anvil_adopted=false
 arena_address=""
 deployment_block=""
 
 start_local_chain() {
-    local attempt
-
-    if lsof -nP -iTCP:18545 -sTCP:LISTEN >/dev/null 2>&1; then
-        printf 'Port 18545 is already in use. Stop its existing server before starting the backend.\n' >&2
+    local attempt saved_pid
+    local state="$project_root/.local/chain/state.json"
+    local manifest="$project_root/.local/chain/deployment.json"
+    local chain_args=(--host 127.0.0.1 --port "$local_rpc_port" --chain-id 31337 --hardfork cancun --gas-limit 30000000 --accounts 2)
+    mkdir -p "$project_root/.local/chain"
+    if [[ -f "$project_root/.local/anvil.pid" ]]; then
+        read -r saved_pid < "$project_root/.local/anvil.pid"
+        if [[ "$saved_pid" =~ ^[0-9]+$ ]] && lsof -nP -a -p "$saved_pid" -iTCP:"$local_rpc_port" -sTCP:LISTEN >/dev/null 2>&1; then
+            local_anvil_pid="$saved_pid"
+            local_anvil_adopted=true
+            printf 'Reusing this project’s still-running Anvil process.\n'
+            return
+        fi
+    fi
+    if lsof -nP -iTCP:"$local_rpc_port" -sTCP:LISTEN >/dev/null 2>&1; then
+        printf 'Port %s is already in use. Keep the other project running and configure an available ARENA_RPC_PORT.\n' "$local_rpc_port" >&2
         return 1
     fi
-
-    printf 'Starting a fresh local chain...\n'
-    anvil --host 127.0.0.1 --port 18545 --chain-id 31337 --hardfork cancun \
-        --gas-limit 30000000 \
-        --accounts 2 \
-        --mnemonic 'test test test test test test test test test test test junk' &
-    local_anvil_pid=$!
-    printf '%s\n' "$local_anvil_pid" > "$project_root/.local/anvil.pid"
-
-    for attempt in {1..50}; do
-        if ! kill -0 "$local_anvil_pid" 2>/dev/null; then
-            wait "$local_anvil_pid" || true
-            printf 'The local chain exited during startup.\n' >&2
+    if [[ -f "$manifest" && ! -s "$state" ]]; then
+        printf 'The saved deployment has no chain checkpoint. Restore the checkpoint or explicitly reset; no new chain was created.\n' >&2
+        return 1
+    fi
+    if [[ -s "$state" ]]; then
+        if [[ ! -f "$manifest" ]]; then
+            printf 'The chain checkpoint has no deployment record. Restore its matching record or explicitly reset.\n' >&2
             return 1
         fi
-        if lsof -nP -a -p "$local_anvil_pid" -iTCP:18545 -sTCP:LISTEN >/dev/null 2>&1; then
-            # Disable routine RPC chatter while keeping command errors and service logs visible.
+        chain_args+=(--load-state "$state")
+        printf 'Restoring the saved local chain, transactions, receipts, and retained historical states...\n'
+    else
+        printf 'Starting the first local chain...\n'
+    fi
+    node "$project_root/scripts/client-contract.mjs" start-chain "${chain_args[@]}" \
+        --mnemonic 'test test test test test test test test test test test junk'
+    read -r local_anvil_pid < "$project_root/.local/anvil.pid"
+    for attempt in {1..100}; do
+        if ! kill -0 "$local_anvil_pid" 2>/dev/null; then
+            wait "$local_anvil_pid" || true
+            local_anvil_pid=""
+            printf 'Anvil could not restore or start. Existing saved data was retained.\n' >&2
+            return 1
+        fi
+        if lsof -nP -a -p "$local_anvil_pid" -iTCP:"$local_rpc_port" -sTCP:LISTEN >/dev/null 2>&1; then
             cast rpc anvil_setLoggingEnabled false --rpc-url "$local_rpc_url" >/dev/null
             printf 'Local chain is listening at %s.\n' "$local_rpc_url"
             return 0
         fi
         sleep 0.1
     done
-
-    printf 'The local chain did not start listening within five seconds.\n' >&2
+    printf 'The local chain did not start listening within ten seconds.\n' >&2
     return 1
 }
 
+start_chain_checkpoints() {
+    # Fault injection deliberately suspends Anvil in the isolated acceptance environment.
+    [[ "$mode" != "test" ]] || return 0
+    node "$project_root/scripts/client-contract.mjs" watch "$local_rpc_url" &
+    local_checkpoint_pid=$!
+}
+
 stop_local_chain() {
-    if [[ -n "$local_anvil_pid" ]]; then
-        kill -CONT "$local_anvil_pid" 2>/dev/null || true
-        kill "$local_anvil_pid" 2>/dev/null || true
-        wait "$local_anvil_pid" 2>/dev/null || true
-        local_anvil_pid=""
-        rm -f "$project_root/.local/anvil.pid"
-        node "$project_root/scripts/client-contract.mjs" clear
+    local stop_deadline
+    if [[ -n "$local_checkpoint_pid" ]]; then
+        kill -TERM "$local_checkpoint_pid" 2>/dev/null || true
+        wait "$local_checkpoint_pid" 2>/dev/null || true
+        local_checkpoint_pid=""
     fi
+    if [[ -n "$local_anvil_pid" ]] && kill -0 "$local_anvil_pid" 2>/dev/null; then
+        if [[ "$local_anvil_adopted" == true && "$local_chain_verified" != true ]]; then
+            printf 'Deployment validation did not finish. The existing Anvil process and its unsaved games were left running.\n' >&2
+            return 1
+        fi
+        kill -CONT "$local_anvil_pid" 2>/dev/null || true
+        if [[ "$local_chain_verified" == true ]]; then
+            if ! node "$project_root/scripts/client-contract.mjs" checkpoint "$local_rpc_url"; then
+                printf 'Final checkpoint failed. Anvil was left running to preserve the unsaved games; resolve the save error before stopping it.\n' >&2
+                return 1
+            fi
+            printf 'Local chain and transaction history saved.\n'
+        fi
+        kill -TERM "$local_anvil_pid" 2>/dev/null || true
+        wait "$local_anvil_pid" 2>/dev/null || true
+        stop_deadline=$((SECONDS + 30))
+        while kill -0 "$local_anvil_pid" 2>/dev/null; do
+            if (( SECONDS >= stop_deadline )); then
+                printf 'Anvil did not finish stopping; its saved state and process record were retained.\n' >&2
+                return 1
+            fi
+            sleep 0.1
+        done
+        local_anvil_pid=""
+        local_chain_verified=false
+        local_anvil_adopted=false
+        rm -f "$project_root/.local/anvil.pid"
+    fi
+    node "$project_root/scripts/client-contract.mjs" clear
 }
 
 deploy_local_arena() {
     local compiler="$project_root/.local/bin/solc-0.8.30"
-    local deployment deployment_status=0
-
-    cd "$project_root/contracts"
-    printf 'Deploying Arena to the local chain...\n'
-    deployment="$(forge create src/Arena.sol:Arena --broadcast \
-        --unlocked --from "$local_player_a" --rpc-url "$local_rpc_url" \
-        --use "$compiler" --offline --json)" || deployment_status=$?
-    printf '%s\n' "$deployment"
-    if (( deployment_status != 0 )); then
-        return "$deployment_status"
+    local result="$project_root/.local/chain/deploy-result.json"
+    if [[ -f "$project_root/.local/chain/deployment.json" ]]; then
+        node "$project_root/scripts/client-contract.mjs" publish "$local_rpc_url"
+    else
+        cd "$project_root/contracts"
+        printf 'Deploying Arena once to the local chain...\n'
+        forge create src/Arena.sol:Arena --broadcast \
+            --unlocked --from "$local_player_a" --rpc-url "$local_rpc_url" \
+            --use "$compiler" --offline --json > "$result"
+        cat "$result"
+        node "$project_root/scripts/client-contract.mjs" publish "$local_rpc_url" "$result"
     fi
-    arena_address="$(printf '%s\n' "$deployment" | \
-        sed -nE 's/^[[:space:]]*"deployedTo":[[:space:]]*"(0x[[:xdigit:]]{40})".*/\1/p')"
-    if [[ -z "$arena_address" ]]; then
-        printf 'Could not read the Arena address from the deployment output.\n' >&2
-        return 1
-    fi
-
-    deployment_block="$(cast block-number --rpc-url "$local_rpc_url")"
-    printf 'RPC_URL=%s\nCHAIN_ID=31337\nARENA_ADDRESS=%s\nDEPLOYMENT_BLOCK=%s\n' \
-        "$local_rpc_url" "$arena_address" "$deployment_block"
+    arena_address="$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).arenaAddress' "$project_root/client/public/deployment.json")"
+    deployment_block="$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).deploymentBlock' "$project_root/client/public/deployment.json")"
+    node "$project_root/scripts/client-contract.mjs" checkpoint "$local_rpc_url"
+    local_chain_verified=true
 }
 
 check_local_arena() {

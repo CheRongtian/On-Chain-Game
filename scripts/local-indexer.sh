@@ -106,13 +106,30 @@ start_go_indexer() {
 
 restart_go_indexer() {
     [[ -f "$indexer_command_file" ]] || return
+    local operation
+    read -r operation < "$indexer_command_file"
+    if [[ "$operation" == "reload-chain" && "$mode" == "test" ]]; then
+        rm -f "$indexer_command_file"
+        printf 'Acceptance: saving and restarting the isolated Anvil node...\n'
+        stop_local_chain
+        start_local_chain
+        deploy_local_arena
+        printf 'restart\n' > "$indexer_command_file"
+        arena_compose kill --signal USR1 api
+        wait_for_backend_ready "$indexer_pid"
+        return
+    fi
     arena_compose kill --signal USR1 api
 }
 
 stop_backend() {
     trap '' USR1
     stop_backend_tests
-    arena_compose down || true
+    if [[ "$mode" == "test" ]]; then
+        arena_compose down --volumes || true
+    else
+        arena_compose down || true
+    fi
     if [[ -n "$indexer_log_pid" ]]; then
         kill -TERM "$indexer_log_pid" 2>/dev/null || true
         wait "$indexer_log_pid" 2>/dev/null || true

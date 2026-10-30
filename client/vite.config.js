@@ -24,10 +24,11 @@ const resourcePolicy = [
   "object-src 'none'",
   "base-uri 'self'",
 ];
-const localConnections = "connect-src 'self' http://127.0.0.1:18545";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, fileURLToPath(new URL('..', import.meta.url)), '');
+  const rpcPort = process.env.ARENA_RPC_PORT || env.ARENA_RPC_PORT || '18545';
+  const localConnections = `connect-src 'self' http://127.0.0.1:${rpcPort}`;
   const proxy = {
     '/api': {
       target: `http://${process.env.HTTP_ADDRESS || env.HTTP_ADDRESS || '127.0.0.1:18081'}`,
@@ -44,6 +45,9 @@ export default defineConfig(({ mode }) => {
     },
   };
   return {
+    cacheDir: process.env.ARENA_TEST_PROJECT_ROOT
+      ? fileURLToPath(new URL('../.local/vite', import.meta.url))
+      : undefined,
     plugins: [vue()],
     // The published engine is a single module; its source can be split into cached chunks.
     resolve: { alias: [{ find: /^phaser$/, replacement: phaserSource }] },

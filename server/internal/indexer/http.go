@@ -152,6 +152,8 @@ func matchID(r *http.Request) (string, *apiError) {
 
 func (s *service) routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /deployment", s.read(s.deploymentDetails))
+	mux.HandleFunc("GET /transactions/{hash}", s.read(s.transactionDetails))
 	mux.HandleFunc("GET /events", s.stream)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)

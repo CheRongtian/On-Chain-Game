@@ -3,6 +3,7 @@ import { defineStore } from 'pinia';
 import type { Address } from 'viem';
 import {
   advanceLocalClock,
+  HistoricalStateUnavailable,
   readBattleSnapshot,
   readResolutions,
   publicClient,
@@ -378,16 +379,23 @@ export const useBattleStore = defineStore('battle', () => {
           if (transaction.roomId === target.id.toString()) transaction.reset();
         }
       }
-      const settled =
-        previous && previous.room.stateHash !== next.room.stateHash
-          ? await readResolutions(
-              target.deployment,
-              target.id,
-              previous.blockNumber + 1n,
-              next.blockNumber,
-              next.room.players,
-            )
-          : [];
+      let settled: RoundResolution[] = [];
+      if (previous && previous.room.stateHash !== next.room.stateHash) {
+        try {
+          settled = await readResolutions(
+            target.deployment,
+            target.id,
+            previous.blockNumber + 1n,
+            next.blockNumber,
+            next.room.players,
+          );
+        } catch (error) {
+          if (!(error instanceof HistoricalStateUnavailable)) throw error;
+          resolutions.value = [];
+          animating.value = false;
+          boardRevision.value++;
+        }
+      }
       if (request !== requestId) return;
       if (!previous || previous.room.round !== next.room.round) {
         clearOrders();

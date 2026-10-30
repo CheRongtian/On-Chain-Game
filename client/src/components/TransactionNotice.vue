@@ -61,7 +61,14 @@ const detail = computed(() =>
     >
       Check confirmation
     </button>
-    <p v-if="transaction.hash" class="address transaction-hash">{{ transaction.hash }}</p>
+    <RouterLink
+      v-if="transaction.hash"
+      class="address transaction-hash inline-link"
+      :to="`/transactions/${transaction.hash}`"
+      target="_blank"
+      rel="noopener"
+      >{{ transaction.hash }} · View receipt</RouterLink
+    >
     <RouterLink v-if="transaction.roomId" class="inline-link" :to="`/rooms/${transaction.roomId}`"
       >Open room #{{ transaction.roomId }} <AppIcon name="arrow"
     /></RouterLink>

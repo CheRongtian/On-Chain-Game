@@ -6,6 +6,12 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'lobby', component: LobbyView },
+    { path: '/chain', name: 'chain', component: () => import('./views/ChainView.vue') },
+    {
+      path: '/transactions/:hash',
+      name: 'transaction',
+      component: () => import('./views/ChainView.vue'),
+    },
     { path: '/history', name: 'history', component: () => import('./views/HistoryView.vue') },
     {
       path: '/history/:matchId',
