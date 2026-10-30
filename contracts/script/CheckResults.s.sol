@@ -10,8 +10,7 @@ contract CheckResults {
     IDevVm private constant VM = IDevVm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
 
     // Typed decoding preserves ABI field order and fixed array lengths.
-    string private constant VECTOR_SCHEMA =
-        "StateVectors(bytes32 rulesHash,ResultVector[] results,HashVector[] hashes)"
+    string private constant VECTOR_SCHEMA = "StateVectors(bytes32 rulesHash,ResultVector[] results,HashVector[] hashes)"
         "BattleState(uint8 mapId,uint8 round,PlayerState[2] players,"
         "UnitState[6] units,uint8 outcome,uint8 reason)"
         "HashVector(string name,MatchContext context,BattleState state,bytes32 expectedHash)"
@@ -68,8 +67,7 @@ contract CheckResults {
             // Malformed fixtures must stop at the production state validator.
             (outcome, reason) = ResultRules.evaluate(vectors[index].state);
             if (
-                outcome != vectors[index].expectedOutcome
-                    || reason != vectors[index].expectedReason
+                outcome != vectors[index].expectedOutcome || reason != vectors[index].expectedReason
             ) break;
         }
         if (index < vectors.length) {

@@ -70,8 +70,6 @@ if [[ ! -x "$project_root/.local/bin/solc-0.8.30" ]]; then
     printf 'The local Solidity compiler is missing. Restore the existing compiler before starting.\n' >&2
     exit 1
 fi
-build_go_backend
-
 if [[ "$mode" == "test" ]]; then
     source "$project_root/scripts/check-frontend.sh"
     prepare_frontend_checks
@@ -101,10 +99,11 @@ if backend_running_for_checks; then
     exit
 fi
 
+build_go_backend
 require_local_images
 build_linux_backend
-printf 'Building the Go service image from local ubuntu:24.04...\n'
-arena_compose build api
+printf 'Building the Go and PostgreSQL images from local base images; cached layers are reused...\n'
+arena_compose build api db
 
 source "$project_root/scripts/local-chain.sh"
 mkdir -p "$project_root/.local" "$project_root/client/public"

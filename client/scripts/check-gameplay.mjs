@@ -478,7 +478,9 @@ async function verifyMatch(id, outcome, reason) {
   const commits = parseEventLogs({ abi, logs, eventName: 'ActionCommitted' }).filter(
     (event) => event.args.matchId === id,
   );
-  assert.equal(commits.length, reason === 5 ? 1 : reason === 6 ? 2 : replay.match.round * 2);
+  const expectedCommits =
+    reason === 5 ? (outcome === 3 ? 0 : 1) : reason === 6 ? 2 : replay.match.round * 2;
+  assert.equal(commits.length, expectedCommits);
   assert.equal(
     new Set(commits.map((event) => `${event.args.round}:${event.args.player}`)).size,
     commits.length,
@@ -564,19 +566,29 @@ async function play(reference, saved) {
   );
   return saved;
 }
-async function timeout(phase) {
+async function timeout(phase, bothMissing = false) {
   const id = await createMatch();
-  await confirm(players[0]);
-  await committed(id, 0);
+  players[0].blockReveal = phase === 3 && bothMissing;
+  players[1].blockReveal = phase === 3;
+  if (phase === 3 || !bothMissing) {
+    await confirm(players[0]);
+    await committed(id, 0);
+  }
   if (phase === 3) {
-    players[1].blockReveal = true;
     await confirm(players[1]);
     await waitFor(
-      async () => (await read('getRoundStatus', [id])).revealed[0],
-      'Player A did not reveal through the browser.',
+      async () => (await read('getMatch', [id])).phase === 3,
+      'Both UI confirmations must open the Reveal phase.',
     );
-    assert.equal((await read('getRoundStatus', [id])).revealed[1], false);
+    if (!bothMissing)
+      await waitFor(
+        async () => (await read('getRoundStatus', [id])).revealed[0],
+        'Player A did not reveal through the browser.',
+      );
   }
+  const status = await read('getRoundStatus', [id]);
+  assert.deepEqual([...status.committed], phase === 3 ? [true, true] : [!bothMissing, false]);
+  assert.deepEqual([...status.revealed], [phase === 3 && !bothMissing, false]);
   const room = await read('getMatch', [id]);
   assert.equal(room.phase, phase);
   await chain.request({
@@ -592,10 +604,14 @@ async function timeout(phase) {
   );
   await finalize.click();
   await roundDone(id, 1);
+  players[0].blockReveal = false;
   players[1].blockReveal = false;
-  await verifyMatch(id, 1, phase === 2 ? 5 : 6);
+  await verifyMatch(id, bothMissing ? 3 : 1, phase === 2 ? 5 : 6);
+  const result = bothMissing ? 'Draw' : 'Player A wins';
+  for (const { page } of players)
+    await page.locator('.result').getByText(result, { exact: true }).waitFor();
   passed(
-    `${phase === 2 ? 'Commit' : 'Reveal'} timeout completes through the UI and independently verifies the on-chain result`,
+    `${phase === 2 ? 'Commit' : 'Reveal'} timeout ${bothMissing ? 'draw' : 'win'} completes through the UI and independently verifies the on-chain result`,
   );
 }
 
@@ -682,6 +698,8 @@ try {
   await play(elimination, saved);
   await timeout(2);
   await timeout(3);
+  await timeout(2, true);
+  await timeout(3, true);
   assert.deepEqual(report.errors, [], 'Uncaught browser errors');
   report.status = 'passed';
 } catch (error) {

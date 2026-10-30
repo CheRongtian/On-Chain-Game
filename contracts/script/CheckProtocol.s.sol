@@ -23,9 +23,8 @@ contract CheckProtocol {
         actionsHash = GameHash.hashActions(actions);
         require(actionsHash == expectedActionsHash, "Action encoding differs from Cast");
 
-        GameTypes.MatchContext memory context = GameTypes.MatchContext({
-            chainId: BASE_CHAIN_ID, arena: BASE_ARENA, matchId: 1
-        });
+        GameTypes.MatchContext memory context =
+            GameTypes.MatchContext({ chainId: BASE_CHAIN_ID, arena: BASE_ARENA, matchId: 1 });
         address player = address(0xB0B);
         bytes32 salt = bytes32(uint256(1));
         bytes32 commitment = GameHash.actionCommitment(context, 1, player, actions, salt);
@@ -60,7 +59,8 @@ contract CheckProtocol {
             "Commitment does not bind player"
         );
         require(
-            commitment != GameHash.actionCommitment(context, 1, player, actions, bytes32(uint256(2))),
+            commitment
+                != GameHash.actionCommitment(context, 1, player, actions, bytes32(uint256(2))),
             "Commitment does not bind salt"
         );
 

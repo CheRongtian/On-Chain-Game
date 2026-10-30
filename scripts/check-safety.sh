@@ -7,8 +7,13 @@ run_safety_checks() {
     forge --version > "$evidence/toolchain.txt"
     GOTOOLCHAIN=local go version >> "$evidence/toolchain.txt"
     cp "$project_root/contracts/foundry.toml" "$evidence/foundry.toml"
-    printf 'Running local contract state-machine, replay, deadline, and legal-game checks...\n'
+    printf 'Checking Solidity formatting...\n'
     cd "$project_root/contracts"
+    if ! run_backend_check forge fmt --check; then
+        printf '{"status":"failed","stage":"contract-format"}\n' > "$evidence/acceptance.json"
+        return 1
+    fi
+    printf 'Running local contract state-machine, replay, deadline, and legal-game checks...\n'
     if ! run_backend_check forge test --offline --use "$project_root/.local/bin/solc-0.8.30" \
         --no-match-contract ArenaGasTest -vv; then
         printf '{"status":"failed","stage":"contracts"}\n' > "$evidence/acceptance.json"
@@ -21,8 +26,8 @@ run_safety_checks() {
         return 1
     fi
     cd "$project_root/server"
-    printf 'Running Go rejection cases and seeded rule invariants with existing dependencies...\n'
-    if ! run_backend_check env GOTOOLCHAIN=local GOPROXY=off go test -mod=readonly ./internal/offline; then
+    printf 'Checking all Go packages, rejection cases, and seeded rule invariants with existing dependencies...\n'
+    if ! run_backend_check env GOTOOLCHAIN=local GOPROXY=off go test -mod=readonly ./...; then
         printf '{"status":"failed","stage":"go-cases"}\n' > "$evidence/acceptance.json"
         return 1
     fi

@@ -42,7 +42,11 @@ library MapRules {
 
     // blocked contains walls and every live unit's round-start cell.
     function isValidPath(
-        uint8 start, uint8 pathLength, uint8[4] memory path, uint8 limit, uint64 blocked
+        uint8 start,
+        uint8 pathLength,
+        uint8[4] memory path,
+        uint8 limit,
+        uint64 blocked
     ) internal pure returns (bool) {
         if (
             start >= GameTypes.CELL_COUNT || pathLength == 0 || pathLength > limit

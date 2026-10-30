@@ -14,8 +14,7 @@ contract CheckBattle {
     uint8 private constant RESOURCE_CELL = 18;
     uint8 private constant INVALID_ENEMY_STEP = 53;
 
-    string private constant VECTOR_SCHEMA =
-        "BattleVectors(bytes32 rulesHash,BattleVector[] cases)"
+    string private constant VECTOR_SCHEMA = "BattleVectors(bytes32 rulesHash,BattleVector[] cases)"
         "Action(uint8 kind,uint8 targetCell,uint8 pathLength,uint8[4] path)"
         "BattleState(uint8 mapId,uint8 round,PlayerState[2] players,"
         "UnitState[6] units,uint8 outcome,uint8 reason)"
@@ -75,7 +74,9 @@ contract CheckBattle {
         if (!_sameBytes(original, abi.encode(vector.state, vector.actionsA, vector.actionsB))) {
             return "input snapshot changed";
         }
-        if (!_sameBytes(abi.encode(next), abi.encode(vector.expectedState))) return "state differs";
+        if (!_sameBytes(abi.encode(next), abi.encode(vector.expectedState))) {
+            return "state differs";
+        }
         if (!_sameBytes(abi.encode(summary), abi.encode(vector.expectedSummary))) {
             return "summary differs";
         }
@@ -85,9 +86,8 @@ contract CheckBattle {
         }
 
         // Swap ownership and slot groups without rotating the board or changing the rules.
-        (next, summary) = BattleResolver.resolve(
-            _swapState(vector.state), vector.actionsB, vector.actionsA
-        );
+        (next, summary) =
+            BattleResolver.resolve(_swapState(vector.state), vector.actionsB, vector.actionsA);
         if (!_sameBytes(abi.encode(next), abi.encode(_swapState(vector.expectedState)))) {
             return "player order changed the state";
         }
@@ -104,8 +104,7 @@ contract CheckBattle {
     {
         swapped = abi.decode(abi.encode(state), (GameTypes.BattleState));
         GameTypes.PlayerState memory firstPlayer = GameTypes.PlayerState({
-            energy: swapped.players[0].energy,
-            victoryPoints: swapped.players[0].victoryPoints
+            energy: swapped.players[0].energy, victoryPoints: swapped.players[0].victoryPoints
         });
         swapped.players[0] = swapped.players[1];
         swapped.players[1] = firstPlayer;
@@ -118,8 +117,11 @@ contract CheckBattle {
             swapped.units[slot] = swapped.units[slot + GameTypes.SQUAD_SIZE];
             swapped.units[slot + GameTypes.SQUAD_SIZE] = firstUnit;
         }
-        if (state.outcome == GameTypes.Outcome.PlayerA) swapped.outcome = GameTypes.Outcome.PlayerB;
-        else if (state.outcome == GameTypes.Outcome.PlayerB) swapped.outcome = GameTypes.Outcome.PlayerA;
+        if (state.outcome == GameTypes.Outcome.PlayerA) {
+            swapped.outcome = GameTypes.Outcome.PlayerB;
+        } else if (state.outcome == GameTypes.Outcome.PlayerB) {
+            swapped.outcome = GameTypes.Outcome.PlayerA;
+        }
     }
 
     function _swapSummary(GameTypes.ResolutionSummary memory summary)
@@ -157,7 +159,8 @@ contract CheckBattle {
         state.outcome = GameTypes.Outcome.Draw;
         state.reason = GameTypes.EndReason.RoundLimit;
         _expectRevert(
-            probe, abi.encodeCall(BattleProbe.resolve, (state, _holds(), _holds())),
+            probe,
+            abi.encodeCall(BattleProbe.resolve, (state, _holds(), _holds())),
             abi.encodeWithSelector(IArena.InvalidBattleResult.selector)
         );
     }
@@ -171,7 +174,8 @@ contract CheckBattle {
         actionsB[0].pathLength = 1;
         actionsB[0].path[0] = INVALID_ENEMY_STEP;
         _expectRevert(
-            probe, abi.encodeCall(BattleProbe.resolve, (state, actionsA, actionsB)),
+            probe,
+            abi.encodeCall(BattleProbe.resolve, (state, actionsA, actionsB)),
             abi.encodeWithSelector(IArena.InvalidPath.selector, GameTypes.SQUAD_SIZE)
         );
     }
@@ -183,10 +187,9 @@ contract CheckBattle {
         GameTypes.Action[SQUAD_SIZE] memory actions = _holds();
         actions[0].kind = GameTypes.ActionKind.Shield;
         _expectRevert(
-            probe, abi.encodeCall(BattleProbe.resolve, (state, actions, _holds())),
-            abi.encodeWithSelector(
-                IArena.InsufficientEnergy.selector, uint8(0), uint8(1), uint8(0)
-            )
+            probe,
+            abi.encodeCall(BattleProbe.resolve, (state, actions, _holds())),
+            abi.encodeWithSelector(IArena.InsufficientEnergy.selector, uint8(0), uint8(1), uint8(0))
         );
     }
 

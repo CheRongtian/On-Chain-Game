@@ -70,23 +70,35 @@ contract CheckRules {
         require(probe.validateActions(state, 1, actions) == 0, "Squad B used the wrong unit slot");
         actions[1] = _attack(GameTypes.BOARD_SIZE - 1);
         _reject(
-            probe, state, 1, actions,
+            probe,
+            state,
+            1,
+            actions,
             abi.encodeWithSelector(IArena.InvalidTarget.selector, GameTypes.SQUAD_SIZE + 1)
         );
         actions = _holds();
         _reject(
-            probe, state, 2, actions,
+            probe,
+            state,
+            2,
+            actions,
             abi.encodeWithSelector(IArena.InvalidPlayerState.selector, uint8(2))
         );
         state.units[1].cell = state.units[0].cell;
         _reject(
-            probe, state, 0, actions,
+            probe,
+            state,
+            0,
+            actions,
             abi.encodeWithSelector(IArena.InvalidUnitState.selector, uint8(1))
         );
         state = GameTypes.initialBattleState();
         state.units[0].cell = WALL_CELL;
         _reject(
-            probe, state, 0, actions,
+            probe,
+            state,
+            0,
+            actions,
             abi.encodeWithSelector(IArena.InvalidUnitState.selector, uint8(0))
         );
     }
@@ -118,9 +130,7 @@ contract CheckRules {
         actions[1] = _move(GameTypes.SCOUT_MOVE_RANGE, [RANGER_STEP, RANGER_END, RANGER_TARGET, 0]);
         _rejectPath(probe, state, actions, 1);
         actions = _holds();
-        actions[2] = _move(
-            GameTypes.MAX_PATH_LENGTH, [LOWER_LANE, LOWER_TURN, SCOUT_END, DASH_END]
-        );
+        actions[2] = _move(GameTypes.MAX_PATH_LENGTH, [LOWER_LANE, LOWER_TURN, SCOUT_END, DASH_END]);
         _rejectPath(probe, state, actions, 2);
         actions[2].kind = GameTypes.ActionKind.Dash;
         require(probe.validateActions(state, 0, actions) == 1, "Valid Dash was rejected");
@@ -136,9 +146,8 @@ contract CheckRules {
         _rejectPath(probe, state, actions, 2);
         actions[2] = _move(2, [LOWER_LANE, state.units[2].cell, 0, 0]);
         _rejectPath(probe, state, actions, 2);
-        actions[2] = _move(
-            GameTypes.SCOUT_MOVE_RANGE, [LOWER_LANE, state.units[1].cell, RANGER_STEP, 0]
-        );
+        actions[2] =
+            _move(GameTypes.SCOUT_MOVE_RANGE, [LOWER_LANE, state.units[1].cell, RANGER_STEP, 0]);
         _rejectPath(probe, state, actions, 2);
         actions[2] = _move(1, [LOWER_TURN, 0, 0, 0]);
         _rejectPath(probe, state, actions, 2);
@@ -181,17 +190,20 @@ contract CheckRules {
         actions[0].kind = GameTypes.ActionKind.Shield;
         actions[1] = _attack(RANGER_TARGET);
         actions[1].kind = GameTypes.ActionKind.PowerShot;
-        actions[2] = _move(
-            GameTypes.MAX_PATH_LENGTH, [LOWER_LANE, LOWER_TURN, SCOUT_END, DASH_END]
-        );
+        actions[2] = _move(GameTypes.MAX_PATH_LENGTH, [LOWER_LANE, LOWER_TURN, SCOUT_END, DASH_END]);
         actions[2].kind = GameTypes.ActionKind.Dash;
         uint8 totalCost = GameTypes.defaultRules().skillCost[0]
             + GameTypes.defaultRules().skillCost[1] + GameTypes.defaultRules().skillCost[2];
         state.players[0].energy = totalCost;
-        require(probe.validateActions(state, 0, actions) == totalCost, "Combined skill costs differ");
+        require(
+            probe.validateActions(state, 0, actions) == totalCost, "Combined skill costs differ"
+        );
         state.players[0].energy = totalCost - 1;
         _reject(
-            probe, state, 0, actions,
+            probe,
+            state,
+            0,
+            actions,
             abi.encodeWithSelector(
                 IArena.InsufficientEnergy.selector, uint8(0), totalCost, totalCost - 1
             )
@@ -199,20 +211,29 @@ contract CheckRules {
         actions = _holds();
         actions[1].kind = GameTypes.ActionKind.Shield;
         _reject(
-            probe, state, 0, actions,
+            probe,
+            state,
+            0,
+            actions,
             abi.encodeWithSelector(IArena.InvalidAction.selector, uint8(1))
         );
         actions = _holds();
         actions[0] = _attack(GUARDIAN_STEP);
         actions[0].kind = GameTypes.ActionKind.PowerShot;
         _reject(
-            probe, state, 0, actions,
+            probe,
+            state,
+            0,
+            actions,
             abi.encodeWithSelector(IArena.InvalidAction.selector, uint8(0))
         );
         actions[0] = _move(1, [GUARDIAN_STEP, 0, 0, 0]);
         actions[0].kind = GameTypes.ActionKind.Dash;
         _reject(
-            probe, state, 0, actions,
+            probe,
+            state,
+            0,
+            actions,
             abi.encodeWithSelector(IArena.InvalidAction.selector, uint8(0))
         );
         state.players[0].energy = 0;
@@ -229,13 +250,19 @@ contract CheckRules {
         require(probe.validateActions(state, 0, actions) == 0, "Dead unit left an occupied cell");
         actions[1] = _attack(RANGER_TARGET);
         _reject(
-            probe, state, 0, actions,
+            probe,
+            state,
+            0,
+            actions,
             abi.encodeWithSelector(IArena.InvalidAction.selector, uint8(1))
         );
         actions = _holds();
         state.units[1].cell = GameTypes.defaultMap().spawnsA[1];
         _reject(
-            probe, state, 0, actions,
+            probe,
+            state,
+            0,
+            actions,
             abi.encodeWithSelector(IArena.InvalidUnitState.selector, uint8(1))
         );
     }
@@ -257,11 +284,7 @@ contract CheckRules {
         _rejectEncoding(probe, state, actions);
     }
 
-    function _holds()
-        private
-        pure
-        returns (GameTypes.Action[SQUAD_SIZE] memory actions)
-    {
+    function _holds() private pure returns (GameTypes.Action[SQUAD_SIZE] memory actions) {
         for (uint8 slot = 0; slot < GameTypes.SQUAD_SIZE; ++slot) {
             actions[slot].targetCell = GameTypes.NO_CELL;
         }
@@ -284,7 +307,8 @@ contract CheckRules {
     }
 
     function _rejectPath(
-        RulesProbe probe, GameTypes.BattleState memory state,
+        RulesProbe probe,
+        GameTypes.BattleState memory state,
         GameTypes.Action[SQUAD_SIZE] memory actions,
         uint8 unitId
     ) private {
@@ -294,7 +318,8 @@ contract CheckRules {
     }
 
     function _rejectTarget(
-        RulesProbe probe, GameTypes.BattleState memory state,
+        RulesProbe probe,
+        GameTypes.BattleState memory state,
         GameTypes.Action[SQUAD_SIZE] memory actions,
         uint8 unitId
     ) private {
@@ -304,21 +329,30 @@ contract CheckRules {
     }
 
     function _rejectEncoding(
-        RulesProbe probe, GameTypes.BattleState memory state,
+        RulesProbe probe,
+        GameTypes.BattleState memory state,
         GameTypes.Action[SQUAD_SIZE] memory actions
     ) private {
         _reject(
-            probe, state, 0, actions,
+            probe,
+            state,
+            0,
+            actions,
             abi.encodeWithSelector(IArena.InvalidActionEncoding.selector, uint8(0))
         );
     }
 
     function _reject(
-        RulesProbe probe, GameTypes.BattleState memory state, uint8 playerIndex,
-        GameTypes.Action[SQUAD_SIZE] memory actions, bytes memory expected
+        RulesProbe probe,
+        GameTypes.BattleState memory state,
+        uint8 playerIndex,
+        GameTypes.Action[SQUAD_SIZE] memory actions,
+        bytes memory expected
     ) private {
         _expectRevert(
-            probe, abi.encodeCall(RulesProbe.validateActions, (state, playerIndex, actions)), expected
+            probe,
+            abi.encodeCall(RulesProbe.validateActions, (state, playerIndex, actions)),
+            expected
         );
     }
 

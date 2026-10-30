@@ -17,7 +17,9 @@ library UnitRules {
     // Validates one complete squad against the round-start snapshot, without mutation.
     // Batch battle fixtures intentionally retain every production rejection guard.
     function validateActions(
-        GameTypes.BattleState memory state, uint8 playerIndex, GameTypes.Action[3] memory actions
+        GameTypes.BattleState memory state,
+        uint8 playerIndex,
+        GameTypes.Action[3] memory actions
     ) internal pure returns (uint8 requiredEnergy) {
         // forge-lint: disable-next-line(require-revert-in-loop)
         if (playerIndex >= state.players.length) revert IArena.InvalidPlayerState(playerIndex);
@@ -66,7 +68,9 @@ library UnitRules {
     }
 
     function _checkAction(
-        GameTypes.UnitState memory unit, GameTypes.Action memory action, uint64 blocked
+        GameTypes.UnitState memory unit,
+        GameTypes.Action memory action,
+        uint64 blocked
     ) private pure returns (ActionIssue, uint8) {
         if (unit.hp == 0 && action.kind != GameTypes.ActionKind.Hold) {
             return (ActionIssue.Action, 0);
@@ -90,7 +94,9 @@ library UnitRules {
     }
 
     function _checkMove(
-        GameTypes.UnitState memory unit, GameTypes.Action memory action, uint64 blocked
+        GameTypes.UnitState memory unit,
+        GameTypes.Action memory action,
+        uint64 blocked
     ) private pure returns (ActionIssue, uint8) {
         bool dash = action.kind == GameTypes.ActionKind.Dash;
         if (dash && unit.unitType != GameTypes.UnitKind.Scout) return (ActionIssue.Action, 0);
@@ -98,9 +104,7 @@ library UnitRules {
         GameTypes.Rules memory rules = GameTypes.defaultRules();
         uint256 typeIndex = uint256(unit.unitType) - 1;
         uint8 limit = dash ? rules.dashRange : rules.moveRange[typeIndex];
-        bool valid = MapRules.isValidPath(
-            unit.cell, action.pathLength, action.path, limit, blocked
-        );
+        bool valid = MapRules.isValidPath(unit.cell, action.pathLength, action.path, limit, blocked);
         return (
             valid ? ActionIssue.None : ActionIssue.Path,
             dash ? rules.skillCost[typeIndex] : uint8(0)
@@ -121,7 +125,9 @@ library UnitRules {
         uint256 typeIndex = uint256(unit.unitType) - 1;
         bool valid = unit.unitType == GameTypes.UnitKind.Ranger
             ? MapRules.isClearRay(
-                unit.cell, action.targetCell, rules.attackRange[typeIndex],
+                unit.cell,
+                action.targetCell,
+                rules.attackRange[typeIndex],
                 GameTypes.defaultMap().obstacles
             )
             : MapRules.isAdjacent(unit.cell, action.targetCell);

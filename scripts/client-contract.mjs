@@ -48,6 +48,7 @@ async function requireCurrentDeployment() {
   ]);
   const runtime = await Promise.all(
     [
+      "contracts/foundry.toml",
       "Dockerfile",
       "compose.yaml",
       ".dockerignore",

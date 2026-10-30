@@ -2,12 +2,18 @@ name: onchain-arena
 
 services:
   db:
-    image: postgres:16-alpine
+    image: onchain-arena-db:local
     pull_policy: never
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM postgres:16-alpine
+        RUN apk add --no-cache musl-locales
     environment:
       POSTGRES_DB: onchain_arena
       POSTGRES_USER: arena
       POSTGRES_PASSWORD: ${ARENA_DATABASE_PASSWORD:-arena_local}
+      POSTGRES_INITDB_ARGS: "--auth-local=trust --auth-host=scram-sha-256"
     ports:
       - "127.0.0.1:${ARENA_DATABASE_PORT:-55432}:5432"
     volumes:

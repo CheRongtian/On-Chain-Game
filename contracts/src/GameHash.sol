@@ -14,9 +14,7 @@ library GameHash {
 
     // Every payload uses standard abi.encode, with 32-byte words; no packed encoding.
     function rulesHash() internal pure returns (bytes32) {
-        return keccak256(
-            abi.encode(RULES_DOMAIN, GameTypes.defaultRules(), GameTypes.defaultMap())
-        );
+        return keccak256(abi.encode(RULES_DOMAIN, GameTypes.defaultRules(), GameTypes.defaultMap()));
     }
 
     function hashActions(GameTypes.Action[3] memory actions) internal pure returns (bytes32) {
@@ -45,13 +43,7 @@ library GameHash {
         _validateRound(round);
         return keccak256(
             abi.encode(
-                COMMITMENT_TYPEHASH,
-                context,
-                round,
-                player,
-                rulesHash(),
-                hashActions(actions),
-                salt
+                COMMITMENT_TYPEHASH, context, round, player, rulesHash(), hashActions(actions), salt
             )
         );
     }
@@ -59,15 +51,16 @@ library GameHash {
     // Phase, deadlines, commitments, reveal flags, and salts stay outside the battle hash.
     // Timeout changes only outcome/reason; cancellation/expiry before joining has no battle hash.
     function hashBattleState(
-        GameTypes.MatchContext memory context, GameTypes.BattleState memory state
+        GameTypes.MatchContext memory context,
+        GameTypes.BattleState memory state
     ) internal pure returns (bytes32) {
         validateBattleState(state);
         return keccak256(abi.encode(STATE_DOMAIN, context, rulesHash(), state));
     }
 
     function _isCanonicalAction(GameTypes.Action memory action) private pure returns (bool) {
-        bool moves = action.kind == GameTypes.ActionKind.Move
-            || action.kind == GameTypes.ActionKind.Dash;
+        bool moves =
+            action.kind == GameTypes.ActionKind.Move || action.kind == GameTypes.ActionKind.Dash;
         bool attacks = action.kind == GameTypes.ActionKind.Attack
             || action.kind == GameTypes.ActionKind.PowerShot;
 

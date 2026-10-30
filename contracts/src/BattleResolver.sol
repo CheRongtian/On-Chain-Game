@@ -12,11 +12,14 @@ library BattleResolver {
     uint256 private constant UNIT_COUNT = 6;
 
     function resolve(
-        GameTypes.BattleState memory initial, GameTypes.Action[SQUAD_SIZE] memory actionsA,
+        GameTypes.BattleState memory initial,
+        GameTypes.Action[SQUAD_SIZE] memory actionsA,
         GameTypes.Action[SQUAD_SIZE] memory actionsB
-    ) internal pure returns (
-        GameTypes.BattleState memory next, GameTypes.ResolutionSummary memory summary
-    ) {
+    )
+        internal
+        pure
+        returns (GameTypes.BattleState memory next, GameTypes.ResolutionSummary memory summary)
+    {
         // Batch fixtures also exercise the same terminal-state rejection as production callers.
         // forge-lint: disable-next-line(require-revert-in-loop)
         if (initial.outcome != GameTypes.Outcome.None) revert IArena.InvalidBattleResult();
@@ -64,7 +67,8 @@ library BattleResolver {
     }
 
     function _move(
-        GameTypes.BattleState memory next, GameTypes.Action[UNIT_COUNT] memory actions,
+        GameTypes.BattleState memory next,
+        GameTypes.Action[UNIT_COUNT] memory actions,
         GameTypes.ResolutionSummary memory summary
     ) private pure {
         uint8[UNIT_COUNT] memory endpoints;
@@ -88,7 +92,9 @@ library BattleResolver {
     }
 
     function _uniqueEndpoint(
-        uint256 slot, uint8[UNIT_COUNT] memory endpoints, bool[UNIT_COUNT] memory candidates
+        uint256 slot,
+        uint8[UNIT_COUNT] memory endpoints,
+        bool[UNIT_COUNT] memory candidates
     ) private pure returns (bool) {
         for (uint256 other = 0; other < GameTypes.UNIT_COUNT; ++other) {
             if (other != slot && candidates[other] && endpoints[slot] == endpoints[other]) {
@@ -99,7 +105,8 @@ library BattleResolver {
     }
 
     function _combat(
-        GameTypes.BattleState memory next, GameTypes.Action[UNIT_COUNT] memory actions,
+        GameTypes.BattleState memory next,
+        GameTypes.Action[UNIT_COUNT] memory actions,
         GameTypes.ResolutionSummary memory summary
     ) private pure {
         GameTypes.Rules memory rules = GameTypes.defaultRules();
@@ -115,18 +122,24 @@ library BattleResolver {
     }
 
     function _attackDamage(
-        GameTypes.UnitKind unitType, GameTypes.ActionKind kind, GameTypes.Rules memory rules
+        GameTypes.UnitKind unitType,
+        GameTypes.ActionKind kind,
+        GameTypes.Rules memory rules
     ) private pure returns (uint8) {
-        if (kind == GameTypes.ActionKind.PowerShot) return rules.powerShotDamage;
+        if (kind == GameTypes.ActionKind.PowerShot) {
+            return rules.powerShotDamage;
+        }
         if (kind == GameTypes.ActionKind.Attack) {
             return rules.attackDamage[uint256(unitType) - 1];
         }
         return 0;
     }
 
-    function _enemyAt(
-        GameTypes.UnitState[UNIT_COUNT] memory units, uint256 attacker, uint8 cell
-    ) private pure returns (uint256) {
+    function _enemyAt(GameTypes.UnitState[UNIT_COUNT] memory units, uint256 attacker, uint8 cell)
+        private
+        pure
+        returns (uint256)
+    {
         uint256 start = attacker < GameTypes.SQUAD_SIZE ? GameTypes.SQUAD_SIZE : 0;
         for (uint256 slot = start; slot < start + GameTypes.SQUAD_SIZE; ++slot) {
             if (units[slot].hp != 0 && units[slot].cell == cell) return slot;
@@ -135,8 +148,10 @@ library BattleResolver {
     }
 
     function _applyDamage(
-        GameTypes.BattleState memory next, GameTypes.Action[UNIT_COUNT] memory actions,
-        uint8[UNIT_COUNT] memory incoming, uint8 shieldReduction,
+        GameTypes.BattleState memory next,
+        GameTypes.Action[UNIT_COUNT] memory actions,
+        uint8[UNIT_COUNT] memory incoming,
+        uint8 shieldReduction,
         GameTypes.ResolutionSummary memory summary
     ) private pure {
         for (uint256 slot = 0; slot < GameTypes.UNIT_COUNT; ++slot) {
@@ -153,7 +168,8 @@ library BattleResolver {
     }
 
     function _awardResourcesAndControl(
-        GameTypes.BattleState memory next, GameTypes.ResolutionSummary memory summary
+        GameTypes.BattleState memory next,
+        GameTypes.ResolutionSummary memory summary
     ) private pure {
         GameTypes.MapConfig memory map = GameTypes.defaultMap();
         GameTypes.Rules memory rules = GameTypes.defaultRules();

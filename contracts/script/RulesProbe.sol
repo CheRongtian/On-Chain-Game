@@ -8,7 +8,9 @@ import { UnitRules } from "../src/UnitRules.sol";
 // Provides an external call boundary for checking static-rule errors locally.
 contract RulesProbe {
     function validateActions(
-        GameTypes.BattleState calldata state, uint8 playerIndex, GameTypes.Action[3] calldata actions
+        GameTypes.BattleState calldata state,
+        uint8 playerIndex,
+        GameTypes.Action[3] calldata actions
     ) external pure returns (uint8) {
         return UnitRules.validateActions(state, playerIndex, actions);
     }
