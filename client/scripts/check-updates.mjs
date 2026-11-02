@@ -34,6 +34,7 @@ const chain = createPublicClient({
 });
 const wallet = createWalletClient({ chain: anvil, transport: http(deployment.rpcUrl) });
 const report = {
+  engine: deployment.engine ?? 'anvil',
   status: 'running',
   checks: [],
   events: [],
@@ -301,7 +302,7 @@ try {
   const initial = await ready();
   baseline = await databaseState();
   assert.ok(baseline.indexerLockPid > 0, 'Indexer must own its database lock before faults.');
-  original = await chain.request({ method: 'evm_snapshot' });
+  if (deployment.engine !== 'geth') original = await chain.request({ method: 'evm_snapshot' });
   const first = acceptance.matches[0];
   await page.goto(`${base}/history/${first.id}`);
   await badge('Verified');
@@ -467,102 +468,111 @@ try {
     started,
   );
 
-  started = Date.now();
-  const branch = await chain.request({ method: 'evm_snapshot' });
-  const match = await createRoom(0);
-  await ready();
-  await page.goto(`${base}/history/${match}`);
-  await badge('Incomplete');
-  await connected();
-  const loadsBeforeBranch = documentLoads,
-    eventsBeforeBranch = report.events.length;
-  await send(1, 'joinMatch', [match]);
-  await send(0, 'startMatch', [match]);
-  await page.locator('.renderer[data-ready="true"]').waitFor();
-  const orders = [];
-  for (const player of [0, 1]) {
-    orders[player] = await secret(match, 1, player, first.rounds[0].orders[player]);
-    await send(player, 'commitActions', [match, 1, orders[player].commitment]);
-  }
-  for (const player of [0, 1])
-    await send(player, 'revealActions', [match, 1, orders[player].actions, orders[player].salt]);
-  await send(0, 'settleRound', [match, 1]);
-  const held = await secret(match, 2, 0);
-  await send(0, 'commitActions', [match, 2, held.commitment]);
-  const state = await chain.readContract({
-    abi,
-    address: deployment.arenaAddress,
-    functionName: 'getMatch',
-    args: [match],
-  });
-  await chain.request({
-    method: 'evm_setNextBlockTimestamp',
-    params: [Number(state.phaseDeadline) + 1],
-  });
-  await send(0, 'advanceExpiredPhase', [match, 2, 2]);
-  await ready();
-  await badge('Verified');
-  await connected();
-  assert.ok(
-    report.events
-      .slice(eventsBeforeBranch)
-      .some((event) => event.kind === 'change' && event.matches.includes(match.toString())),
-    'The browser must receive real committed change events.',
-  );
-  const win = await api(`/matches/${match}/replay?limit=100`);
-  assert.equal(win.match.outcome, 1, 'The displaced branch must contain a real player A victory.');
-  assert.equal(win.verification.status, 'Verified');
-  await page.getByRole('combobox', { name: 'Playback speed' }).selectOption('0.5');
-  await page.getByRole('button', { name: 'Play replay', exact: true }).click();
-  await page.waitForFunction(
-    () => document.querySelector('.replay-screen')?.getAttribute('data-animating') === 'true',
-  );
-  await page.getByRole('button', { name: 'Pause replay', exact: true }).click();
-  assert.equal(await page.locator('.replay-screen').getAttribute('data-animating'), 'true');
-
-  delayedMatch = match.toString();
-  readGate = new Promise((done) => {
-    releaseReads = done;
-  });
-  const eventsBeforeReorg = report.events.length;
-  assert.equal(await chain.request({ method: 'evm_revert', params: [branch] }), true);
-  const replacement = await createRoom(1);
-  assert.equal(replacement, match);
-  await send(1, 'cancelWaitingMatch', [replacement]);
-  await ready();
-  await waitFor(
-    () =>
+  if (deployment.engine !== 'geth') {
+    started = Date.now();
+    const branch = await chain.request({ method: 'evm_snapshot' });
+    const match = await createRoom(0);
+    await ready();
+    await page.goto(`${base}/history/${match}`);
+    await badge('Incomplete');
+    await connected();
+    const loadsBeforeBranch = documentLoads,
+      eventsBeforeBranch = report.events.length;
+    await send(1, 'joinMatch', [match]);
+    await send(0, 'startMatch', [match]);
+    await page.locator('.renderer[data-ready="true"]').waitFor();
+    const orders = [];
+    for (const player of [0, 1]) {
+      orders[player] = await secret(match, 1, player, first.rounds[0].orders[player]);
+      await send(player, 'commitActions', [match, 1, orders[player].commitment]);
+    }
+    for (const player of [0, 1])
+      await send(player, 'revealActions', [match, 1, orders[player].actions, orders[player].salt]);
+    await send(0, 'settleRound', [match, 1]);
+    const held = await secret(match, 2, 0);
+    await send(0, 'commitActions', [match, 2, held.commitment]);
+    const state = await chain.readContract({
+      abi,
+      address: deployment.arenaAddress,
+      functionName: 'getMatch',
+      args: [match],
+    });
+    await chain.request({
+      method: 'evm_setNextBlockTimestamp',
+      params: [Number(state.phaseDeadline) + 1],
+    });
+    await send(0, 'advanceExpiredPhase', [match, 2, 2]);
+    await ready();
+    await badge('Verified');
+    await connected();
+    assert.ok(
       report.events
-        .slice(eventsBeforeReorg)
-        .some((event) => event.kind === 'reorg' && event.matches.includes(match.toString())),
-    'The open browser did not receive the real reorg notification.',
-  );
-  await badge('Unavailable');
-  await waitFor(() => blockedReads > 0, 'Reorg did not automatically request replacement history.');
-  assert.equal(
-    await page.locator('canvas').count(),
-    0,
-    'Discard old replay before replacement reads finish.',
-  );
-  assert.equal(await page.locator('.replay-screen').getAttribute('data-animating'), 'false');
-  releaseReads();
-  releaseReads = undefined;
-  readGate = undefined;
-  await badge('Incomplete');
-  await page.getByRole('heading', { name: 'No battle to replay yet', exact: true }).waitFor();
-  assert.equal(await page.locator('canvas').count(), 0);
-  assert.equal(
-    documentLoads,
-    loadsBeforeBranch,
-    'Chain changes must refresh the open replay without navigation.',
-  );
-  const replaced = await api(`/matches/${match}`);
-  assert.equal(replaced.match.phase, 6);
-  assert.equal(replaced.match.outcome, 0);
-  passed(
-    'committed events update the page; reorg cancels old animation and Verified before replacement loads',
-    started,
-  );
+        .slice(eventsBeforeBranch)
+        .some((event) => event.kind === 'change' && event.matches.includes(match.toString())),
+      'The browser must receive real committed change events.',
+    );
+    const win = await api(`/matches/${match}/replay?limit=100`);
+    assert.equal(
+      win.match.outcome,
+      1,
+      'The displaced branch must contain a real player A victory.',
+    );
+    assert.equal(win.verification.status, 'Verified');
+    await page.getByRole('combobox', { name: 'Playback speed' }).selectOption('0.5');
+    await page.getByRole('button', { name: 'Play replay', exact: true }).click();
+    await page.waitForFunction(
+      () => document.querySelector('.replay-screen')?.getAttribute('data-animating') === 'true',
+    );
+    await page.getByRole('button', { name: 'Pause replay', exact: true }).click();
+    assert.equal(await page.locator('.replay-screen').getAttribute('data-animating'), 'true');
+
+    delayedMatch = match.toString();
+    readGate = new Promise((done) => {
+      releaseReads = done;
+    });
+    const eventsBeforeReorg = report.events.length;
+    assert.equal(await chain.request({ method: 'evm_revert', params: [branch] }), true);
+    const replacement = await createRoom(1);
+    assert.equal(replacement, match);
+    await send(1, 'cancelWaitingMatch', [replacement]);
+    await ready();
+    await waitFor(
+      () =>
+        report.events
+          .slice(eventsBeforeReorg)
+          .some((event) => event.kind === 'reorg' && event.matches.includes(match.toString())),
+      'The open browser did not receive the real reorg notification.',
+    );
+    await badge('Unavailable');
+    await waitFor(
+      () => blockedReads > 0,
+      'Reorg did not automatically request replacement history.',
+    );
+    assert.equal(
+      await page.locator('canvas').count(),
+      0,
+      'Discard old replay before replacement reads finish.',
+    );
+    assert.equal(await page.locator('.replay-screen').getAttribute('data-animating'), 'false');
+    releaseReads();
+    releaseReads = undefined;
+    readGate = undefined;
+    await badge('Incomplete');
+    await page.getByRole('heading', { name: 'No battle to replay yet', exact: true }).waitFor();
+    assert.equal(await page.locator('canvas').count(), 0);
+    assert.equal(
+      documentLoads,
+      loadsBeforeBranch,
+      'Chain changes must refresh the open replay without navigation.',
+    );
+    const replaced = await api(`/matches/${match}`);
+    assert.equal(replaced.match.phase, 6);
+    assert.equal(replaced.match.outcome, 0);
+    passed(
+      'committed events update the page; reorg cancels old animation and Verified before replacement loads',
+      started,
+    );
+  }
   assert.deepEqual(report.errors, [], 'Uncaught browser errors');
   report.status = 'passed';
 } catch (error) {
@@ -599,6 +609,10 @@ try {
   await server?.close();
   report.finishedAt = new Date().toISOString();
   await writeFile(resolve(output, 'recovery.json'), `${JSON.stringify(report, null, 2)}\n`);
+  await writeFile(
+    resolve(output, `recovery-${report.engine}.json`),
+    `${JSON.stringify(report, null, 2)}\n`,
+  );
   if (report.status === 'passed')
     console.log(
       'PASS: browser updates and PostgreSQL restart acceptance completed. Local recovery report saved.',

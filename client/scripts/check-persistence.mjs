@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
@@ -11,11 +11,12 @@ import {
   getAddress,
   http,
   parseEventLogs,
+  parseTransaction,
   toFunctionSelector,
 } from 'viem';
 import { anvil } from 'viem/chains';
-import { installedBrowser } from './browser.mjs';
-import { verifyDeployment } from '../../scripts/deployment.mjs';
+import { installedBrowser, requirePreviewDeployment, waitForReceiptRecovery } from './browser.mjs';
+import { compileArchivedSources, rpc, verifyDeployment } from '../../scripts/deployment.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 assert.equal(
@@ -28,6 +29,10 @@ const base = `http://127.0.0.1:${browserPort}`;
 const backend = `http://${process.env.HTTP_ADDRESS}`;
 const json = async (file) => JSON.parse(await readFile(resolve(root, file), 'utf8'));
 const deployment = await json('client/public/deployment.json');
+const archive = deployment.engine === 'geth';
+const engine = archive ? 'geth' : 'anvil';
+const nodeFile = archive ? '.local/geth.pid' : '.local/anvil.pid';
+const manifestFile = archive ? '.local/archive/deployment.json' : '.local/chain/deployment.json';
 const acceptance = await json('.local/indexer/acceptance.json');
 const { abi } = await json('contracts/out/Arena.sol/Arena.json');
 const chain = createPublicClient({
@@ -36,7 +41,7 @@ const chain = createPublicClient({
   cacheTime: 0,
 });
 const wallet = createWalletClient({ chain: anvil, transport: http(deployment.rpcUrl) });
-const report = { status: 'running', checks: [] };
+const report = { status: 'running', engine, checks: [], requirements: {} };
 let browser, server, keeper, keeperExit;
 let interrupted = false;
 
@@ -104,6 +109,231 @@ async function request(operation) {
   await writeFile(resolve(root, '.local/indexer-command'), operation + '\n');
   process.kill(Number(await readFile(resolve(root, '.local/backend.pid'), 'utf8')), 'SIGUSR1');
 }
+
+async function historicalAccounts(accounts) {
+  const slot = '0x' + '00'.repeat(32);
+  const checks = [];
+  for (const block of ['0', deployment.deploymentBlock]) {
+    const tag = `0x${BigInt(block).toString(16)}`;
+    const header = await rpc(deployment.rpcUrl, 'eth_getBlockByNumber', [tag, false]);
+    for (const address of [...accounts.slice(0, 2), deployment.arenaAddress]) {
+      const value = {
+        address: getAddress(address),
+        blockNumber: block,
+        blockHash: header.hash,
+        balanceWei: BigInt(
+          await rpc(deployment.rpcUrl, 'eth_getBalance', [address, tag]),
+        ).toString(),
+        nonce: Number(
+          BigInt(await rpc(deployment.rpcUrl, 'eth_getTransactionCount', [address, tag])),
+        ),
+        code: await rpc(deployment.rpcUrl, 'eth_getCode', [address, tag]),
+        slot,
+        storage: await rpc(deployment.rpcUrl, 'eth_getStorageAt', [address, slot, tag]),
+      };
+      assert.deepEqual(
+        (await api(`/accounts/${address}?block=${block}&slot=${slot}`)).account,
+        value,
+      );
+      checks.push(value);
+    }
+  }
+  const contract = checks.find(
+    (item) =>
+      item.address.toLowerCase() === deployment.arenaAddress.toLowerCase() &&
+      item.blockNumber === deployment.deploymentBlock,
+  );
+  assert.ok(contract.code.length > 2, 'The historical deployment must include contract bytecode.');
+  assert.equal(
+    BigInt(contract.storage),
+    1n,
+    'The deployment block must retain the original room counter.',
+  );
+  assert.ok(
+    BigInt(
+      await rpc(deployment.rpcUrl, 'eth_getStorageAt', [deployment.arenaAddress, slot, 'latest']),
+    ) > 1n,
+  );
+  return checks;
+}
+
+async function persistenceFailure(browser) {
+  const blocks = resolve(root, '.local/archive/blocks');
+  const saved = blocks + '-acceptance';
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  page.setDefaultTimeout(35_000);
+  let blocked = false,
+    writes = 0,
+    submitted,
+    acknowledged;
+  await context.route(deployment.rpcUrl, async (route) => {
+    const body = route.request().method() === 'POST' ? route.request().postDataJSON() : undefined;
+    if (body?.method !== 'eth_sendRawTransaction') return route.continue();
+    writes++;
+    acknowledged = await json('.local/archive/confirmed.json');
+    await rename(blocks, saved);
+    blocked = true;
+    await writeFile(blocks, 'Intentional isolated archive write failure.\n');
+    const response = await route.fetch();
+    submitted = (await response.json()).result;
+    await route.fulfill({ response });
+  });
+  try {
+    console.log(
+      'Deliberately blocking archive writes in the disposable Geth workspace; confirmation must remain unavailable.',
+    );
+    await page.goto(base);
+    await waitFor(
+      () => page.getByLabel('Active account', { exact: true }).isEnabled(),
+      'Local accounts did not connect.',
+    );
+    await page.getByRole('button', { name: 'Create room', exact: true }).click();
+    await waitFor(
+      () => !!submitted,
+      'The persistence fault did not intercept a signed transaction.',
+    );
+    await assert.rejects(
+      rpc(deployment.rpcUrl, 'eth_getTransactionReceipt', [submitted]),
+      /persistence failed/i,
+    );
+    const check = await waitForReceiptRecovery(page);
+    assert.equal(
+      await page.locator('.transaction-confirmed').count(),
+      0,
+      'Failed persistence must never display a confirmed transaction.',
+    );
+    assert.equal(
+      new URL(page.url()).pathname,
+      '/',
+      'An unconfirmed creation must stay in the lobby.',
+    );
+    assert.deepEqual(
+      await json('.local/archive/confirmed.json'),
+      acknowledged,
+      'A failed archive write must not advance the acknowledged head.',
+    );
+    await rm(blocks);
+    await rename(saved, blocks);
+    blocked = false;
+    await rpc(deployment.rpcUrl, 'arena_checkpoint');
+    await check.click();
+    await page.waitForURL(/\/rooms\/\d+$/);
+    assert.equal(writes, 1, 'Receipt recovery must reuse the original signed transaction.');
+    assert.equal((await chain.getTransactionReceipt({ hash: submitted })).status, 'success');
+    await waitFor(async () => {
+      const sync = (await api('/sync')).sync;
+      return sync.ready && BigInt(sync.indexedBlock) === (await chain.getBlockNumber());
+    }, 'Indexing did not recover after restoring archive writes.');
+    passed(
+      'Geth disk-write failure withholds confirmation in RPC and UI; recovery confirms the original transaction once',
+    );
+  } finally {
+    if (blocked) {
+      await rm(blocks, { force: true });
+      await rename(saved, blocks);
+    }
+    await context.close();
+  }
+}
+
+async function keeperProgression(browser, accounts) {
+  const health = await api('/health');
+  const address = health.keeper.address;
+  assert.ok(health.keeper.enabled && address && !health.keeper.error, 'Geth Keeper must be ready.');
+  assert.ok(!accounts.some((player) => player.toLowerCase() === address.toLowerCase()));
+  assert.ok(BigInt(await rpc(deployment.rpcUrl, 'eth_getBalance', [address, 'latest'])) > 0n);
+  const creation = await send(accounts[0], 'createMatch', [1]);
+  const id = parseEventLogs({ abi, logs: creation.logs, eventName: 'MatchCreated' })[0].args
+    .matchId;
+  await send(accounts[1], 'joinMatch', [id]);
+  await send(accounts[0], 'startMatch', [id]);
+  const pages = [];
+  try {
+    for (const account of accounts.slice(0, 2)) {
+      const context = await browser.newContext();
+      await context.route(deployment.rpcUrl, async (route) => {
+        const body =
+          route.request().method() === 'POST' ? route.request().postDataJSON() : undefined;
+        if (
+          body?.method === 'eth_sendRawTransaction' &&
+          parseTransaction(body.params[0]).data?.startsWith(
+            toFunctionSelector('settleRound(uint256,uint8)'),
+          )
+        )
+          return route.abort();
+        return route.continue();
+      });
+      const page = await context.newPage();
+      page.setDefaultTimeout(35_000);
+      pages.push(page);
+      await page.goto(base);
+      await waitFor(
+        () => page.getByLabel('Active account', { exact: true }).isEnabled(),
+        'Geth player accounts did not connect.',
+      );
+      await page.getByLabel('Active account', { exact: true }).selectOption(account);
+      await page.goto(`${base}/rooms/${id}/battle`);
+    }
+    await confirm(pages[0]);
+    await confirm(pages[1]);
+    const room = () =>
+      chain.readContract({
+        address: deployment.arenaAddress,
+        abi,
+        functionName: 'getMatch',
+        args: [id],
+      });
+    await waitFor(
+      async () => (await room()).round === 2,
+      'Geth Keeper did not settle the revealed browser orders.',
+    );
+    const events = await chain.getContractEvents({
+      address: deployment.arenaAddress,
+      abi,
+      eventName: 'RoundResolved',
+      args: { matchId: id },
+      fromBlock: creation.blockNumber,
+    });
+    assert.equal(
+      (await chain.getTransactionReceipt({ hash: events[0].transactionHash })).from.toLowerCase(),
+      address.toLowerCase(),
+    );
+    for (const page of pages) await page.context().close();
+    pages.length = 0;
+    const pending = await room();
+    await rpc(deployment.rpcUrl, 'arena_advanceClock', [
+      `0x${(pending.phaseDeadline + 1n).toString(16)}`,
+    ]);
+    await waitFor(
+      async () => (await room()).phase === 5,
+      'Geth Keeper did not finalize the expired phase.',
+    );
+    assert.equal((await room()).outcome, 3);
+    const waiting = await send(accounts[0], 'createMatch', [1]);
+    const waitingId = parseEventLogs({ abi, logs: waiting.logs, eventName: 'MatchCreated' })[0].args
+      .matchId;
+    const waitingRoom = () =>
+      chain.readContract({
+        address: deployment.arenaAddress,
+        abi,
+        functionName: 'getMatch',
+        args: [waitingId],
+      });
+    await rpc(deployment.rpcUrl, 'arena_advanceClock', [
+      `0x${((await waitingRoom()).joinDeadline + 1n).toString(16)}`,
+    ]);
+    await waitFor(
+      async () => (await waitingRoom()).phase === 7,
+      'Geth Keeper did not expire the waiting room.',
+    );
+    passed(
+      'the separately funded Geth Keeper settles browser orders, finalizes timeouts and expires waiting rooms with real transactions',
+    );
+  } finally {
+    for (const page of pages) await page.context().close();
+  }
+}
 for (const signal of ['SIGINT', 'SIGTERM'])
   process.on(signal, () => {
     interrupted = true;
@@ -112,6 +342,7 @@ for (const signal of ['SIGINT', 'SIGTERM'])
   });
 
 try {
+  await requirePreviewDeployment(root, deployment);
   keeper = spawn(resolve(root, '.local/bin/arena-server'), ['browser-fault', 'hold-keeper'], {
     cwd: resolve(root, 'server'),
     stdio: ['pipe', 'pipe', 'inherit'],
@@ -163,7 +394,7 @@ try {
     const state = (await api('/sync')).sync;
     return state.ready && BigInt(state.indexedBlock) === (await chain.getBlockNumber());
   }, 'Indexing did not reach the committed round before its persistence baseline.');
-  const nodePID = await readFile(resolve(root, '.local/anvil.pid'), 'utf8');
+  const nodePID = await readFile(resolve(root, nodeFile), 'utf8');
   const sync = (await api('/sync')).sync;
   const oldHash = acceptance.matches[0].source.transactionHash;
   const oldReceipt = await chain.getTransactionReceipt({ hash: oldHash });
@@ -173,6 +404,16 @@ try {
     toBlock: oldReceipt.blockNumber,
   });
   const oldTransaction = await api(`/transactions/${oldHash}`);
+  const historical = archive ? await historicalAccounts(accounts) : [];
+  const oldReplay = archive
+    ? await api(`/matches/${acceptance.matches[0].id}/replay?limit=100`)
+    : undefined;
+  const legacy = archive ? await json('client/public/legacy-deployment.json') : undefined;
+  const legacyReport = archive ? await json('.local/indexer/anvil-acceptance.json') : undefined;
+  const legacyPath = legacy
+    ? `/matches/${legacyReport.matches[0].id}/replay?limit=100&deployment=${legacy.deploymentHash}`
+    : undefined;
+  const legacyReplay = legacy ? await api(legacyPath) : undefined;
   const baseline = await chain.readContract({
     address: deployment.arenaAddress,
     abi,
@@ -180,11 +421,18 @@ try {
     args: [BigInt(acceptance.matches[0].id)],
     blockNumber: oldReceipt.blockNumber,
   });
+  const acknowledged = archive ? await json('.local/archive/confirmed.json') : undefined;
+  if (archive) {
+    assert.match(await rpc(deployment.rpcUrl, 'web3_clientVersion'), /geth\//i);
+    console.log(
+      'Deliberately sending SIGKILL to the actual isolated Geth process after an acknowledged Commit.',
+    );
+    process.kill(Number(nodePID), 'SIGKILL');
+    passed('killed the actual Geth node after its acknowledged Commit receipt');
+  }
   await request('reload-chain');
   await waitFor(async () => {
-    if (
-      (await readFile(resolve(root, '.local/anvil.pid'), 'utf8').catch(() => nodePID)) === nodePID
-    )
+    if ((await readFile(resolve(root, nodeFile), 'utf8').catch(() => nodePID)) === nodePID)
       return false;
     const response = await fetch(backend + '/sync').catch(() => undefined);
     if (!response?.ok) return false;
@@ -192,6 +440,12 @@ try {
     return state.ready && state.processId !== sync.processId;
   }, 'The saved chain and Go service did not recover.');
   const restored = await json('client/public/deployment.json');
+  if (archive)
+    assert.deepEqual(
+      await json('.local/archive/confirmed.json'),
+      acknowledged,
+      'Geth must recover the exact previously acknowledged head.',
+    );
   for (const field of [
     'arenaAddress',
     'deploymentBlock',
@@ -230,6 +484,24 @@ try {
   passed(
     'node restart reuses the deployment, old receipts, events, fees, and retained historical state',
   );
+  if (archive) {
+    assert.deepEqual(
+      await historicalAccounts(accounts),
+      historical,
+      'Historical account states changed after Geth SIGKILL.',
+    );
+    assert.deepEqual(
+      (await api(`/matches/${acceptance.matches[0].id}/replay?limit=100`)).items,
+      oldReplay.items,
+    );
+    assert.equal((await api(legacyPath)).verification.status, 'Verified');
+    assert.deepEqual((await api(legacyPath)).items, legacyReplay.items);
+    report.requirements['historical-accounts'] = 'passed';
+    report.historicalAccounts = historical;
+    passed(
+      'Geth genesis and deployment-block balances, nonces, code and storage survive SIGKILL and match the account API',
+    );
+  }
   await pages[0].reload();
   await pages[0].getByText('Waiting for your opponent', { exact: true }).waitFor();
   assert.ok(
@@ -328,6 +600,29 @@ try {
     .getByRole('heading', { name: 'Transaction receipt · Succeeded', exact: true })
     .waitFor();
   passed('the transaction page displays the canonical saved receipt');
+  if (archive) {
+    await page.goto(`${base}/history/${acceptance.matches[0].id}`);
+    await page.locator('[data-verification="Verified"]').waitFor();
+    await page.getByRole('combobox', { name: 'Playback speed' }).selectOption('0.5');
+    await page.getByRole('button', { name: 'Play replay', exact: true }).click();
+    await page.waitForFunction(
+      () => document.querySelector('.replay-screen')?.getAttribute('data-animating') === 'true',
+    );
+    await page.getByRole('button', { name: 'Pause replay', exact: true }).click();
+    await page.goto(
+      `${base}/history/${legacyReport.matches[0].id}?deployment=${legacy.deploymentHash}`,
+    );
+    await page.locator('[data-verification="Verified"]').waitFor();
+    await page.goto(
+      `${base}/transactions/${legacy.transactionHash}?deployment=${legacy.deploymentHash}`,
+    );
+    await page
+      .getByRole('heading', { name: 'Transaction receipt · Succeeded', exact: true })
+      .waitFor();
+    passed(
+      'Geth replay animates and old Anvil replay and receipt routes retain their original deployment source',
+    );
+  }
   const prior = (await api('/sync')).sync;
   await request('reindex');
   await waitFor(async () => {
@@ -339,7 +634,78 @@ try {
   const verification = await api(`/matches/${acceptance.matches[0].id}/verification`);
   assert.equal(verification.verification.status, 'Verified');
   passed('reindex rebuilds old history from the restored chain and independently verifies replay');
-  const manifest = await json('.local/chain/deployment.json');
+  const manifest = await json(manifestFile);
+  if (archive) {
+    assert.deepEqual(
+      (await api(`/matches/${acceptance.matches[0].id}/replay?limit=100`)).items,
+      oldReplay.items,
+    );
+    assert.deepEqual((await api(legacyPath)).items, legacyReplay.items);
+    for (const source of [deployment, legacy]) {
+      const comparison = await json(`.local/indexer/reindex-${source.deploymentHash}.json`);
+      assert.equal(
+        comparison.matched,
+        true,
+        'Every history source must survive an empty-projection rebuild.',
+      );
+    }
+    const exported = await json(`.local/archive/blocks/${oldReceipt.blockNumber}.json`);
+    assert.equal(exported.header.hash, oldReceipt.blockHash);
+    assert.ok(
+      exported.receipts.some(
+        (entry) => entry.transactionHash.toLowerCase() === oldHash.toLowerCase(),
+      ),
+    );
+    assert.ok(
+      exported.transactions.some((entry) => entry.hash.toLowerCase() === oldHash.toLowerCase()),
+    );
+    assert.equal(manifest.deployment.rulesHash, deployment.rulesHash);
+    assert.equal(manifest.vectors['state-vectors'].rulesHash, deployment.rulesHash);
+    report.requirements['history-archive'] = 'passed';
+    passed(
+      'Geth block and receipt exports, frozen rules, old history sources and independently verified replay survive complete reindexing',
+    );
+    const sourceFile = resolve(root, 'contracts/src/Arena.sol');
+    const currentSource = await readFile(sourceFile, 'utf8');
+    try {
+      await writeFile(
+        sourceFile,
+        '// Current working source intentionally differs from the archived deployment.\n',
+      );
+      const sourceResult = await compileArchivedSources(root, manifest);
+      assert.equal(sourceResult.status, 'Matched');
+    } finally {
+      await writeFile(sourceFile, currentSource);
+    }
+    const altered = structuredClone(manifest);
+    altered.compilerInput.sources['src/Arena.sol'].content +=
+      '\n// Intentionally altered archived source.\n';
+    await assert.rejects(compileArchivedSources(root, altered), /do not reproduce/);
+    report.requirements['source-reproduction'] = 'passed';
+    passed(
+      'the restored old Geth deployment recompiles from frozen sources despite changed working files, and altered archived sources are rejected',
+    );
+    await persistenceFailure(browser);
+    report.requirements['confirmed-recovery'] = 'passed';
+    keeper.stdin.end();
+    await keeperExit;
+    keeper = undefined;
+    await keeperProgression(browser, accounts);
+    const gameplay = await json('.local/browser/gameplay-geth.json');
+    assert.equal(gameplay.status, 'passed');
+    assert.equal(gameplay.engine, 'geth');
+    for (const requirement of [
+      'confirmed-recovery',
+      'history-archive',
+      'source-reproduction',
+      'historical-accounts',
+    ])
+      assert.equal(
+        report.requirements[requirement],
+        'passed',
+        `Missing Geth acceptance: ${requirement}`,
+      );
+  }
   await assert.rejects(
     verifyDeployment(root, deployment.rpcUrl, {
       ...manifest,
@@ -371,6 +737,10 @@ try {
   await mkdir(resolve(root, '.local/browser'), { recursive: true });
   await writeFile(
     resolve(root, '.local/browser/persistence.json'),
+    JSON.stringify(report, null, 2) + '\n',
+  );
+  await writeFile(
+    resolve(root, `.local/browser/persistence-${engine}.json`),
     JSON.stringify(report, null, 2) + '\n',
   );
 }

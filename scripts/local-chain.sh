@@ -3,7 +3,8 @@
 # Sourced by the backend launcher; this file has no standalone startup flow.
 local_rpc_port="${ARENA_RPC_PORT:-18545}"
 local_rpc_url="http://127.0.0.1:$local_rpc_port"
-local_checkpoint_pid=""
+local_chain_engine=geth
+if [[ "$mode" == "test" ]]; then local_chain_engine=anvil; fi
 local_player_a="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 local_player_b="0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
 local_anvil_pid=""
@@ -13,6 +14,7 @@ arena_address=""
 deployment_block=""
 
 start_local_chain() {
+    if [[ "$local_chain_engine" == "geth" ]]; then start_archive_chain; return; fi
     local attempt saved_pid
     local state="$project_root/.local/chain/state.json"
     local manifest="$project_root/.local/chain/deployment.json"
@@ -66,20 +68,9 @@ start_local_chain() {
     return 1
 }
 
-start_chain_checkpoints() {
-    # Fault injection deliberately suspends Anvil in the isolated acceptance environment.
-    [[ "$mode" != "test" ]] || return 0
-    node "$project_root/scripts/client-contract.mjs" watch "$local_rpc_url" &
-    local_checkpoint_pid=$!
-}
-
 stop_local_chain() {
+    if [[ "$local_chain_engine" == "geth" ]]; then stop_archive_chain; return; fi
     local stop_deadline
-    if [[ -n "$local_checkpoint_pid" ]]; then
-        kill -TERM "$local_checkpoint_pid" 2>/dev/null || true
-        wait "$local_checkpoint_pid" 2>/dev/null || true
-        local_checkpoint_pid=""
-    fi
     if [[ -n "$local_anvil_pid" ]] && kill -0 "$local_anvil_pid" 2>/dev/null; then
         if [[ "$local_anvil_adopted" == true && "$local_chain_verified" != true ]]; then
             printf 'Deployment validation did not finish. The existing Anvil process and its unsaved games were left running.\n' >&2
@@ -112,6 +103,7 @@ stop_local_chain() {
 }
 
 deploy_local_arena() {
+    if [[ "$local_chain_engine" == "geth" ]]; then deploy_archive_arena; return; fi
     local compiler="$project_root/.local/bin/solc-0.8.30"
     local result="$project_root/.local/chain/deploy-result.json"
     if [[ -f "$project_root/.local/chain/deployment.json" ]]; then

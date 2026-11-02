@@ -1,6 +1,21 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
+import { spawn } from "node:child_process";
+import { isDeepStrictEqual } from "node:util";
+
+export function chainDirectory(root, engine) {
+  return resolve(root, engine === "geth" ? ".local/archive" : ".local/chain");
+}
+
+export async function chainEngine(url) {
+  const version = await rpc(url, "web3_clientVersion");
+  if (/geth\//i.test(version)) return "geth";
+  if (/anvil/i.test(version)) return "anvil";
+  throw new Error(
+    "The managed RPC must serve this project's Geth or Anvil chain.",
+  );
+}
 
 export async function rpc(url, method, params = []) {
   const response = await fetch(url, {
@@ -21,11 +36,18 @@ export async function readJson(file) {
 
 export async function saveJson(file, value) {
   await mkdir(dirname(file), { recursive: true });
-  await writeFile(`${file}.tmp`, JSON.stringify(value, null, 2) + "\n", {
+  const temporary = `${file}.${process.pid}.tmp`;
+  await writeFile(temporary, JSON.stringify(value, null, 2) + "\n", {
     mode: 0o600,
     flush: true,
   });
-  await rename(`${file}.tmp`, file);
+  await rename(temporary, file);
+  const directory = await open(dirname(file), "r");
+  try {
+    await directory.sync();
+  } finally {
+    await directory.close();
+  }
 }
 
 export function runtimeCode(artifact, rulesHash) {
@@ -51,6 +73,15 @@ export function runtimeCode(artifact, rulesHash) {
 }
 
 export async function checkpoint(root, url) {
+  if ((await chainEngine(url)) === "geth") {
+    const point = await rpc(url, "arena_checkpoint");
+    if (
+      !Number.isSafeInteger(point?.number) ||
+      !/^0x[\da-f]{64}$/i.test(point.hash)
+    )
+      throw new Error("Geth did not acknowledge its durable chain checkpoint.");
+    return;
+  }
   const encoded = await rpc(url, "anvil_dumpState", [true]);
   if (typeof encoded !== "string" || !/^0x[\da-f]+$/i.test(encoded))
     throw new Error("Anvil did not return a serializable chain state.");
@@ -67,6 +98,108 @@ export async function checkpoint(root, url) {
       "The chain checkpoint is missing block, transaction, or retained state history.",
     );
   await saveJson(resolve(root, ".local/chain/state.json"), state);
+}
+
+async function archiveCompilerInput(root, manifest) {
+  if (!manifest.compilerInput) {
+    const metadata = manifest.artifact.metadata;
+    const settings = structuredClone(metadata.settings);
+    delete settings.compilationTarget;
+    settings.outputSelection = {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode.object",
+          "evm.deployedBytecode.object",
+          "evm.deployedBytecode.immutableReferences",
+          "evm.methodIdentifiers",
+        ],
+      },
+    };
+    const sources = {};
+    for (const source of Object.keys(metadata.sources)) {
+      const file = resolve(root, "contracts", source);
+      if (!file.startsWith(resolve(root, "contracts/src") + "/"))
+        throw new Error(`Unsupported compiler source path: ${source}`);
+      sources[source] = { content: await readFile(file, "utf8") };
+    }
+    manifest.compilerInput = { language: "Solidity", sources, settings };
+  }
+}
+
+export async function compileArchivedSources(root, manifest) {
+  await archiveCompilerInput(root, manifest);
+  const output = await new Promise((done, fail) => {
+    const child = spawn(
+      resolve(root, ".local/bin/solc-0.8.30"),
+      ["--standard-json"],
+      { cwd: resolve(root, "contracts"), stdio: ["pipe", "pipe", "pipe"] },
+    );
+    let stdout = "",
+      stderr = "";
+    child.stdout.on("data", (part) => {
+      stdout += part;
+    });
+    child.stderr.on("data", (part) => {
+      stderr += part;
+    });
+    child.once("error", fail);
+    child.stdin.on("error", fail);
+    child.once("close", (code) => {
+      if (code !== 0)
+        fail(new Error(`Archived Solidity compilation failed: ${stderr}`));
+      else {
+        try {
+          done(JSON.parse(stdout));
+        } catch (error) {
+          fail(error);
+        }
+      }
+    });
+    child.stdin.end(JSON.stringify(manifest.compilerInput));
+  });
+  const errors =
+    output.errors?.filter((entry) => entry.severity === "error") ?? [];
+  if (errors.length)
+    throw new Error(errors.map((entry) => entry.formattedMessage).join("\n"));
+  const [source, name] = Object.entries(
+    manifest.artifact.metadata.settings.compilationTarget,
+  )[0];
+  const compiled = output.contracts?.[source]?.[name];
+  if (!compiled)
+    throw new Error(`Archived compilation did not produce ${source}:${name}.`);
+  if (
+    `0x${compiled.evm.bytecode.object}`.toLowerCase() !==
+    manifest.artifact.bytecode.object.toLowerCase()
+  )
+    throw new Error(
+      "Archived sources and compiler settings do not reproduce the deployed creation bytecode.",
+    );
+  // Foundry omits empty fields in parsed metadata; rawMetadata preserves Solc's ABI.
+  const originalAbi = JSON.parse(manifest.artifact.rawMetadata).output.abi;
+  if (!isDeepStrictEqual(compiled.abi, originalAbi))
+    throw new Error(
+      "Archived sources and compiler settings do not reproduce the original Solidity ABI.",
+    );
+  const references = compiled.evm.deployedBytecode.immutableReferences;
+  const reconstructed = {
+    deployedBytecode: {
+      object: `0x${compiled.evm.deployedBytecode.object}`,
+      immutableReferences: references,
+    },
+  };
+  if (
+    runtimeCode(reconstructed, manifest.deployment.rulesHash) !==
+    runtimeCode(manifest.artifact, manifest.deployment.rulesHash)
+  )
+    throw new Error(
+      "Archived sources do not reproduce the deployed runtime bytecode.",
+    );
+  return {
+    status: "Matched",
+    checkedAt: new Date().toISOString(),
+    sourceCount: Object.keys(manifest.compilerInput.sources).length,
+  };
 }
 
 export async function verifyDeployment(root, url, manifest) {
@@ -132,9 +265,11 @@ export async function verifyDeployment(root, url, manifest) {
     throw new Error(
       "The saved deployment is no longer on the canonical chain.",
     );
+  await archiveCompilerInput(root, manifest);
   return {
     ...d,
     rpcUrl: url,
+    engine: await chainEngine(url),
     verification: { status: "Matched", checkedAt: new Date().toISOString() },
   };
 }
@@ -150,6 +285,7 @@ export async function recordDeployment(root, url, result) {
   );
   const vectors = await readJson(resolve(root, "config/state-vectors.json"));
   const deployment = {
+    engine: await chainEngine(url),
     chainId: 31337,
     rpcUrl: url,
     arenaAddress: receipt.contractAddress,
@@ -183,6 +319,63 @@ export async function recordDeployment(root, url, result) {
     resolve(root, `.local/deployments/${receipt.blockHash}.json`),
     manifest,
   );
-  await saveJson(resolve(root, ".local/chain/deployment.json"), manifest);
+  await saveJson(
+    resolve(chainDirectory(root, deployment.engine), "deployment.json"),
+    manifest,
+  );
   return checked;
+}
+
+export async function archiveLegacyHistory(root, url, manifest) {
+  const directory = resolve(
+    root,
+    ".local/deployments",
+    manifest.deployment.deploymentHash,
+  );
+  const head = await rpc(url, "eth_getBlockByNumber", ["latest", false]);
+  let from = BigInt(manifest.deployment.deploymentBlock);
+  const previous = await readJson(resolve(directory, "history.json")).catch(
+    (error) => {
+      if (error.code !== "ENOENT") throw error;
+    },
+  );
+  if (previous) {
+    const block = await rpc(url, "eth_getBlockByNumber", [
+      `0x${BigInt(previous.throughBlock).toString(16)}`,
+      false,
+    ]);
+    if (block?.hash !== previous.throughHash)
+      throw new Error(
+        "The saved legacy history differs from its chain. Existing archives were retained.",
+      );
+    from = BigInt(previous.throughBlock) + 1n;
+  }
+  for (let number = from; number <= BigInt(head.number); number++) {
+    const block = await rpc(url, "eth_getBlockByNumber", [
+      `0x${number.toString(16)}`,
+      true,
+    ]);
+    const receipts = await Promise.all(
+      block.transactions.map((transaction) =>
+        rpc(url, "eth_getTransactionReceipt", [transaction.hash]),
+      ),
+    );
+    if (
+      receipts.some((receipt) => !receipt || receipt.blockHash !== block.hash)
+    )
+      throw new Error(
+        "Legacy receipt history is incomplete or changed during export.",
+      );
+    await saveJson(resolve(directory, "blocks", `${number}.json`), {
+      block,
+      receipts,
+    });
+  }
+  await saveJson(resolve(directory, "history.json"), {
+    chainId: manifest.deployment.chainId,
+    arena: manifest.deployment.arenaAddress,
+    deploymentHash: manifest.deployment.deploymentHash,
+    throughBlock: BigInt(head.number).toString(),
+    throughHash: head.hash,
+  });
 }

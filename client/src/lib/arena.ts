@@ -11,7 +11,7 @@ import type { Address, ContractFunctionReturnType, TransactionReceipt } from 'vi
 import { mnemonicToAccount } from 'viem/accounts';
 import { arenaAbi } from '../generated/arena';
 
-// Public Anvil development seed, shared with scripts/local-chain.sh.
+// Public development seed shared by the local chain processes.
 const localWallets = [0, 1].map((addressIndex) =>
   mnemonicToAccount('test test test test test test test test test test test junk', {
     addressIndex,
@@ -27,6 +27,7 @@ export const localChain = defineChain({
 });
 
 export interface Deployment {
+  engine?: 'geth' | 'anvil';
   chainId: number;
   rpcUrl: string;
   arenaAddress: Address;
@@ -213,6 +214,18 @@ export async function readBattleSnapshot(
 export async function advanceLocalClock(deployment: Deployment, latestTimestamp: bigint) {
   const timestamp = BigInt(Math.floor(Date.now() / 1_000));
   if (timestamp <= latestTimestamp) return;
+  if (deployment.engine === 'geth') {
+    const response = await fetch(deployment.rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'arena_advanceClock', params: [] }),
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!response.ok) throw new Error('The local chain clock is unavailable.');
+    const result = await response.json();
+    if (result.error) throw new Error(result.error.message);
+    return;
+  }
   const client = createTestClient({
     mode: 'anvil',
     chain: localChain,

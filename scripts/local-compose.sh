@@ -42,7 +42,7 @@ require_local_images() {
 
 reset_local_demo() {
     local answer managed_pid deadline
-    printf "Reset will remove this project's chain checkpoints, deployment baselines, Compose database volume, contract build output, published deployment, and generated acceptance/demo/recovery/safety reports. Browser order secrets for the old deployment cannot be reused after reset.\n"
+    printf "Reset will remove this project's Geth archive database, archived blocks/account states, old Anvil checkpoints, deployment sources/baselines, Compose database volume, contract build output, published deployments, and generated acceptance/demo/recovery/safety reports. Browser order secrets for the old deployment cannot be reused after reset.\n"
     printf 'The local environment, downloaded tools, and macOS PostgreSQL installation are retained.\n'
     read -r -p 'Type reset to continue: ' answer
     if [[ "$answer" != "reset" ]]; then
@@ -70,6 +70,21 @@ reset_local_demo() {
             done
         fi
     fi
+    if [[ -f "$project_root/.local/geth.pid" ]]; then
+        read -r managed_pid < "$project_root/.local/geth.pid"
+        if [[ "$managed_pid" =~ ^[0-9]+$ ]] && lsof -nP -a -p "$managed_pid" -iTCP:"${ARENA_RPC_PORT:-18545}" -sTCP:LISTEN >/dev/null 2>&1; then
+            kill -TERM "$managed_pid"
+            deadline=$((SECONDS + 30))
+            while kill -0 "$managed_pid" 2>/dev/null; do
+                if (( SECONDS >= deadline )); then
+                    printf 'Geth is still using its archive. Stop it before resetting.\n' >&2
+                    return 1
+                fi
+                sleep 0.1
+            done
+        fi
+    fi
+    node "$project_root/scripts/client-contract.mjs" stop-legacy
     if [[ -f "$project_root/.local/anvil.pid" ]]; then
         read -r managed_pid < "$project_root/.local/anvil.pid"
         if [[ "$managed_pid" =~ ^[0-9]+$ ]] && lsof -nP -a -p "$managed_pid" -iTCP:"${ARENA_RPC_PORT:-18545}" -sTCP:LISTEN >/dev/null 2>&1; then
@@ -84,11 +99,13 @@ reset_local_demo() {
     fi
     rm -rf "$project_root/.local/indexer" "$project_root/.local/browser" "$project_root/.local/demo" \
         "$project_root/.local/chain" "$project_root/.local/deployments" \
+        "$project_root/.local/geth" "$project_root/.local/archive" \
         "$project_root/.local/test" \
         "$project_root/.local/safety" "$project_root/.local/simulation" \
         "$project_root/contracts/out" "$project_root/contracts/cache" "$project_root/contracts/broadcast"
     rm -f "$backend_pid_file" "$indexer_command_file" "$project_root/.local/indexer-failure" \
-        "$project_root/.local/anvil.pid" "$project_root/.local/container-exit" \
-        "$project_root/client/public/deployment.json"
+        "$project_root/.local/anvil.pid" "$project_root/.local/geth.pid" "$project_root/.local/container-exit" \
+        "$project_root/client/public/legacy-deployment.json"
+    node "$project_root/scripts/client-contract.mjs" clear
     printf 'Local demo data reset. Run the backend normally or with demo to initialize it again.\n'
 }

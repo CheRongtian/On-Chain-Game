@@ -15,6 +15,11 @@ build_go_backend() {
     mkdir -p "$project_root/.local/bin"
     printf 'Building Go backend...\n'
     GOTOOLCHAIN=local GOPROXY=off go build -mod=readonly -o "$indexer_binary" ./cmd/arena-server
+    printf 'Building the local Geth archive process from cached dependencies...\n'
+    if ! GOTOOLCHAIN=local GOPROXY=off go build -mod=readonly -o "$project_root/.local/bin/arena-chain" ./cmd/arena-chain; then
+        printf 'Full-node dependencies are incomplete. Prepare them once with cd server && go mod tidy, then start the backend again.\n' >&2
+        return 1
+    fi
 }
 
 build_linux_backend() {
@@ -93,7 +98,7 @@ start_go_indexer() {
     rm -f "$project_root/.local/indexer-failure" "$project_root/.local/container-exit"
     printf 'Starting the Go Indexer and read API container...\n'
     arena_compose up -d --no-deps --force-recreate api
-    arena_compose logs --follow --since "$compose_log_since" db api &
+    node "$project_root/scripts/client-contract.mjs" follow-logs "$compose_log_since" &
     indexer_log_pid=$!
     container_id="$(arena_compose ps -q api)"
     if [[ -z "$container_id" ]]; then
@@ -110,7 +115,7 @@ restart_go_indexer() {
     read -r operation < "$indexer_command_file"
     if [[ "$operation" == "reload-chain" && "$mode" == "test" ]]; then
         rm -f "$indexer_command_file"
-        printf 'Acceptance: saving and restarting the isolated Anvil node...\n'
+        printf 'Acceptance: restoring the isolated %s node and its original deployment...\n' "$local_chain_engine"
         stop_local_chain
         start_local_chain
         deploy_local_arena
@@ -122,13 +127,28 @@ restart_go_indexer() {
     arena_compose kill --signal USR1 api
 }
 
+stop_go_indexer() {
+    arena_compose stop api
+    if [[ -n "$indexer_log_pid" ]]; then
+        kill -TERM "$indexer_log_pid" 2>/dev/null || true
+        wait "$indexer_log_pid" 2>/dev/null || true
+        indexer_log_pid=""
+    fi
+    if [[ -n "$indexer_pid" ]]; then
+        wait "$indexer_pid" 2>/dev/null || true
+        indexer_pid=""
+    fi
+    compose_log_since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+
 stop_backend() {
+    local backend_status=$?
     trap '' USR1
     stop_backend_tests
     if [[ "$mode" == "test" ]]; then
-        arena_compose down --volumes || true
+        arena_compose down --volumes || backend_status=1
     else
-        arena_compose down || true
+        arena_compose down || backend_status=1
     fi
     if [[ -n "$indexer_log_pid" ]]; then
         kill -TERM "$indexer_log_pid" 2>/dev/null || true
@@ -138,6 +158,17 @@ stop_backend() {
         kill -TERM "$indexer_pid" 2>/dev/null || true
         wait "$indexer_pid" 2>/dev/null || true
     fi
-    stop_local_chain
+    if ! stop_local_chain; then backend_status=1; fi
     rm -f "$backend_pid_file" "$indexer_command_file"
+    if [[ "$mode" == "test" ]]; then
+        if [[ "$backend_status" == 0 && -f "$project_root/.local/acceptance.json" ]]; then
+            printf 'PASS: complete acceptance through the agreed delivery scope, including all four Geth archive requirements and service cleanup.\n'
+        else
+            backend_status=1
+            printf '{"status":"failed","exitCode":%d}\n' "$backend_status" > "$project_root/.local/acceptance.json"
+            printf 'FAIL: complete acceptance did not finish. Earlier stage PASS messages do not establish overall completion.\n' >&2
+        fi
+    fi
+    trap - EXIT
+    exit "$backend_status"
 }

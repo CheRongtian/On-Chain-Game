@@ -8,7 +8,7 @@ import {
   replayResolution,
   replaySpeeds,
 } from '../lib/history';
-import type { HistoryMeta, MatchPage, ReplayData } from '../lib/history';
+import type { HistoryDeployment, HistoryMeta, MatchPage, ReplayData } from '../lib/history';
 import type { BattlefieldFrame } from '../battlefield/bridge';
 import { emptyDrafts } from '../lib/battle';
 import { useUpdatesStore } from './updates';
@@ -29,6 +29,8 @@ export const useHistoryStore = defineStore('history', () => {
   const revision = ref(0);
   const selectedUnit = ref<number>();
   const offset = ref(0);
+  const sources = shallowRef<HistoryDeployment[]>([]);
+  const source = ref<string>();
   let matchId: string | undefined;
   let active = false;
   let wantedFrame = 0;
@@ -133,8 +135,14 @@ export const useHistoryStore = defineStore('history', () => {
     request = controller;
     refreshing.value = true;
     try {
+      const catalogue = await historyRequest<{ items: HistoryDeployment[] }>(
+        '/deployments',
+        controller.signal,
+      );
+      if (request !== controller || !active) return;
+      sources.value = catalogue.items;
       if (matchId) {
-        const next = await readReplay(matchId, controller.signal);
+        const next = await readReplay(matchId, controller.signal, source.value);
         if (request !== controller || !active) return;
         const old = replay.value;
         const changed =
@@ -170,6 +178,7 @@ export const useHistoryStore = defineStore('history', () => {
         let next = await historyRequest<MatchPage>(
           `/matches?limit=10&offset=${offset.value}`,
           controller.signal,
+          source.value,
         );
         if (request !== controller || !active) return;
         if (page.value && deploymentKey(page.value.meta) !== deploymentKey(next.meta)) {
@@ -178,7 +187,11 @@ export const useHistoryStore = defineStore('history', () => {
           page.value = undefined;
           notice.value = 'The local deployment changed. Showing its current history.';
           if (previousOffset !== 0)
-            next = await historyRequest<MatchPage>('/matches?limit=10&offset=0', controller.signal);
+            next = await historyRequest<MatchPage>(
+              '/matches?limit=10&offset=0',
+              controller.signal,
+              source.value,
+            );
           if (request !== controller || !active) return;
         }
         page.value = next;
@@ -227,8 +240,9 @@ export const useHistoryStore = defineStore('history', () => {
     loading.value = false;
     revision.value++;
   }
-  function open(id?: string, frame = 0, pageOffset = 0) {
+  function open(id?: string, frame = 0, pageOffset = 0, deployment?: string) {
     release();
+    source.value = deployment;
     matchId = id;
     wantedFrame = frame;
     offset.value = pageOffset;
@@ -239,11 +253,12 @@ export const useHistoryStore = defineStore('history', () => {
     active = true;
     void refresh();
     poll = setInterval(() => {
-      if (!updates.live) void refresh();
+      if (source.value || !updates.live) void refresh();
     }, 4_000);
   }
   updates.listen((update) => {
     if (!active) return;
+    if (source.value && update.deploymentHash !== source.value) return;
     if (
       update.kind === 'change' &&
       matchId &&
@@ -303,6 +318,8 @@ export const useHistoryStore = defineStore('history', () => {
   });
 
   return {
+    sources,
+    source,
     page,
     replay,
     loading,

@@ -18,6 +18,8 @@ type config struct {
 	RPC              string `json:"rpcUrl"`
 	Arena            string `json:"arenaAddress"`
 	DeploymentBlock  string `json:"deploymentBlock"`
+	DeploymentHash   string `json:"deploymentHash"`
+	Engine           string `json:"engine"`
 	From             uint64
 	Database         string
 	HTTP             string
@@ -29,8 +31,12 @@ type config struct {
 }
 
 func readConfig(root string) (config, error) {
+	return readDeploymentConfig(root, "deployment.json")
+}
+
+func readDeploymentConfig(root, file string) (config, error) {
 	var cfg config
-	data, err := os.ReadFile(filepath.Join(root, "client/public/deployment.json"))
+	data, err := os.ReadFile(filepath.Join(root, "client/public", file))
 	if err != nil {
 		return cfg, fmt.Errorf("read current local deployment: %w; start the backend first", err)
 	}
@@ -42,11 +48,17 @@ func readConfig(root string) (config, error) {
 		return cfg, fmt.Errorf("invalid local deployment configuration")
 	}
 	cfg.PublicDeployment = append(json.RawMessage(nil), data...)
+	if cfg.Engine == "" {
+		cfg.Engine = "anvil"
+	}
+	if cfg.Engine != "anvil" && cfg.Engine != "geth" {
+		return cfg, fmt.Errorf("unsupported local chain engine")
+	}
 	if internal := os.Getenv("BACKEND_RPC_URL"); internal != "" {
-		if internal != "http://host.docker.internal:"+endpoint.Port() {
-			return cfg, fmt.Errorf("BACKEND_RPC_URL must address the managed Anvil on the Docker Desktop host")
+		if file == "deployment.json" && internal != "http://host.docker.internal:"+endpoint.Port() {
+			return cfg, fmt.Errorf("BACKEND_RPC_URL must address the managed local chain on the Docker Desktop host")
 		}
-		cfg.RPC = internal
+		cfg.RPC = "http://host.docker.internal:" + endpoint.Port()
 	}
 	cfg.Arena = strings.ToLower(cfg.Arena)
 	cfg.From, err = strconv.ParseUint(cfg.DeploymentBlock, 10, 63)
@@ -70,7 +82,7 @@ func readConfig(root string) (config, error) {
 	}
 	cfg.KeeperKey = os.Getenv("KEEPER_PRIVATE_KEY")
 	if cfg.KeeperKey == "" {
-		// Public development key, funded only on this project's local Anvil chain.
+		// Public development key, funded only on this project's local chain.
 		cfg.KeeperKey = strings.Repeat("0", 63) + "3"
 	}
 	depth := os.Getenv("CONFIRMATION_DEPTH")
@@ -80,16 +92,19 @@ func readConfig(root string) (config, error) {
 			return cfg, fmt.Errorf("invalid CONFIRMATION_DEPTH: %w", err)
 		}
 	}
-	data, err = os.ReadFile(filepath.Join(root, "contracts/out/Arena.sol/Arena.json"))
+	data, err = os.ReadFile(filepath.Join(root, ".local/deployments", cfg.DeploymentHash+".json"))
 	if err != nil {
-		return cfg, fmt.Errorf("read compiled Arena ABI: %w", err)
+		return cfg, fmt.Errorf("read archived deployment ABI: %w", err)
 	}
-	var artifact struct {
-		ABI json.RawMessage `json:"abi"`
+	var manifest struct {
+		Artifact struct {
+			ABI json.RawMessage `json:"abi"`
+		} `json:"artifact"`
 	}
-	if err = json.Unmarshal(data, &artifact); err != nil {
+	if err = json.Unmarshal(data, &manifest); err != nil {
 		return cfg, err
 	}
-	cfg.ABI, err = abi.JSON(strings.NewReader(string(artifact.ABI)))
+	data = manifest.Artifact.ABI
+	cfg.ABI, err = abi.JSON(strings.NewReader(string(data)))
 	return cfg, err
 }

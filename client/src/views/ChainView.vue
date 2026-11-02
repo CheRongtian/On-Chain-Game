@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
-import { formatEther } from 'viem';
+import { formatEther, isAddress } from 'viem';
 import type { Deployment } from '../lib/arena';
 import { historyRequest } from '../lib/history';
 import type { Confirmation, HistoryMeta } from '../lib/history';
@@ -14,6 +14,17 @@ interface DeploymentDetails extends Deployment {
   optimizer: { enabled: boolean; runs: number };
   evmVersion: string;
   verification: { status: string; checkedAt: string };
+  sourceVerification?: { status: string; checkedAt: string; sourceCount: number };
+}
+interface AccountState {
+  address: string;
+  blockNumber: string;
+  blockHash: string;
+  balanceWei: string;
+  nonce: number;
+  code: string;
+  slot?: string;
+  storage?: string;
 }
 interface ReceiptDetails {
   hash: string;
@@ -39,6 +50,15 @@ const receipt = ref<ReceiptDetails>();
 const hash = ref('');
 const loading = ref(false);
 const error = ref('');
+const accountAddress = ref('');
+const accountBlock = ref('latest');
+const accountSlot = ref('');
+const accountState = ref<AccountState>();
+const accountLoading = ref(false);
+const accountError = ref('');
+let accountController: AbortController | undefined;
+const source = () =>
+  typeof route.query.deployment === 'string' ? route.query.deployment : undefined;
 let controller: AbortController | undefined;
 async function load() {
   controller?.abort();
@@ -49,10 +69,15 @@ async function load() {
   deployment.value = undefined;
   sync.value = undefined;
   receipt.value = undefined;
+  accountController?.abort();
+  accountState.value = undefined;
+  accountError.value = '';
+  accountLoading.value = false;
   try {
     const details = await historyRequest<{ meta: HistoryMeta; deployment: DeploymentDetails }>(
       '/deployment',
       request.signal,
+      source(),
     );
     if (request.signal.aborted) return;
     deployment.value = details.deployment;
@@ -62,6 +87,7 @@ async function load() {
       const result = await historyRequest<{ transaction: ReceiptDetails }>(
         `/transactions/${encodeURIComponent(hash.value)}`,
         request.signal,
+        source(),
       );
       if (!request.signal.aborted) receipt.value = result.transaction;
     }
@@ -79,10 +105,54 @@ function findTransaction() {
     return;
   }
   if (route.params.hash === hash.value.trim()) void load();
-  else void router.push(`/transactions/${hash.value.trim()}`);
+  else
+    void router.push({
+      name: 'transaction',
+      params: { hash: hash.value.trim() },
+      query: source() ? { deployment: source() } : {},
+    });
 }
-watch(() => route.params.hash, load, { immediate: true });
-onBeforeUnmount(() => controller?.abort());
+async function findAccount() {
+  if (!isAddress(accountAddress.value.trim())) {
+    accountError.value = 'Enter an account or contract address.';
+    return;
+  }
+  if (accountBlock.value !== 'latest' && !/^\d+$/.test(accountBlock.value)) {
+    accountError.value = 'Use latest or a decimal block number.';
+    return;
+  }
+  if (accountSlot.value && !/^0x[\da-f]{64}$/i.test(accountSlot.value)) {
+    accountError.value = 'Use a 32-byte hexadecimal storage slot.';
+    return;
+  }
+  accountController?.abort();
+  const request = new AbortController();
+  accountController = request;
+  accountLoading.value = true;
+  accountError.value = '';
+  accountState.value = undefined;
+  try {
+    const query = new URLSearchParams({ block: accountBlock.value });
+    if (accountSlot.value) query.set('slot', accountSlot.value);
+    const result = await historyRequest<{ account: AccountState }>(
+      `/accounts/${accountAddress.value.trim()}?${query}`,
+      request.signal,
+      source(),
+    );
+    if (!request.signal.aborted) accountState.value = result.account;
+  } catch (failure) {
+    if (!request.signal.aborted)
+      accountError.value =
+        failure instanceof Error ? failure.message : 'Account state is unavailable.';
+  } finally {
+    if (accountController === request) accountLoading.value = false;
+  }
+}
+watch(() => [route.params.hash, route.query.deployment], load, { immediate: true });
+onBeforeUnmount(() => {
+  controller?.abort();
+  accountController?.abort();
+});
 </script>
 
 <template>
@@ -115,6 +185,21 @@ onBeforeUnmount(() => controller?.abort());
         </dd>
         <dt>Contract</dt>
         <dd class="address">{{ deployment.arenaAddress }}</dd>
+        <template v-if="deployment.sourceVerification">
+          <dt>Archived source compilation</dt>
+          <dd>
+            {{ deployment.sourceVerification.status }} ·
+            {{ deployment.sourceVerification.sourceCount }} source files
+          </dd>
+        </template>
+        <dt>Node</dt>
+        <dd>
+          {{
+            deployment.engine === 'geth'
+              ? 'Geth · full account-state archive'
+              : 'Anvil · retained state window'
+          }}
+        </dd>
         <dt>Chain</dt>
         <dd>{{ deployment.chainId }} · {{ deployment.rpcUrl }}</dd>
         <dt>Deployed</dt>
@@ -125,9 +210,15 @@ onBeforeUnmount(() => controller?.abort());
         <dd class="address">{{ deployment.deploymentHash }}</dd>
         <dt>Deployment transaction</dt>
         <dd class="address">
-          <RouterLink :to="`/transactions/${deployment.transactionHash}`" class="inline-link">{{
-            deployment.transactionHash
-          }}</RouterLink>
+          <RouterLink
+            :to="{
+              name: 'transaction',
+              params: { hash: deployment.transactionHash },
+              query: source() ? { deployment: source() } : {},
+            }"
+            class="inline-link"
+            >{{ deployment.transactionHash }}</RouterLink
+          >
         </dd>
         <dt>Rules hash</dt>
         <dd class="address">{{ deployment.rulesHash }}</dd>
@@ -136,6 +227,63 @@ onBeforeUnmount(() => controller?.abort());
           Solidity {{ deployment.compiler }} · {{ deployment.evmVersion }} · optimizer
           {{ deployment.optimizer.enabled ? deployment.optimizer.runs + ' runs' : 'disabled' }}
         </dd>
+      </dl>
+    </section>
+    <section class="panel" aria-labelledby="account-state-title">
+      <h2 id="account-state-title">Historical account state</h2>
+      <form class="account-search" @submit.prevent="findAccount">
+        <label for="historical-address">Account or contract address</label>
+        <input
+          id="historical-address"
+          v-model="accountAddress"
+          placeholder="0x…"
+          autocomplete="off"
+          spellcheck="false"
+          required
+        />
+        <label for="historical-block">Block number</label>
+        <input
+          id="historical-block"
+          v-model="accountBlock"
+          placeholder="latest"
+          autocomplete="off"
+          required
+        />
+        <label for="historical-slot">Storage slot (optional)</label>
+        <input
+          id="historical-slot"
+          v-model="accountSlot"
+          placeholder="0x… (32 bytes)"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button class="button secondary" type="submit" :disabled="accountLoading">
+          {{ accountLoading ? 'Loading…' : 'Read account state' }}
+        </button>
+      </form>
+      <p v-if="accountError" class="connection-alert" role="alert">{{ accountError }}</p>
+      <dl v-if="accountState" class="detail-grid">
+        <dt>Source block</dt>
+        <dd>{{ accountState.blockNumber }}</dd>
+        <dt>Block hash</dt>
+        <dd class="address">{{ accountState.blockHash }}</dd>
+        <dt>Balance</dt>
+        <dd>{{ formatEther(BigInt(accountState.balanceWei)) }} fictitious ETH</dd>
+        <dt>Nonce</dt>
+        <dd>{{ accountState.nonce }}</dd>
+        <dt>Bytecode</dt>
+        <dd>
+          <details>
+            <summary>
+              {{ accountState.code === '0x' ? 'No contract bytecode' : 'View bytecode' }}
+            </summary>
+            <code class="address">{{ accountState.code }}</code>
+          </details>
+        </dd>
+        <template v-if="accountState.storage"
+          ><dt>Storage value</dt>
+          <dd class="address">{{ accountState.storage }}</dd></template
+        >
       </dl>
     </section>
     <form class="panel transaction-search" @submit.prevent="findTransaction">
@@ -197,6 +345,14 @@ onBeforeUnmount(() => controller?.abort());
 }
 .chain-details .panel {
   padding: 1.25rem;
+}
+.account-search {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+.account-search button {
+  justify-self: start;
 }
 .detail-grid {
   display: grid;

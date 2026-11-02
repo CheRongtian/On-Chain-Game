@@ -38,9 +38,10 @@ function requestedFrame() {
   return Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
 watch(
-  id,
-  (value) => {
-    if (value) history.open(value, requestedFrame());
+  () => [id.value, route.query.deployment] as const,
+  ([value, selected]) => {
+    if (value)
+      history.open(value, requestedFrame(), 0, typeof selected === 'string' ? selected : undefined);
     else history.release();
   },
   { immediate: true },
@@ -59,7 +60,10 @@ watch(
       void router.replace({
         name: 'replay',
         params: { matchId: id.value },
-        query: index ? { frame: String(index) } : {},
+        query: {
+          ...(history.source ? { deployment: history.source } : {}),
+          ...(index ? { frame: String(index) } : {}),
+        },
       });
   },
 );
@@ -114,7 +118,9 @@ const valueText = (value: unknown) => (typeof value === 'string' ? value : JSON.
     :data-playback-speed="history.speed"
   >
     <header class="replay-toolbar">
-      <RouterLink to="/history" class="back"
+      <RouterLink
+        :to="{ name: 'history', query: history.source ? { deployment: history.source } : {} }"
+        class="back"
         ><AppIcon name="back" /><span>History</span></RouterLink
       >
       <div class="identity">
@@ -351,7 +357,11 @@ const valueText = (value: unknown) => (typeof value === 'string' ? value : JSON.
                 <dd>
                   <RouterLink
                     v-if="history.current"
-                    :to="`/transactions/${history.current.source.transactionHash}`"
+                    :to="{
+                      name: 'transaction',
+                      params: { hash: history.current.source.transactionHash },
+                      query: history.source ? { deployment: history.source } : {},
+                    }"
                     target="_blank"
                     rel="noopener"
                     class="inline-link"

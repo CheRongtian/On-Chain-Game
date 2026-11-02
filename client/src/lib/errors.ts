@@ -1,4 +1,4 @@
-import { BaseError, ContractFunctionRevertedError } from 'viem';
+import { BaseError, ContractFunctionRevertedError, RpcRequestError } from 'viem';
 
 const messages: Record<string, string> = {
   UnknownMatch: 'This room does not exist on the current local chain.',
@@ -38,4 +38,16 @@ export function errorMessage(error: unknown): string {
   return error instanceof Error
     ? error.message
     : 'The request could not be completed. Please retry.';
+}
+
+export function errorDetail(error: unknown): string {
+  const details: string[] = [];
+  let cause = error;
+  // Keep the cause without request bodies, which can contain private round orders.
+  while (cause instanceof BaseError) {
+    details.push(cause.shortMessage);
+    if (cause instanceof RpcRequestError && cause.details) details.push(cause.details);
+    cause = cause.cause;
+  }
+  return details.length ? [...new Set(details)].join(' Caused by: ') : errorMessage(error);
 }

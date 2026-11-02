@@ -152,6 +152,14 @@ func matchID(r *http.Request) (string, *apiError) {
 
 func (s *service) routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /deployments", func(w http.ResponseWriter, r *http.Request) {
+		items := []json.RawMessage{s.cfg.PublicDeployment}
+		for _, source := range s.archives {
+			items = append(items, source.cfg.PublicDeployment)
+		}
+		writeResponse(w, 200, map[string]any{"items": items})
+	})
+	mux.HandleFunc("GET /accounts/{address}", s.read(s.accountDetails))
 	mux.HandleFunc("GET /deployment", s.read(s.deploymentDetails))
 	mux.HandleFunc("GET /transactions/{hash}", s.read(s.transactionDetails))
 	mux.HandleFunc("GET /events", s.stream)
@@ -295,7 +303,22 @@ func (s *service) routes() http.Handler {
 	for _, view := range []string{"replay", "verification", "snapshots"} {
 		mux.HandleFunc("GET /matches/{id}/"+view, s.replayRoute(view))
 	}
-	return mux
+	archives := map[string]http.Handler{}
+	for hash, source := range s.archives {
+		archives[hash] = source.routes()
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		selected := r.URL.Query().Get("deployment")
+		if selected != "" && selected != s.anchor.Hash().Hex() {
+			if archive, ok := archives[selected]; ok {
+				archive.ServeHTTP(w, r)
+				return
+			}
+			writeResponse(w, 404, apiError{Code: "deployment_not_found", Message: "This deployment is not registered as an available history source."})
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
 }
 
 func Status(root string) error {

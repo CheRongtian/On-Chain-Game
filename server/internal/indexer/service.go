@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math/big"
 	"net"
 	"net/http"
 	"sync"
@@ -45,6 +44,7 @@ type service struct {
 	keeper       *keeper
 	keeperState  keeperStatus
 	indexerLock  *sql.Conn
+	archives     map[string]*service
 }
 
 func Run(ctx context.Context, root, operation string) error {
@@ -70,41 +70,21 @@ func Run(ctx context.Context, root, operation string) error {
 	if _, err = s.db.ExecContext(setup, schema); err != nil {
 		return fmt.Errorf("apply database schema: %w", err)
 	}
-	s.rpc, err = rpc.DialContext(setup, cfg.RPC)
-	if err != nil {
+	defer s.closeSource()
+	if err = s.attachSource(setup); err != nil {
 		return err
 	}
-	defer s.rpc.Close()
-	s.chain = ethclient.NewClient(s.rpc)
-	chainID, err := s.chain.ChainID(setup)
-	if err != nil {
-		return err
-	}
-	if chainID.Cmp(new(big.Int).SetUint64(cfg.ChainID)) != 0 {
-		return fmt.Errorf("RPC chain ID differs from the published deployment")
-	}
-	s.anchor, err = s.chain.HeaderByNumber(setup, new(big.Int).SetUint64(cfg.From))
-	if err != nil {
-		return fmt.Errorf("read deployment block: %w", err)
-	}
-	err = s.db.QueryRowContext(setup, `INSERT INTO deployments(chain_id,arena,deployment_block,deployment_hash) VALUES($1,$2,$3,$4)
-		ON CONFLICT(chain_id,arena,deployment_hash) DO UPDATE SET arena=excluded.arena RETURNING id`,
-		chainID.String(), cfg.Arena, cfg.From, s.anchor.Hash().Hex()).Scan(&s.deploymentID)
-	if err != nil {
-		return err
-	}
-	if err = s.ensureIndexerLock(setup); err != nil {
-		return err
-	}
-	defer s.releaseIndexerLock()
-	_, err = s.db.ExecContext(setup, `INSERT INTO sync_cursors(deployment_id,block_number,block_hash) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,
-		s.deploymentID, int64(cfg.From)-1, s.anchor.ParentHash.Hex())
-	if err != nil {
+	if err = s.openArchives(setup, root); err != nil {
 		return err
 	}
 	cancel()
 	log.Printf("PostgreSQL schema ready. Indexing chain %d Arena %s from block %d (deployment %d).", cfg.ChainID, cfg.Arena, cfg.From, s.deploymentID)
 	if operation != "" {
+		for _, source := range s.archives {
+			if err = source.maintenance(ctx, root, operation); err != nil {
+				return err
+			}
+		}
 		if err = s.maintenance(ctx, root, operation); err != nil {
 			return err
 		}
@@ -141,7 +121,16 @@ func Run(ctx context.Context, root, operation string) error {
 	go func() { done <- server.Serve(listener) }()
 	workerCtx, stopWorker := context.WithCancel(ctx)
 	workerDone := make(chan struct{})
-	go func() { defer close(workerDone); s.follow(workerCtx) }()
+	go func() {
+		defer close(workerDone)
+		var workers sync.WaitGroup
+		for _, source := range s.archives {
+			workers.Add(1)
+			go func(source *service) { defer workers.Done(); source.follow(workerCtx) }(source)
+		}
+		s.follow(workerCtx)
+		workers.Wait()
+	}()
 	log.Printf("Local Arena is ready. Read API: http://%s. Indexed block %d. Keeper: %s. Create rooms in the browser; the host clicks Start game.", cfg.HTTP, head, keeperReadiness)
 	select {
 	case <-ctx.Done():

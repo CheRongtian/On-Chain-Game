@@ -12,6 +12,13 @@ export interface HistorySource {
   transactionHash: string;
   logIndex: number;
 }
+export interface HistoryDeployment {
+  engine: 'geth' | 'anvil';
+  deploymentHash: string;
+  arenaAddress: Address;
+  deployedAt: string;
+  readOnly?: boolean;
+}
 export interface HistoryMeta {
   chainId: number;
   arena: string;
@@ -96,9 +103,16 @@ export class HistoryError extends Error {
     super(message);
   }
 }
-export async function historyRequest<T>(path: string, signal?: AbortSignal): Promise<T> {
+export async function historyRequest<T>(
+  path: string,
+  signal?: AbortSignal,
+  deployment?: string,
+): Promise<T> {
   const timeout = AbortSignal.timeout(35_000);
-  const response = await fetch(`/api${path}`, {
+  const selected = deployment
+    ? `${path.includes('?') ? '&' : '?'}deployment=${encodeURIComponent(deployment)}`
+    : '';
+  const response = await fetch(`/api${path}${selected}`, {
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     cache: 'no-store',
   });
@@ -114,7 +128,11 @@ export async function historyRequest<T>(path: string, signal?: AbortSignal): Pro
 export function deploymentKey(meta: HistoryMeta) {
   return `${meta.chainId}:${meta.arena.toLowerCase()}:${meta.deploymentHash}`;
 }
-export async function readReplay(id: string, signal: AbortSignal): Promise<ReplayData> {
+export async function readReplay(
+  id: string,
+  signal: AbortSignal,
+  deployment?: string,
+): Promise<ReplayData> {
   type WireMap = Omit<BattleMap, 'obstacles' | 'resources' | 'controlZone'> & {
     obstacles: string;
     resources: string;
@@ -123,6 +141,7 @@ export async function readReplay(id: string, signal: AbortSignal): Promise<Repla
   const data = await historyRequest<Omit<ReplayData, 'map'> & { map: WireMap; hasMore: boolean }>(
     `/matches/${id}/replay?limit=100`,
     signal,
+    deployment,
   );
   if (data.hasMore) throw new Error('Replay history exceeds the supported match length.');
   return {

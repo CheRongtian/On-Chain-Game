@@ -1,10 +1,10 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
-import type { Hash } from 'viem';
+import { TransactionReceiptNotFoundError, type Hash } from 'viem';
 import type { ActionBundle } from '../lib/battle';
 import { arenaAbi } from '../generated/arena';
 import { accountClient, createdRoomId, publicClient, readRoom } from '../lib/arena';
-import { errorMessage } from '../lib/errors';
+import { errorDetail, errorMessage } from '../lib/errors';
 import { useArenaStore } from './arena';
 
 type Command =
@@ -33,6 +33,7 @@ export const useTransactionStore = defineStore('transaction', () => {
   const hash = ref<Hash>();
   const roomId = ref<string>();
   const message = ref('');
+  const diagnostic = ref('');
   const busy = computed(() => ['sending', 'pending', 'unconfirmed'].includes(status.value));
   let generation = 0;
   let checkReceipt: ((wait: boolean) => Promise<bigint | undefined>) | undefined;
@@ -44,6 +45,7 @@ export const useTransactionStore = defineStore('transaction', () => {
     hash.value = undefined;
     roomId.value = undefined;
     message.value = '';
+    diagnostic.value = '';
     checkReceipt = undefined;
   }
 
@@ -131,25 +133,31 @@ export const useTransactionStore = defineStore('transaction', () => {
       if (!current()) return;
       hash.value = submitted;
       checkReceipt = async (wait) => {
-        if (!current() || !hash.value) return;
+        const receiptHash = hash.value;
+        if (!current() || !receiptHash) return;
         status.value = 'pending';
         message.value = '';
         try {
-          const receipt = wait
-            ? await reader.waitForTransactionReceipt({
-                hash: hash.value,
+          // Block polling can hide persistence errors from the first receipt read.
+          const receipt = await reader
+            .getTransactionReceipt({ hash: receiptHash })
+            .catch((cause: unknown) => {
+              if (!wait || !(cause instanceof TransactionReceiptNotFoundError)) throw cause;
+              return reader.waitForTransactionReceipt({
+                hash: receiptHash,
                 confirmations: 1,
                 timeout: 120_000,
                 onReplaced: ({ transaction }) => {
                   if (current()) hash.value = transaction.hash;
                 },
-              })
-            : await reader.getTransactionReceipt({ hash: hash.value });
+              });
+            });
           if (!current()) return;
           if (receipt.status !== 'success') {
             checkReceipt = undefined;
             status.value = 'failed';
             message.value = 'The transaction reverted. Refresh the room before retrying.';
+            diagnostic.value = message.value;
             return;
           }
           const id = action === 'create' ? createdRoomId(deployment, receipt) : matchId!;
@@ -157,12 +165,14 @@ export const useTransactionStore = defineStore('transaction', () => {
           hash.value = receipt.transactionHash;
           roomId.value = id.toString();
           message.value = confirmations[action];
+          diagnostic.value = '';
           status.value = 'confirmed';
           void arena.refresh();
           return id;
-        } catch {
+        } catch (cause) {
           if (!current()) return;
           status.value = 'unconfirmed';
+          diagnostic.value = errorDetail(cause);
           message.value =
             'Transaction submitted. Confirmation is unavailable. Check confirmation to query the same transaction again.';
         }
@@ -191,6 +201,7 @@ export const useTransactionStore = defineStore('transaction', () => {
       if (current()) {
         status.value = 'failed';
         message.value = errorMessage(cause);
+        diagnostic.value = errorDetail(cause);
       }
     }
   }
@@ -227,6 +238,7 @@ export const useTransactionStore = defineStore('transaction', () => {
     hash,
     roomId,
     message,
+    diagnostic,
     busy,
     reset,
     checkConfirmation,

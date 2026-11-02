@@ -17,7 +17,12 @@ import {
   toFunctionSelector,
 } from 'viem';
 import { anvil } from 'viem/chains';
-import { installedBrowser } from './browser.mjs';
+import {
+  installedBrowser,
+  requirePreviewDeployment,
+  transactionState,
+  waitForReceiptRecovery,
+} from './browser.mjs';
 
 const browserPort = Number(process.env.ARENA_BROWSER_PORT || 5174);
 const root = fileURLToPath(new URL('../..', import.meta.url));
@@ -48,6 +53,7 @@ const selectors = Object.fromEntries(
     .map((item) => [item.name, toFunctionSelector(item)]),
 );
 const report = {
+  engine: deployment.engine ?? 'anvil',
   status: 'running',
   checks: [],
   viewports: [],
@@ -207,12 +213,11 @@ async function createMatch({ uncertain = false } = {}) {
   const before = host.writes.length;
   await host.page.getByRole('button', { name: 'Create room', exact: true }).click();
   if (uncertain) {
-    const check = host.page.getByRole('button', { name: 'Check confirmation', exact: true });
-    await check.waitFor();
+    const check = await waitForReceiptRecovery(host.page);
     assert.equal(host.writes.length, before + 1, 'Only one creation may be broadcast.');
     assert.equal(await host.page.locator('.create-panel button').isDisabled(), true);
     await check.click();
-    await check.waitFor();
+    await waitForReceiptRecovery(host.page);
     assert.equal(host.writes.length, before + 1, 'Checking a receipt must never rebroadcast.');
     host.receiptBlocked = false;
     await check.click();
@@ -605,11 +610,7 @@ async function play(reference, saved) {
       const before = players[0].writes.length;
       await confirm(players[0]);
       if (receiptInterrupted) {
-        const check = players[0].page.getByRole('button', {
-          name: 'Check confirmation',
-          exact: true,
-        });
-        await check.waitFor();
+        const check = await waitForReceiptRecovery(players[0].page);
         players[0].receiptBlocked = false;
         await check.click();
         await players[0].page.getByText('Orders confirmed', { exact: true }).waitFor();
@@ -667,11 +668,18 @@ async function timeout(phase, bothMissing = false) {
   assert.deepEqual([...status.revealed], [phase === 3 && !bothMissing, false]);
   const room = await read('getMatch', [id]);
   assert.equal(room.phase, phase);
-  await chain.request({
-    method: 'evm_setNextBlockTimestamp',
-    params: [Number(room.phaseDeadline) + 1],
-  });
-  await chain.request({ method: 'evm_mine', params: [] });
+  if (deployment.engine === 'geth') {
+    await chain.request({
+      method: 'arena_advanceClock',
+      params: [`0x${(room.phaseDeadline + 1n).toString(16)}`],
+    });
+  } else {
+    await chain.request({
+      method: 'evm_setNextBlockTimestamp',
+      params: [Number(room.phaseDeadline) + 1],
+    });
+    await chain.request({ method: 'evm_mine', params: [] });
+  }
   await players[0].page.getByRole('button', { name: 'Refresh chain state', exact: true }).click();
   const finalize = players[0].page.getByRole('button', { name: 'Finalize timeout', exact: true });
   await waitFor(
@@ -698,6 +706,7 @@ for (const signal of ['SIGINT', 'SIGTERM'])
     void browser?.close();
   });
 try {
+  await requirePreviewDeployment(root, deployment);
   const executablePath = await installedBrowser();
   const assets = resolve(root, 'client/dist/assets');
   report.chunks = await Promise.all(
@@ -731,7 +740,7 @@ try {
   }, 'Keeper acceptance lock was not acquired.');
   await ready();
   baseline = await databaseState();
-  original = await chain.request({ method: 'evm_snapshot' });
+  if (deployment.engine !== 'geth') original = await chain.request({ method: 'evm_snapshot' });
   server = await preview({
     root: resolve(root, 'client'),
     configFile: resolve(root, 'client/vite.config.js'),
@@ -784,6 +793,9 @@ try {
 } catch (error) {
   report.status = 'failed';
   report.error = error.stack || String(error);
+  report.transactions = await Promise.all(
+    players.map((player) => transactionState(player.page).catch(() => undefined)),
+  );
   process.exitCode = 1;
   console.error(`Browser gameplay acceptance failed: ${error.message}`);
   for (const player of players)
@@ -828,6 +840,10 @@ try {
   await server?.close();
   report.finishedAt = new Date().toISOString();
   await writeFile(resolve(output, 'gameplay.json'), `${JSON.stringify(report, null, 2)}\n`);
+  await writeFile(
+    resolve(output, `gameplay-${report.engine}.json`),
+    `${JSON.stringify(report, null, 2)}\n`,
+  );
   if (report.status === 'passed')
     console.log(
       'PASS: real browser gameplay and recovery acceptance completed. Local gameplay report saved.',

@@ -17,32 +17,57 @@ try {
 } catch (error) {
   if (error.code !== "ENOENT" && error.code !== "ESRCH") throw error;
 }
-try {
-  const pid = Number(
-    await readFile(resolve(workspace, ".local/anvil.pid"), "utf8"),
-  );
-  const previous = await readFile(resolve(workspace, ".env"), "utf8");
-  const port = previous.match(/^ARENA_RPC_PORT=(\d+)$/m)?.[1];
-  if (port) {
-    let listening = false;
-    try {
-      execFileSync(
-        "lsof",
-        ["-nP", "-a", "-p", String(pid), `-iTCP:${port}`, "-sTCP:LISTEN"],
-        { stdio: "ignore" },
-      );
-      listening = true;
-    } catch (error) {
-      if (error.status !== 1) throw error;
-    }
-    if (listening) {
-      process.kill(pid, "SIGCONT");
-      process.kill(pid, "SIGTERM");
-      await new Promise((done) => setTimeout(done, 250));
-    }
+const processes = [];
+for (const engine of ["anvil", "geth"]) {
+  try {
+    const pid = Number(
+      await readFile(resolve(workspace, `.local/${engine}.pid`), "utf8"),
+    );
+    const previous = await readFile(resolve(workspace, ".env"), "utf8");
+    const port = previous.match(/^ARENA_RPC_PORT=(\d+)$/m)?.[1];
+    if (port) processes.push({ pid, port });
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
   }
+}
+try {
+  const legacy = JSON.parse(
+    await readFile(
+      resolve(workspace, ".local/chain/legacy-process.json"),
+      "utf8",
+    ),
+  );
+  processes.push({ pid: legacy.pid, port: new URL(legacy.rpcUrl).port });
 } catch (error) {
-  if (error.code !== "ENOENT" && error.code !== "ESRCH") throw error;
+  if (error.code !== "ENOENT") throw error;
+}
+for (const { pid, port } of processes) {
+  try {
+    execFileSync(
+      "lsof",
+      ["-nP", "-a", "-p", String(pid), `-iTCP:${port}`, "-sTCP:LISTEN"],
+      { stdio: "ignore" },
+    );
+  } catch (error) {
+    if (error.status !== 1) throw error;
+    continue;
+  }
+  process.kill(pid, "SIGCONT");
+  process.kill(pid, "SIGTERM");
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    try {
+      process.kill(pid, 0);
+    } catch (error) {
+      if (error.code !== "ESRCH") throw error;
+      break;
+    }
+    if (Date.now() >= deadline)
+      throw new Error(
+        "An old acceptance node is still using its data; the workspace was retained.",
+      );
+    await new Promise((done) => setTimeout(done, 100));
+  }
 }
 // Recreate only this launcher's disposable source copy; daily data stays outside it.
 await rm(workspace, { recursive: true, force: true });
@@ -55,6 +80,7 @@ const excluded = new Set([
   "cache",
   "broadcast",
   "deployment.json",
+  "legacy-deployment.json",
 ]);
 for (const name of [
   "scripts",

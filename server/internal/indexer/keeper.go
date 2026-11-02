@@ -59,7 +59,9 @@ func newKeeper(ctx context.Context, s *service) (*keeper, error) {
 		return nil, err
 	}
 	if balance.Sign() == 0 {
-		// readConfig accepts only this project's local Anvil endpoint and chain ID.
+		if s.cfg.Engine == "geth" {
+			return nil, fmt.Errorf("local Keeper has no funds; restart the backend to prepare its dedicated account")
+		}
 		var result any
 		funds := new(big.Int).Mul(big.NewInt(10_000), big.NewInt(1_000_000_000_000_000_000))
 		if err = s.rpc.CallContext(ctx, &result, "anvil_setBalance", k.address, hexutil.EncodeBig(funds)); err != nil {
@@ -248,12 +250,17 @@ func (k *keeper) candidate(ctx context.Context, id string) (keeperJob, bool, err
 		return job, false, err
 	}
 	if header.Time <= deadline && uint64(time.Now().Unix()) > deadline {
-		// Idle Anvil has no interval mining. Advance only an actually expired task to wall time.
+		// Advance only an actually expired task on these transaction-driven local chains.
 		var result any
-		if err = k.s.rpc.CallContext(ctx, &result, "evm_setNextBlockTimestamp", uint64(time.Now().Unix())); err != nil {
-			return job, false, err
+		if k.s.cfg.Engine == "geth" {
+			err = k.s.rpc.CallContext(ctx, &result, "arena_advanceClock")
+		} else {
+			err = k.s.rpc.CallContext(ctx, &result, "evm_setNextBlockTimestamp", uint64(time.Now().Unix()))
+			if err == nil {
+				err = k.s.rpc.CallContext(ctx, &result, "evm_mine")
+			}
 		}
-		if err = k.s.rpc.CallContext(ctx, &result, "evm_mine"); err != nil {
+		if err != nil {
 			return job, false, err
 		}
 		summary, exists, err = k.summary(ctx, id)

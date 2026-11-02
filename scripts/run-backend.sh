@@ -34,11 +34,31 @@ fi
 source "$project_root/scripts/local-indexer.sh"
 
 run_backend_tests() {
+    printf 'Checking archived Solidity sources with the local compiler...\n'
+    run_backend_check node "$project_root/scripts/client-contract.mjs" check-sources
     source "$project_root/scripts/check-safety.sh"
     run_safety_checks
     run_indexer_checks keeper
     run_frontend_checks
-    printf 'PASS: all backend, browser gameplay, and recovery checks completed.\n'
+    printf 'PASS: Anvil rules, controlled reorgs, browser gameplay, and fault regression.\n'
+    printf 'Switching the isolated environment to the production Geth archive workflow...\n'
+    stop_go_indexer
+    stop_local_chain
+    cp "$project_root/.local/indexer/acceptance.json" "$project_root/.local/indexer/anvil-acceptance.json"
+    local_chain_engine=geth
+    start_local_chain
+    deploy_local_arena
+    start_go_indexer
+    wait_for_backend_ready "$indexer_pid"
+    run_indexer_checks demo
+    printf 'Repeating the complete browser gameplay acceptance on Geth...\n'
+    run_backend_check node "$project_root/client/scripts/check-gameplay.mjs"
+    printf 'Repeating database, Go and SSE browser recovery on Geth...\n'
+    run_backend_check node "$project_root/client/scripts/check-updates.mjs"
+    printf 'Checking Geth crash recovery, archives, frozen sources, and historical accounts...\n'
+    run_backend_check node "$project_root/client/scripts/check-persistence.mjs"
+    run_backend_check node "$project_root/scripts/client-contract.mjs" acceptance-summary
+    printf 'All acceptance reports matched. Completing service cleanup before reporting overall success...\n'
 }
 
 case "$mode" in
@@ -92,7 +112,7 @@ if backend_running_for_checks; then
         printf 'The existing launcher uses the old runtime. Stop it, then start this Compose backend again.\n' >&2
         exit 1
     fi
-    if [[ ! -f "$project_root/.local/chain/deployment.json" ]]; then
+    if [[ ! -f "$project_root/.local/archive/deployment.json" ]]; then
         node "$project_root/scripts/client-contract.mjs" preserve
         printf 'Keep game tabs idle. Stop the old backend terminal, then run this same entry again to restore the saved chain with the current runtime.\n'
         exit
@@ -122,6 +142,7 @@ printf 'Building the Go and PostgreSQL images from local base images; cached lay
 arena_compose build api db
 
 source "$project_root/scripts/local-chain.sh"
+source "$project_root/scripts/archive-chain.sh"
 mkdir -p "$project_root/.local" "$project_root/client/public"
 trap stop_backend EXIT
 trap 'exit 130' INT
@@ -142,8 +163,6 @@ if ! arena_compose up -d --wait db; then
 fi
 start_local_chain
 deploy_local_arena
-
-start_chain_checkpoints
 
 cd "$project_root/server"
 start_go_indexer

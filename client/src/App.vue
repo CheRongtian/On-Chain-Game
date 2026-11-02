@@ -127,7 +127,15 @@ function changeAccount(event: Event) {
           <dl class="session-facts">
             <div>
               <dt>Network</dt>
-              <dd>Local Anvil</dd>
+              <dd>
+                {{
+                  arena.connection?.deployment.engine === 'geth'
+                    ? 'Local Geth'
+                    : arena.connection
+                      ? 'Local Anvil'
+                      : '—'
+                }}
+              </dd>
             </div>
             <div>
               <dt>Block</dt>

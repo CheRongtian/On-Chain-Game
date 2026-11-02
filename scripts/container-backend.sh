@@ -38,7 +38,7 @@ restart_server() {
         *) printf 'Unknown indexing operation: %s\n' "$requested" >&2; return ;;
     esac
     rm -f "$command_file"
-    printf 'Restarting Go services inside the existing container; Anvil and rooms remain running.\n'
+    printf 'Restarting Go services inside the existing container; the local chain and rooms remain running.\n'
     kill -TERM "$server_pid" 2>/dev/null || true
     wait "$server_pid" 2>/dev/null || true
     while kill -0 "$server_pid" 2>/dev/null; do

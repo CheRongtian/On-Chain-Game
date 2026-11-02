@@ -8,10 +8,15 @@ const history = useHistoryStore();
 const route = useRoute(),
   router = useRouter();
 watch(
-  () => route.query.page,
-  (value) => {
+  () => [route.query.page, route.query.deployment] as const,
+  ([value, selected]) => {
     const page = Number(value ?? 1);
-    history.open(undefined, 0, Number.isSafeInteger(page) && page > 0 ? (page - 1) * 10 : 0);
+    history.open(
+      undefined,
+      0,
+      Number.isSafeInteger(page) && page > 0 ? (page - 1) * 10 : 0,
+      typeof selected === 'string' ? selected : undefined,
+    );
   },
   { immediate: true },
 );
@@ -21,11 +26,15 @@ watch(
   (offset) => {
     const page = offset / 10 + 1;
     if (Number(route.query.page ?? 1) !== page)
-      void router.replace({ name: 'history', query: { page: String(page) } });
+      void router.replace({ name: 'history', query: { ...route.query, page: String(page) } });
   },
 );
 function paginate(offset: number) {
-  void router.push({ name: 'history', query: { page: String(offset / 10 + 1) } });
+  void router.push({ name: 'history', query: { ...route.query, page: String(offset / 10 + 1) } });
+}
+function changeSource(event: Event) {
+  const selected = (event.target as HTMLSelectElement).value;
+  void router.push({ name: 'history', query: selected ? { deployment: selected } : {} });
 }
 </script>
 <template>
@@ -40,6 +49,22 @@ function paginate(offset: number) {
         {{ history.refreshing ? 'Refreshing…' : 'Refresh history' }}
       </button>
     </header>
+    <label v-if="history.sources.length > 1" class="history-source">
+      History source
+      <select :value="history.source ?? ''" @change="changeSource">
+        <option value="">Current Geth archive chain</option>
+        <option
+          v-for="source in history.sources.slice(1)"
+          :key="source.deploymentHash"
+          :value="source.deploymentHash"
+        >
+          Old Anvil matches · {{ new Date(source.deployedAt).toLocaleString() }}
+        </option>
+      </select>
+    </label>
+    <p v-if="history.source" class="muted">
+      Archived matches are read-only and use their original chain evidence.
+    </p>
     <SyncStatus :meta="history.meta" :available="history.available" />
     <p v-if="history.error" class="history-alert" role="alert">
       {{ history.error }} <span v-if="history.page">The last loaded list is shown below.</span>
@@ -104,7 +129,11 @@ function paginate(offset: number) {
               </td>
               <td>
                 <RouterLink
-                  :to="`/history/${item.match.id}`"
+                  :to="{
+                    name: 'replay',
+                    params: { matchId: item.match.id },
+                    query: history.source ? { deployment: history.source } : {},
+                  }"
                   class="open-match"
                   :aria-label="`View match ${item.match.id}`"
                   >View replay <span aria-hidden="true">→</span></RouterLink
@@ -137,6 +166,12 @@ function paginate(offset: number) {
 <style scoped>
 .history-page {
   padding: 12px 0 36px;
+}
+.history-source {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 30rem;
+  margin-bottom: 1rem;
 }
 .history-heading {
   display: flex;

@@ -49,7 +49,10 @@ func (s *service) maintenance(ctx context.Context, root, operation string) error
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(filepath.Join(dir, operation+".json"), append(data, '\n'), 0600)
+		if err := os.WriteFile(filepath.Join(dir, operation+".json"), append(data, '\n'), 0600); err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(dir, operation+"-"+s.anchor.Hash().Hex()+".json"), append(data, '\n'), 0600)
 	}
 	// Save the original public records before removing anything for reconstruction.
 	if err = writeReport(); err != nil {

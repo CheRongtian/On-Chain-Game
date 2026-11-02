@@ -1,7 +1,63 @@
-import { access, constants, readdir } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import { access, constants, readFile, readdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+export async function requirePreviewDeployment(root, deployment) {
+  const built = JSON.parse(await readFile(join(root, 'client/dist/deployment.json'), 'utf8'));
+  for (const field of [
+    'engine',
+    'chainId',
+    'rpcUrl',
+    'arenaAddress',
+    'deploymentBlock',
+    'deploymentHash',
+    'deployedAt',
+  ]) {
+    assert.equal(
+      built[field],
+      deployment[field],
+      `Preview deployment ${field} is stale. The backend must publish the current deployment to client/dist before browser acceptance.`,
+    );
+  }
+}
+
+export function transactionState(page) {
+  return page.evaluate(() => {
+    const state =
+      document.getElementById('app').__vue_app__.config.globalProperties.$pinia.state.value
+        .transaction;
+    const { status, operation, hash, message, diagnostic } = state;
+    return { status, operation, hash, message, diagnostic };
+  });
+}
+
+export async function waitForReceiptRecovery(page) {
+  try {
+    await page.waitForFunction(() => {
+      const state =
+        document.getElementById('app').__vue_app__.config.globalProperties.$pinia.state.value
+          .transaction;
+      return ['unconfirmed', 'failed', 'confirmed'].includes(state.status);
+    });
+    const state = await transactionState(page);
+    assert.equal(
+      state.status,
+      'unconfirmed',
+      `${state.operation} did not enter receipt recovery: ${state.diagnostic || state.message}`,
+    );
+    const button = page.getByRole('button', { name: 'Check confirmation', exact: true });
+    await button.waitFor();
+    return button;
+  } catch (cause) {
+    const state = await transactionState(page).catch(() => ({ status: 'unavailable' }));
+    throw new Error(
+      `Receipt recovery failed: ${cause.message}\nTransaction: ${JSON.stringify(state)}`,
+      { cause },
+    );
+  }
+}
 
 export async function installedBrowser() {
   const cache = join(homedir(), 'Library', 'Caches', 'ms-playwright');
