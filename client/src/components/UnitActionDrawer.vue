@@ -61,7 +61,8 @@ async function choose(kind: Parameters<typeof battle.choose>[0]) {
         </button>
       </header>
       <p v-if="moved && plannedCell !== undefined" class="planned-position">
-        Draft position · {{ cellLabel(plannedCell) }}
+        {{ battle.committed ? 'Locked plan' : 'Draft position' }} · {{ cellLabel(plannedCell) }} ·
+        Awaiting settlement
       </p>
       <dl class="stats">
         <div>
@@ -125,7 +126,7 @@ async function choose(kind: Parameters<typeof battle.choose>[0]) {
       </template>
       <template v-else-if="battle.ownUnit && battle.secret && battle.hasPlans">
         <p class="current">
-          <span>{{ battle.committed ? 'Confirmed order' : 'Saved order' }}</span
+          <span>{{ battle.committed ? 'Locked plan · awaiting settlement' : 'Saved order' }}</span
           >{{ battle.selectedDraft ? draftLabel(battle.selectedDraft) : 'Hold' }}
         </p>
         <p class="description">

@@ -38,6 +38,7 @@ const frame = computed<BattlefieldFrame | undefined>(() =>
         selectedUnit: battle.selectedId ?? -1,
         legalCells: battle.highlighted,
         resolutions: battle.resolutions,
+        ordersLocked: battle.committed,
       }
     : undefined,
 );
@@ -67,6 +68,7 @@ const status = computed(() => {
     ? `Local draft ready · ${battle.energySpent}/${battle.availableEnergy} Energy`
     : 'Select a unit to plan its order.';
 });
+const planLabel = computed(() => (battle.committed ? 'Locked plan' : 'Draft'));
 const targetMessage = computed(
   () =>
     battle.feedback ||
@@ -253,7 +255,7 @@ onBeforeUnmount(() => {
           >View replay</RouterLink
         >
         <button v-if="battle.canUndo" @click="battle.undo()">Undo</button
-        ><span class="legend">△ Energy · C Control · Pink: draft</span>
+        ><span class="legend">△ Energy · C Control · {{ planLabel }} ≠ settled result</span>
       </div>
     </footer>
     <UnitActionDrawer :open="battle.drawerOpen" @dismiss="battle.dismiss()" @closed="focusBoard" />

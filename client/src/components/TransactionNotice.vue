@@ -54,6 +54,7 @@ const detail = computed(() =>
     >
       {{ detail }}
     </p>
+    <p v-if="transaction.recoveryWarning" role="alert">{{ transaction.recoveryWarning }}</p>
     <button
       v-if="transaction.status === 'unconfirmed'"
       class="button secondary"

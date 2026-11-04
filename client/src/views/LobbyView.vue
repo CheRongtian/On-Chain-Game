@@ -53,6 +53,20 @@ function findRoom() {
       </p>
     </header>
 
+    <details class="first-game-help">
+      <summary>First game? Start here</summary>
+      <ol>
+        <li>Choose Account 1 in this tab. Open a second tab and choose Account 2 there.</li>
+        <li>Create a room, copy its invitation, and paste it into Find a room in the other tab.</li>
+        <li>Join with the second account. The host then clicks Start game.</li>
+        <li>Select your units, plan their orders, then Confirm orders once for the whole squad.</li>
+      </ol>
+      <p>
+        These local accounts use fictitious funds. No wallet extension, purchase, or faucet is
+        needed.
+      </p>
+    </details>
+
     <div class="lobby-grid">
       <section class="panel create-panel" aria-labelledby="create-title">
         <div class="panel-topline">
@@ -142,3 +156,24 @@ function findRoom() {
     </section>
   </div>
 </template>
+
+<style scoped>
+.first-game-help {
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+summary {
+  color: var(--text);
+  min-height: 28px;
+}
+ol {
+  padding-left: 20px;
+}
+.first-game-help p {
+  margin-bottom: 0;
+}
+</style>

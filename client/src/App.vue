@@ -28,17 +28,21 @@ onBeforeUnmount(() => {
   updates.stop();
   clearInterval(timer);
 });
-watch([() => arena.address, () => arena.epoch], ([address], [previousAddress]) => {
-  transaction.reset();
-  // Keep direct invitations on first load; later account changes start at the lobby.
-  if (
-    previousAddress &&
-    address !== previousAddress &&
-    route.name !== 'history' &&
-    route.name !== 'replay'
-  )
-    void router.replace({ name: 'lobby' });
-});
+watch(
+  [() => arena.address, () => arena.epoch],
+  ([address], [previousAddress]) => {
+    transaction.restore();
+    // Keep direct invitations on first load; later account changes start at the lobby.
+    if (
+      previousAddress &&
+      address !== previousAddress &&
+      route.name !== 'history' &&
+      route.name !== 'replay'
+    )
+      void router.replace({ name: 'lobby' });
+  },
+  { flush: 'sync' },
+);
 function changeAccount(event: Event) {
   arena.selectAccount((event.target as HTMLSelectElement).value);
 }

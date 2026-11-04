@@ -413,7 +413,8 @@ export class BattlefieldScene extends Scene {
         g.fillRect(x - 15, y + 16, (30 * unit.hp) / frame.rules.maxHp[unit.unitType - 1], 3);
       }
       if (moved && stack[0].id === unitId) {
-        this.label(point.x, y + 27, crowded ? `DRAFT ×${stack.length}` : 'DRAFT', 9, c.preview);
+        const label = frame.ordersLocked ? 'LOCKED' : 'DRAFT';
+        this.label(point.x, y + 27, crowded ? `${label} ×${stack.length}` : label, 9, c.preview);
       }
       if (unitId === frame.selectedUnit) {
         g.lineStyle(3, hex(c.text));

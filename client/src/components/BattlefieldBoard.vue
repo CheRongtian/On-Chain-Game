@@ -128,7 +128,7 @@ function describe(cell: number) {
     const label = `Player ${unitId < 3 ? 'A' : 'B'} ${unitNames[unit.unitType]}`;
     if (frame.unitCells[unitId] === cell)
       return [
-        `${label}, ${unit.hp} HP${cell !== unit.cell ? `, draft position; start ${cellLabel(unit.cell)}` : ''}.`,
+        `${label}, ${unit.hp} HP${cell !== unit.cell ? `, ${frame.ordersLocked ? 'locked plan' : 'draft position'} awaiting settlement; start ${cellLabel(unit.cell)}` : ''}.`,
       ];
     return unit.cell === cell
       ? [`${label} starting tile; drafted to ${cellLabel(frame.unitCells[unitId])}.`]

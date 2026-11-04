@@ -131,8 +131,11 @@ export async function readConnection(): Promise<Connection> {
   return { deployment, accounts, blockNumber: block.number, timestamp: block.timestamp };
 }
 
-export function readRoom(deployment: Deployment, matchId: bigint) {
-  return publicClient(deployment).readContract({
+export async function readRoom(deployment: Deployment, matchId: bigint) {
+  const client = publicClient(deployment);
+  if ((await client.getChainId()) !== deployment.chainId)
+    throw new Error('The RPC is serving a different chain. Restore the correct local backend.');
+  return client.readContract({
     address: deployment.arenaAddress,
     abi: arenaAbi,
     functionName: 'getMatch',
@@ -165,7 +168,9 @@ export async function readBattleSnapshot(
   matchId: bigint,
 ): Promise<BattleSnapshot> {
   const client = publicClient(deployment);
-  const block = await client.getBlock();
+  const [chainId, block] = await Promise.all([client.getChainId(), client.getBlock()]);
+  if (chainId !== deployment.chainId)
+    throw new Error('The RPC is serving a different chain. Restore the correct local backend.');
   // Pin all getters to one block so a settlement cannot mix two rounds in one view.
   const request = {
     address: deployment.arenaAddress,

@@ -55,6 +55,7 @@ const heading = computed(() => {
     ? 'Saved orders ready · retry confirmation'
     : 'Plan your squad, then confirm your orders';
 });
+const recoveringTransaction = computed(() => transaction.status === 'unconfirmed');
 const roundOperation = computed(
   () =>
     transaction.roomId === String(route.params.matchId) &&
@@ -63,10 +64,11 @@ const roundOperation = computed(
 const feedback = computed(
   () =>
     arena.error ||
+    battle.error ||
     battle.actionError ||
     battle.secretError ||
     battle.actionMessage ||
-    (roundOperation.value
+    (roundOperation.value || recoveringTransaction.value
       ? transaction.status === 'sending'
         ? 'Sending transaction…'
         : transaction.status === 'pending'
@@ -77,10 +79,13 @@ const feedback = computed(
 const failed = computed(
   () =>
     !!arena.error ||
+    !!battle.error ||
     !!battle.actionError ||
     !!battle.secretError ||
-    (roundOperation.value && ['failed', 'unconfirmed'].includes(transaction.status)),
+    ((roundOperation.value || recoveringTransaction.value) &&
+      ['failed', 'unconfirmed'].includes(transaction.status)),
 );
+const needsRecovery = computed(() => battle.missingSecret || !!battle.secretError);
 watch(
   preferenceKey,
   (key) => {
@@ -214,10 +219,10 @@ onBeforeUnmount(() => {
           :disabled="(battle.busy && transaction.status !== 'unconfirmed') || processing"
           @click="openBackup"
         >
-          Orders backup
+          {{ needsRecovery ? 'Restore orders' : 'Orders backup' }}
         </button>
         <button
-          v-if="roundOperation && transaction.status === 'unconfirmed'"
+          v-if="recoveringTransaction"
           class="primary-action"
           @click="battle.checkTransaction()"
         >
@@ -289,14 +294,31 @@ onBeforeUnmount(() => {
       Confirm orders locks your squad for this round. Keep this page open while the round is
       processed.
     </p>
+    <p v-if="battle.recoveryNotice" class="feedback" role="status">{{ battle.recoveryNotice }}</p>
     <p v-if="battle.phaseExpired" class="timeout-hint">
-      Countdown uses local time and the chain deadline. Your click updates idle local-chain time if
-      needed; the contract confirms expiry.
+      Countdown follows the observed chain timestamp and deadline. Your click updates idle
+      local-chain time if needed; the contract confirms expiry.
     </p>
-    <p
-      v-if="roundOperation && transaction.status === 'unconfirmed' && transaction.hash"
-      class="transaction-hash"
-    >
+    <p class="secret-status" role="status">{{ battle.secretStatus }}</p>
+    <details class="round-help">
+      <summary>How to plan and recover</summary>
+      <p>
+        Select a unit to open its side panel. Choose an action, then a highlighted tile, and Confirm
+        that order. Unchanged units Hold.
+      </p>
+      <p>
+        Confirm orders locks the whole squad. The page then reveals your saved orders and processes
+        the round automatically. Planned positions become actual results only after settlement.
+      </p>
+      <p>
+        Arrow keys move between tiles; Enter selects; Escape closes the panel or cancels targeting.
+        Use Orders backup to export an encrypted copy before clearing browser data.
+      </p>
+    </details>
+    <p v-if="transaction.recoveryWarning" class="feedback failed" role="alert">
+      {{ transaction.recoveryWarning }}
+    </p>
+    <p v-if="recoveringTransaction && transaction.hash" class="transaction-hash">
       Submitted transaction: {{ transaction.hash }}
     </p>
   </section>
@@ -358,8 +380,8 @@ onBeforeUnmount(() => {
         account.
       </p>
       <p>
-        Local orders survive refresh. Clearing site data removes them. Keep an encrypted copy and
-        its password until the round is complete.
+        {{ battle.secretStatus }} Local orders survive refresh. Clearing site data removes them.
+        Keep an encrypted copy and its password until the round is complete.
       </p>
       <label for="backup-password">Backup password</label
       ><input
@@ -409,6 +431,24 @@ onBeforeUnmount(() => {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
+}
+.secret-status {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+}
+.round-help {
+  margin-top: 3px;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  max-height: 22vh;
+  overflow-y: auto;
+}
+.round-help summary {
+  min-height: 24px;
+}
+.round-help p {
+  margin: 4px 0;
 }
 .control-row,
 .round-actions {

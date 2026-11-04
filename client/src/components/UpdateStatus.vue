@@ -5,7 +5,7 @@ const updates = useUpdatesStore();
 
 <template>
   <small v-if="!updates.live" class="update-status" role="status">
-    {{ updates.label }} · The page keeps checking for changes.
+    {{ updates.label }} · Checking the chain directly. History may be delayed.
   </small>
 </template>
 

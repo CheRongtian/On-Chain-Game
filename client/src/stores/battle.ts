@@ -1,4 +1,4 @@
-import { computed, ref, shallowRef } from 'vue';
+import { computed, ref, shallowRef, watch } from 'vue';
 import { defineStore } from 'pinia';
 import type { Address } from 'viem';
 import {
@@ -55,6 +55,7 @@ export const useBattleStore = defineStore('battle', () => {
   const secret = shallowRef<OrderSecret>();
   const secretReady = ref(false);
   const secretError = ref('');
+  const recoveryNotice = ref('');
   const working = ref(false);
   const actionError = ref('');
   const actionMessage = ref('');
@@ -71,6 +72,7 @@ export const useBattleStore = defineStore('battle', () => {
   let refreshQueued = false;
   let hostChecked = false;
   let lastInspectedId: number | undefined;
+  let clockObservedAt = performance.now();
   const field = computed(() => snapshot.value?.battlefield);
   const room = computed(() => snapshot.value?.room);
   const roundStatus = computed(() => snapshot.value?.roundStatus);
@@ -275,8 +277,22 @@ export const useBattleStore = defineStore('battle', () => {
     () =>
       secretReady.value && committed.value && !revealed.value && !secret.value && hasPlans.value,
   );
+  const secretStatus = computed(() => {
+    if (playerIndex.value === undefined || !hasPlans.value) return '';
+    if (!secretReady.value) return 'Checking saved orders…';
+    if (secretError.value)
+      return 'Saved orders unavailable · restore storage access or import the original backup.';
+    if (missingSecret.value) return 'Original orders missing · import your encrypted backup.';
+    if (revealed.value) return 'Original orders revealed on chain.';
+    if (committed.value) return 'Orders saved locally · commitment confirmed on chain.';
+    if (secret.value)
+      return 'Orders saved locally · confirmation still needs checking or retrying.';
+    return 'Draft only · Confirm orders saves your squad before submission.';
+  });
   function tick() {
-    localTime.value = BigInt(Math.floor(Date.now() / 1_000));
+    localTime.value = snapshot.value
+      ? snapshot.value.timestamp + BigInt(Math.floor((performance.now() - clockObservedAt) / 1_000))
+      : 0n;
   }
   function currentSecretContext() {
     const target = context.value;
@@ -315,6 +331,7 @@ export const useBattleStore = defineStore('battle', () => {
     secret.value = undefined;
     secretReady.value = false;
     secretError.value = '';
+    recoveryNotice.value = '';
     actionError.value = '';
     actionMessage.value = '';
     progressPaused.value = false;
@@ -371,7 +388,9 @@ export const useBattleStore = defineStore('battle', () => {
           animating.value = false;
           boardRevision.value++;
           hostChecked = false;
-          if (transaction.roomId === target.id.toString()) transaction.reset();
+          recoveryNotice.value =
+            'The chain reorganized. Previous results were withdrawn; this board is being reread from the current branch. Saved orders are retained.';
+          if (transaction.roomId === target.id.toString()) transaction.markReorganized();
         }
       }
       let settled: RoundResolution[] = [];
@@ -402,6 +421,8 @@ export const useBattleStore = defineStore('battle', () => {
         progressPaused.value = false;
         if (transaction.roomId === target.id.toString() && !transaction.busy) transaction.reset();
       } else if (previous.room.stateHash !== next.room.stateHash) dismiss();
+      // Keep idle-chain countdowns moving between observations of the same block.
+      if (!previous || previous.blockHash !== next.blockHash) clockObservedAt = performance.now();
       snapshot.value = next;
       tick();
       if (settled.length) {
@@ -481,11 +502,21 @@ export const useBattleStore = defineStore('battle', () => {
         if (phaseExpired.value) throw new Error('The order confirmation deadline has passed.');
         const saved = secret.value ?? createSecret(currentSecretContext()!, actions!);
         actionMessage.value = 'Saving and confirming your squad…';
-        await saveSecret(saved);
+        try {
+          await saveSecret(saved);
+        } catch (cause) {
+          secretError.value = `Orders could not be saved. Nothing was submitted. ${errorMessage(cause)}`;
+          throw new Error(secretError.value);
+        }
         if (context.value !== target || room.value.round !== expectedRound) return false;
         secret.value = saved;
         drafts.value = secretDrafts(saved);
         actionMessage.value = '';
+        tick();
+        if (phaseExpired.value)
+          throw new Error(
+            'The confirmation deadline passed while saving. Your saved orders are retained; refresh the phase before continuing.',
+          );
         submitted = await transaction.commitOrders(target.id, expectedRound, saved.commitment);
       } else if (action === 'reveal') {
         if (!secretMatches.value || !secret.value)
@@ -619,7 +650,7 @@ export const useBattleStore = defineStore('battle', () => {
       await refresh();
       if (context.value !== target || room.value?.round !== secretKey.round) return;
       if (error.value) throw new Error(error.value);
-      if (room.value.phase !== 2 && room.value.phase !== 3)
+      if ((room.value.phase !== 2 && room.value.phase !== 3) || phaseExpired.value)
         throw new Error('This phase no longer needs a secret import.');
       if (
         committed.value &&
@@ -745,6 +776,17 @@ export const useBattleStore = defineStore('battle', () => {
     feedback.value = '';
     interaction.value = 'details';
   }
+  watch(
+    () => transaction.status,
+    (status) => {
+      if (
+        status === 'confirmed' &&
+        !working.value &&
+        transaction.roomId === context.value?.id.toString()
+      )
+        void refresh();
+    },
+  );
   updates.listen((update) => {
     const target = context.value;
     if (!target || update.kind === 'unavailable') return;
@@ -755,9 +797,13 @@ export const useBattleStore = defineStore('battle', () => {
     )
       return;
     if (update.kind === 'reorg' || update.kind === 'reset') {
-      if (transaction.roomId === target.id.toString()) transaction.reset();
+      if (transaction.roomId === target.id.toString()) transaction.markReorganized();
       // Reset transient rendering and requests; persisted orders and Salt remain in IndexedDB.
       open(target.deployment, target.id, target.account);
+      recoveryNotice.value =
+        update.kind === 'reorg'
+          ? 'The chain reorganized. Previous results were withdrawn; this board is being reread from the current branch. Saved orders are retained.'
+          : 'History is resynchronizing. Checking the current chain state; saved orders are retained.';
     } else if (refreshPromise || busy.value) refreshQueued = true;
     else void refresh();
   });
@@ -799,6 +845,8 @@ export const useBattleStore = defineStore('battle', () => {
     secret,
     secretReady,
     secretError,
+    secretStatus,
+    recoveryNotice,
     missingSecret,
     actionError,
     actionMessage,

@@ -61,6 +61,7 @@ const report = {
   receipts: [],
   timings: { indexing: [], verification: [], matches: [] },
   errors: [],
+  screenshots: [],
   startedAt: new Date().toISOString(),
 };
 const players = [];
@@ -128,22 +129,36 @@ async function createPlayer(index, account) {
     permissions: ['clipboard-read', 'clipboard-write'],
     reducedMotion: 'no-preference',
   });
+  context.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.origin === base && url.pathname.startsWith('/api/') && request.method() !== 'GET')
+      report.errors.push('Player data was sent to the read-only history API.');
+  });
   const player = {
     index,
     account,
     context,
     offline: false,
+    wrongChain: false,
     receiptBlocked: false,
     failSends: 0,
     blockReveal: false,
     snapshotGate: undefined,
     snapshotHeld: false,
     writes: [],
+    receiptReads: [],
   };
   await context.route(deployment.rpcUrl, async (route) => {
     const request = route.request();
     if (request.method() !== 'POST') return route.continue();
     const body = request.postDataJSON();
+    if (body.method === 'eth_getTransactionReceipt') player.receiptReads.push(body.params[0]);
+    if (player.wrongChain && body.method === 'eth_chainId')
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ jsonrpc: '2.0', id: body.id, result: '0x1' }),
+      });
     if (
       player.snapshotGate &&
       body.method === 'eth_call' &&
@@ -235,13 +250,32 @@ async function createMatch({ uncertain = false } = {}) {
   await host.page.getByRole('button', { name: 'Create room', exact: true }).click();
   if (uncertain) {
     const check = await waitForReceiptRecovery(host.page);
+    const submitted = (await transactionState(host.page)).hash;
     assert.equal(host.writes.length, before + 1, 'Only one creation may be broadcast.');
     assert.equal(await host.page.locator('.create-panel button').isDisabled(), true);
     await check.click();
     await waitForReceiptRecovery(host.page);
     assert.equal(host.writes.length, before + 1, 'Checking a receipt must never rebroadcast.');
+    await host.page.reload();
+    await waitForReceiptRecovery(host.page);
+    assert.equal(
+      (await transactionState(host.page)).hash,
+      submitted,
+      'Reload must restore the original transaction hash.',
+    );
+    assert.equal(await host.page.locator('.create-panel button').isDisabled(), true);
+    const journal = await host.page.evaluate(() =>
+      Object.keys(sessionStorage)
+        .filter((key) => key.startsWith('arena-pending:'))
+        .map((key) => JSON.parse(sessionStorage.getItem(key))),
+    );
+    assert.equal(journal.length, 1);
+    assert.deepEqual(Object.keys(journal[0]).sort(), ['hash', 'operation']);
     host.receiptBlocked = false;
     await check.click();
+    passed(
+      'refresh restores an unconfirmed creation by its original hash without storing orders or rebroadcasting',
+    );
   }
   await host.page.waitForURL(/\/rooms\/\d+$/);
   const id = BigInt(new URL(host.page.url()).pathname.split('/').pop());
@@ -271,10 +305,32 @@ async function createMatch({ uncertain = false } = {}) {
       0,
       'Room accounts must be read-only.',
     );
+  const beforeStart = host.writes.length;
+  host.receiptBlocked = uncertain;
   await start.click();
   for (const { page } of players) {
     await page.waitForURL(new RegExp(`/rooms/${id}/battle$`));
     await page.locator('.renderer[data-ready="true"]').waitFor();
+  }
+  if (uncertain) {
+    await waitForReceiptRecovery(host.page);
+    assert.equal((await transactionState(host.page)).operation, 'start');
+    await host.page.reload();
+    const check = await waitForReceiptRecovery(host.page);
+    host.receiptBlocked = false;
+    await check.click();
+    await waitFor(
+      async () => (await transactionState(host.page)).status === 'confirmed',
+      'The restored host start did not confirm from the battlefield.',
+    );
+    assert.equal(
+      host.writes.length,
+      beforeStart + 1,
+      'Recovering host start must not send it again.',
+    );
+    passed(
+      'an unconfirmed host start remains recoverable after entering and refreshing the battlefield',
+    );
   }
   return id;
 }
@@ -316,7 +372,7 @@ async function committed(id, player) {
   );
 }
 async function backup(player, file, password, error) {
-  await player.page.getByRole('button', { name: 'Orders backup', exact: true }).click();
+  await player.page.getByRole('button', { name: /^(Orders backup|Restore orders)$/ }).click();
   const dialog = player.page.getByRole('dialog', { name: 'Orders backup', exact: true });
   await dialog.getByLabel('Backup password', { exact: true }).fill(password);
   await dialog.getByLabel('Encrypted backup file', { exact: true }).setInputFiles(file);
@@ -382,6 +438,9 @@ async function checkViewports() {
         layout.boardWidth > 0 && layout.boardHeight > 160,
         'Controls must leave usable space for the complete board.',
       );
+      const screenshot = `battle-drawer-${report.engine}-${player.index}-${viewport.width}.png`;
+      await player.page.screenshot({ path: resolve(output, screenshot) });
+      report.screenshots.push(screenshot);
       await player.page.keyboard.press('Escape');
       assert.equal(
         await player.page.getByRole('dialog').count(),
@@ -438,19 +497,37 @@ async function recovery(id) {
   }
   await host.page.getByRole('button', { name: 'Retry confirmation', exact: true }).waitFor();
   assert.equal((await read('getRoundStatus', [id])).committed[0], false);
+  host.receiptBlocked = true;
   await host.page.getByRole('button', { name: 'Retry confirmation', exact: true }).click();
   await committed(id, 0);
+  await waitForReceiptRecovery(host.page);
   assert.equal(host.writes.length, before + 2, 'One failed send and one successful retry only.');
   passed(
     'confirmation during a pending snapshot read closes the dialog, waits for refresh, and commits once after a failed-send retry',
   );
   const writesAfterCommit = host.writes.length;
+  const submittedHash = (await transactionState(host.page)).hash;
+  const receiptReadsBeforeReload = host.receiptReads.length;
+  host.receiptBlocked = false;
   await host.page.reload();
   await host.page.getByText('Orders confirmed', { exact: true }).waitFor();
+  await waitFor(
+    async () =>
+      !['sending', 'pending', 'unconfirmed'].includes((await transactionState(host.page)).status),
+    'Reload did not complete its automatic original-receipt check.',
+  );
+  assert.deepEqual(
+    host.receiptReads.slice(receiptReadsBeforeReload),
+    [submittedHash],
+    'Reload must check the original receipt once without waiting for a manual click.',
+  );
   assert.equal(
     host.writes.length,
     writesAfterCommit,
     'Reload must restore orders without broadcasting a new Commit.',
+  );
+  passed(
+    'refresh automatically checks the saved original receipt once and restores confirmed orders without rebroadcasting',
   );
   await host.page.getByRole('button', { name: 'Orders backup', exact: true }).click();
   let dialog = host.page.getByRole('dialog', { name: 'Orders backup', exact: true });
@@ -489,6 +566,33 @@ async function recovery(id) {
   assert.equal(encrypted.salt.length > 0, true);
   await dialog.getByRole('button', { name: 'Close backup', exact: true }).click();
   await backup(guest, path, password, /do not match/);
+  await lobby(host);
+  await host.page.getByLabel('Active account', { exact: true }).selectOption(guest.account);
+  await host.page.goto(`${base}/rooms/${id}/battle`);
+  await waitFor(
+    () => host.page.getByRole('button', { name: 'Confirm orders', exact: true }).isEnabled(),
+    "Switching accounts must restore the other player's own planning state.",
+  );
+  assert.equal(
+    await host.page.evaluate(
+      () =>
+        !!document.getElementById('app').__vue_app__.config.globalProperties.$pinia.state.value
+          .battle.secret,
+    ),
+    false,
+    'The other account must not inherit saved orders.',
+  );
+  await lobby(host);
+  await host.page.goto(`${base}/rooms/${id}/battle`);
+  await host.page.getByText('Orders confirmed', { exact: true }).waitFor();
+  assert.equal(
+    host.writes.length,
+    writesAfterCommit,
+    'Switching back must restore the original orders without another Commit.',
+  );
+  passed(
+    "lobby account switching isolates plans and restores the original account's saved commitment",
+  );
   await host.page.evaluate(async () => {
     const database = await new Promise((done, fail) => {
       const request = indexedDB.open('arena-orders', 1);
@@ -505,6 +609,9 @@ async function recovery(id) {
   });
   await host.page.reload();
   await host.page.getByRole('alert').filter({ hasText: 'Original orders are missing' }).waitFor();
+  const missingScreenshot = `missing-orders-${report.engine}.png`;
+  await host.page.screenshot({ path: resolve(output, missingScreenshot) });
+  report.screenshots.push(missingScreenshot);
   await backup(host, path, 'incorrect password', /Cannot unlock/);
   await backup(host, path, password);
   await host.page.getByText('Orders confirmed', { exact: true }).waitFor();
@@ -518,6 +625,66 @@ async function recovery(id) {
     'cancel, failed-send retry, saved-order refresh, encrypted export, missing-secret recovery, wrong password and account isolation',
   );
   return { path, password };
+}
+
+async function protection(id) {
+  const host = players[0];
+  const before = host.writes.length;
+  await host.page.evaluate(() => {
+    const original = IDBDatabase.prototype.transaction;
+    window.restoreOrderStorage = () => {
+      IDBDatabase.prototype.transaction = original;
+    };
+    IDBDatabase.prototype.transaction = function (stores, mode, options) {
+      if (mode === 'readwrite' && (stores === 'secrets' || Array.from(stores).includes('secrets')))
+        throw new DOMException('Controlled order storage failure', 'QuotaExceededError');
+      return original.call(this, stores, mode, options);
+    };
+  });
+  try {
+    await confirm(host);
+    await host.page
+      .getByRole('alert')
+      .filter({ hasText: /Orders could not be saved. Nothing was submitted/ })
+      .waitFor();
+    assert.equal(host.writes.length, before, 'Storage failure must prevent all signed broadcasts.');
+    assert.equal((await read('getRoundStatus', [id])).committed[0], false);
+    await host.page.screenshot({ path: resolve(output, `storage-recovery-${report.engine}.png`) });
+  } finally {
+    await host.page.evaluate(() => {
+      window.restoreOrderStorage();
+      delete window.restoreOrderStorage;
+    });
+  }
+  await host.page.getByRole('button', { name: 'Refresh chain state', exact: true }).click();
+  await waitFor(
+    () => host.page.getByRole('button', { name: 'Confirm orders', exact: true }).isEnabled(),
+    'Restored storage did not unlock valid confirmation.',
+  );
+  passed('failed IndexedDB saves block broadcast and recover after storage access returns');
+
+  host.wrongChain = true;
+  try {
+    await host.page.getByRole('button', { name: 'Refresh chain state', exact: true }).click();
+    await host.page
+      .getByRole('alert')
+      .filter({ hasText: /different chain/ })
+      .first()
+      .waitFor();
+    assert.equal(
+      await host.page.getByRole('button', { name: 'Confirm orders', exact: true }).isDisabled(),
+      true,
+    );
+    assert.equal(host.writes.length, before, 'Wrong-chain reads must never trigger a broadcast.');
+    await host.page.screenshot({ path: resolve(output, `wrong-chain-${report.engine}.png`) });
+  } finally {
+    host.wrongChain = false;
+  }
+  await waitFor(
+    () => host.page.getByRole('button', { name: 'Confirm orders', exact: true }).isEnabled(),
+    'Correct-chain recovery did not retain the room and unlock confirmation.',
+  );
+  passed('wrong-chain connections disable submission and recover on the original room');
 }
 async function roundDone(id, round, expected) {
   await waitFor(
@@ -601,6 +768,7 @@ async function play(reference, saved) {
   const id = await createMatch({ uncertain: reference.name === 'points' });
   if (reference.name === 'points') {
     await checkViewports();
+    await protection(id);
     saved = await recovery(id);
   } else await backup(players[0], saved.path, saved.password, /do not match/);
   for (const round of reference.rounds) {
@@ -639,6 +807,15 @@ async function play(reference, saved) {
       await confirm(players[0]);
       if (receiptInterrupted) {
         const check = await waitForReceiptRecovery(players[0].page);
+        const originalHash = (await transactionState(players[0].page)).hash;
+        await players[0].page.reload();
+        await waitForReceiptRecovery(players[0].page);
+        assert.equal((await transactionState(players[0].page)).hash, originalHash);
+        assert.notEqual(
+          (await transactionState(players[1].page)).hash,
+          originalHash,
+          "Other accounts must not restore this tab's transaction.",
+        );
         players[0].receiptBlocked = false;
         await check.click();
         await players[0].page.getByText('Orders confirmed', { exact: true }).waitFor();
@@ -648,7 +825,7 @@ async function play(reference, saved) {
           'Receipt recovery must keep the original single Commit.',
         );
         passed(
-          'battle receipt recovery checks the original hash and never resubmits the locked squad',
+          'battle receipt recovery survives refresh, keeps account isolation and never resubmits the locked squad',
         );
       }
       await committed(id, 0);
@@ -702,6 +879,19 @@ async function timeout(phase, bothMissing = false) {
   assert.deepEqual([...status.revealed], [phase === 3 && !bothMissing, false]);
   const room = await read('getMatch', [id]);
   assert.equal(room.phase, phase);
+  const host = players[0];
+  assert.equal(
+    await host.page.getByRole('button', { name: 'Finalize timeout', exact: true }).count(),
+    0,
+    'An unexpired phase must not offer timeout finalization.',
+  );
+  let expiredReminder;
+  const writesBeforeExpiry = host.writes.length;
+  if (phase === 2 && bothMissing) {
+    await host.page.getByRole('button', { name: 'Confirm orders', exact: true }).click();
+    expiredReminder = host.page.getByRole('dialog', { name: 'Confirm orders?', exact: true });
+    await expiredReminder.waitFor();
+  }
   if (deployment.engine === 'geth') {
     await chain.request({
       method: 'arena_advanceClock',
@@ -714,13 +904,34 @@ async function timeout(phase, bothMissing = false) {
     });
     await chain.request({ method: 'evm_mine', params: [] });
   }
-  await players[0].page.getByRole('button', { name: 'Refresh chain state', exact: true }).click();
+  const refresh = host.page.getByRole('button', { name: 'Refresh chain state', exact: true });
+  if (expiredReminder) {
+    await waitFor(() => refresh.isEnabled(), 'The expiry observation did not become available.');
+    await refresh.evaluate((button) => button.click());
+  } else await refresh.click();
   const finalize = players[0].page.getByRole('button', { name: 'Finalize timeout', exact: true });
   await waitFor(
     () => finalize.isEnabled(),
     'Expired phases must expose a usable manual timeout control.',
   );
-  const host = players[0];
+  if (expiredReminder) {
+    assert.equal(
+      await expiredReminder.getByRole('button', { name: 'Confirm', exact: true }).isDisabled(),
+      true,
+      'A reminder opened before expiry must not authorize an expired Commit.',
+    );
+    assert.equal(host.writes.length, writesBeforeExpiry);
+    await host.page.screenshot({
+      path: resolve(output, `expired-confirmation-${report.engine}.png`),
+    });
+    await expiredReminder
+      .locator('.confirmation-actions')
+      .getByRole('button', { name: 'Keep editing', exact: true })
+      .click();
+    passed(
+      'early timeout controls stay hidden and an expired confirmation reminder cannot broadcast',
+    );
+  }
   const writesBeforeTimeout = host.writes.length;
   if (phase === 2 && bothMissing) {
     let releaseSnapshot;
@@ -768,6 +979,58 @@ async function timeout(phase, bothMissing = false) {
   passed(
     `${phase === 2 ? 'Commit' : 'Reveal'} timeout ${bothMissing ? 'draw' : 'win'} completes through the UI and independently verifies the on-chain result`,
   );
+}
+
+async function battleReorganization() {
+  if (deployment.engine === 'geth') return;
+  apiOffline = true;
+  for (const response of streams) response.destroy();
+  try {
+    const id = await createMatch();
+    const host = players[0];
+    const branch = await chain.request({ method: 'evm_snapshot' });
+    await confirm(host);
+    await committed(id, 0);
+    await host.page.getByText('Orders confirmed', { exact: true }).waitFor();
+    const before = host.writes.length;
+    const originalSecret = await host.page.evaluate(() => {
+      const secret =
+        document.getElementById('app').__vue_app__.config.globalProperties.$pinia.state.value.battle
+          .secret;
+      return { commitment: secret.commitment, salt: secret.salt };
+    });
+    assert.equal(await chain.request({ method: 'evm_revert', params: [branch] }), true);
+    await host.page.getByRole('button', { name: 'Refresh chain state', exact: true }).click();
+    await host.page.getByText(/The chain reorganized. Previous results were withdrawn/).waitFor();
+    await host.page.getByRole('button', { name: 'Check confirmation', exact: true }).click();
+    await host.page
+      .getByRole('alert')
+      .filter({ hasText: /removed by the reorganization/ })
+      .waitFor();
+    assert.equal(host.writes.length, before, 'A reorganization must never automatically recommit.');
+    const retained = await host.page.evaluate(() => {
+      const secret =
+        document.getElementById('app').__vue_app__.config.globalProperties.$pinia.state.value.battle
+          .secret;
+      return { commitment: secret.commitment, salt: secret.salt };
+    });
+    assert.equal(
+      retained.commitment === originalSecret.commitment && retained.salt === originalSecret.salt,
+      true,
+      'A displaced Commit must keep the original orders and Salt.',
+    );
+    assert.equal((await read('getRoundStatus', [id])).committed[0], false);
+    await host.page.screenshot({ path: resolve(output, 'battle-reorganization.png') });
+    await host.page.getByRole('button', { name: 'Retry confirmation', exact: true }).click();
+    await committed(id, 0);
+    await confirm(players[1]);
+    await roundDone(id, 1);
+    passed(
+      'battle reorganization withdraws confirmation, preserves the original secret and requires a manual retry',
+    );
+  } finally {
+    apiOffline = false;
+  }
 }
 
 await mkdir(output, { recursive: true });
@@ -856,6 +1119,7 @@ try {
   await timeout(3);
   await timeout(2, true);
   await timeout(3, true);
+  await battleReorganization();
   passed(
     'all gameplay receipts match locally signed raw transactions from the selected wallets on chain 31337; node-managed browser signing is rejected',
   );

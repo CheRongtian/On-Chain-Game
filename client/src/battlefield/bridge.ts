@@ -11,6 +11,7 @@ export interface BattlefieldFrame {
   readonly selectedUnit: number;
   readonly legalCells: readonly number[];
   readonly resolutions: readonly RoundResolution[];
+  readonly ordersLocked?: boolean;
   readonly playback?: {
     readonly revision: number;
     readonly paused: boolean;

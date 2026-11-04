@@ -23,6 +23,7 @@ const matchId = computed(() => parseRoomId(String(route.params.matchId ?? '')));
 const room = shallowRef<Room>();
 const error = ref('');
 const copyStatus = ref('');
+const recoveryNotice = ref('');
 const reading = ref(false);
 const isHost = computed(
   () => !!arena.address && room.value?.players[0].toLowerCase() === arena.address.toLowerCase(),
@@ -149,6 +150,12 @@ const stopUpdates = updates.listen((update) => {
   )
     return;
   if (update.kind === 'reorg' || update.kind === 'reset') {
+    recoveryNotice.value =
+      update.kind === 'reorg'
+        ? 'The chain reorganized. Checking the room and seats on the current branch.'
+        : 'History is resynchronizing. Checking the current room directly on chain.';
+    if (update.kind === 'reorg' && transaction.roomId === String(matchId.value))
+      transaction.markReorganized();
     refreshQueued = false;
     void readState(true);
   } else if (reading.value) refreshQueued = true;
@@ -204,6 +211,7 @@ async function copyInvitation() {
       </button>
     </section>
     <template v-else>
+      <p v-if="recoveryNotice" class="small feedback" role="status">{{ recoveryNotice }}</p>
       <p v-if="arena.error" class="failure" role="alert">
         {{ arena.error }} Showing the last confirmed room.
       </p>

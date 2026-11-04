@@ -23,6 +23,13 @@ const name = computed(() => {
       <span aria-hidden="true">{{ shortAddress(arena.address) }}</span>
       <span class="sr-only">{{ arena.address }}</span>
     </span>
+    <small v-if="arena.connection" class="network-context">
+      {{
+        arena.online
+          ? `${arena.connection.deployment.engine === 'geth' ? 'Geth' : 'Anvil'} · Chain ${arena.connection.deployment.chainId}`
+          : 'Chain connection unavailable'
+      }}
+    </small>
   </span>
 </template>
 
@@ -47,5 +54,10 @@ strong {
   font-variant-numeric: tabular-nums;
   line-height: 1.4;
   white-space: nowrap;
+}
+.network-context {
+  color: var(--text-muted);
+  font-size: 0.625rem;
+  line-height: 1.3;
 }
 </style>
