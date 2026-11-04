@@ -5,6 +5,10 @@ prepare_frontend_checks() {
         printf 'Browser acceptance requires the existing client dependencies. Prepare them in client/ before running test; nothing was installed.\n' >&2
         return 1
     fi
+    if ! npm --prefix "$project_root/client" ls --depth=0 --silent >/dev/null; then
+        printf 'Client dependencies do not match package.json. In client/, run npm ci --no-audit --no-fund, then retry.\n' >&2
+        return 1
+    fi
     node "$project_root/client/scripts/browser.mjs"
     printf "Database restart acceptance controls only this project's PostgreSQL container.\n"
 }
@@ -14,7 +18,7 @@ run_frontend_checks() {
     printf 'Checking frontend formatting, typed ABI usage, and production compilation...\n'
     run_backend_check npm run format:check
     run_backend_check npm run typecheck
-    run_backend_check npm run build
+    run_backend_check node "$project_root/scripts/build-cache.mjs" frontend
     printf 'Running two-account browser gameplay, order recovery, and timeout acceptance...\n'
     run_backend_check node "$project_root/client/scripts/check-gameplay.mjs"
     printf 'Running browser reconnection, automatic refresh, and database restart acceptance...\n'

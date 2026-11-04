@@ -20,6 +20,9 @@ if [[ "$mode" != "verify" && "$mode" != "simulate" ]] && (( $# > 0 )); then
     exit 1
 fi
 
+if [[ ( "$mode" == "test" || "$mode" == "reset" ) && "${ARENA_TEST_PROJECT_ROOT:-}" != "$project_root" ]]; then
+    node "$project_root/scripts/baseline.mjs" preserve
+fi
 if [[ "$mode" == "test" && "${ARENA_TEST_PROJECT_ROOT:-}" != "$project_root" ]]; then
     node "$project_root/scripts/test-workspace.mjs"
     export ARENA_TEST_PROJECT_ROOT="$project_root/.local/test"
@@ -58,6 +61,10 @@ run_backend_tests() {
     printf 'Checking Geth crash recovery, archives, frozen sources, and historical accounts...\n'
     run_backend_check node "$project_root/client/scripts/check-persistence.mjs"
     run_backend_check node "$project_root/scripts/client-contract.mjs" acceptance-summary
+    mkdir -p "$project_root/.local/regression"
+    arena_compose exec -T db pg_dump --schema-only --no-owner --no-privileges -U arena onchain_arena \
+        > "$project_root/.local/regression/database-schema.sql"
+    run_backend_check node "$project_root/scripts/baseline.mjs" check
     printf 'All acceptance reports matched. Completing service cleanup before reporting overall success...\n'
 }
 
@@ -136,10 +143,9 @@ if backend_running_for_checks; then
 fi
 
 build_go_backend
-require_local_images
+configure_image_platform
 build_linux_backend
-printf 'Building the Go and PostgreSQL images from local base images; cached layers are reused...\n'
-arena_compose build api db
+node "$project_root/scripts/build-cache.mjs" images
 
 source "$project_root/scripts/local-chain.sh"
 source "$project_root/scripts/archive-chain.sh"
@@ -152,7 +158,7 @@ printf '%s\n' "$$" > "$backend_pid_file"
 node "$project_root/scripts/client-contract.mjs" clear
 
 cd "$project_root/contracts"
-printf 'Building Arena with the local compiler...\n'
+printf 'Checking Arena build inputs with the local compiler; valid Foundry artifacts are reused...\n'
 forge build --use "$project_root/.local/bin/solc-0.8.30" --offline
 node "$project_root/scripts/client-contract.mjs" abi
 

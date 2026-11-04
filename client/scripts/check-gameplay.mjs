@@ -38,6 +38,7 @@ assert.equal(acceptance.status, 'passed', 'Backend acceptance must pass before b
 const deployment = JSON.parse(
   await readFile(resolve(root, 'client/public/deployment.json'), 'utf8'),
 );
+const rpcEndpoint = new URL(deployment.rpcUrl).href;
 const { abi } = JSON.parse(
   await readFile(resolve(root, 'contracts/out/Arena.sol/Arena.json'), 'utf8'),
 );
@@ -58,6 +59,7 @@ const report = {
   checks: [],
   viewports: [],
   receipts: [],
+  timings: { indexing: [], verification: [], matches: [] },
   errors: [],
   startedAt: new Date().toISOString(),
 };
@@ -94,6 +96,7 @@ async function api(path) {
   return response.json();
 }
 async function ready() {
+  const started = performance.now();
   const block = await chain.getBlock();
   await waitFor(async () => {
     try {
@@ -105,6 +108,10 @@ async function ready() {
       return false;
     }
   }, 'Indexer did not catch up with browser gameplay.');
+  report.timings.indexing.push({
+    block: block.number.toString(),
+    durationMilliseconds: Math.round(performance.now() - started),
+  });
 }
 async function databaseState() {
   const { stdout } = await run(binary, ['browser-fault', 'database-state'], {
@@ -158,6 +165,7 @@ async function createPlayer(index, account) {
         selector: data.slice(0, 10),
         from: await recoverTransactionAddress({ serializedTransaction }),
         chainId: transaction.chainId,
+        startedAt: performance.now(),
       });
     const failed =
       player.offline ||
@@ -182,6 +190,19 @@ async function createPlayer(index, account) {
         },
       }),
     });
+  });
+  context.on('response', async (response) => {
+    if (response.url() !== rpcEndpoint || response.request().method() !== 'POST') return;
+    try {
+      if (response.request().postDataJSON().method !== 'eth_getTransactionReceipt') return;
+      const receipt = (await response.json()).result;
+      if (receipt?.status !== '0x1') return;
+      const signed = player.writes.findLast((write) => write.hash === receipt.transactionHash);
+      if (signed && signed.confirmationMilliseconds === undefined)
+        signed.confirmationMilliseconds = Math.round(performance.now() - signed.startedAt);
+    } catch {
+      // Intentional browser outages can cancel receipt response bodies.
+    }
   });
   player.page = await context.newPage();
   player.page.setDefaultTimeout(35_000);
@@ -516,6 +537,7 @@ async function roundDone(id, round, expected) {
 }
 async function verifyMatch(id, outcome, reason) {
   await ready();
+  const started = performance.now();
   const replay = await api(`/matches/${id}/replay?limit=100`);
   assert.equal(replay.match.outcome, outcome);
   assert.equal(replay.match.reason, reason);
@@ -524,6 +546,10 @@ async function verifyMatch(id, outcome, reason) {
     'Verified',
     'Actual UI transactions must independently replay to the chain state.',
   );
+  report.timings.verification.push({
+    match: id.toString(),
+    durationMilliseconds: Math.round(performance.now() - started),
+  });
   const logs = await chain.getContractEvents({
     ...contract,
     fromBlock: BigInt(deployment.deploymentBlock),
@@ -540,7 +566,7 @@ async function verifyMatch(id, outcome, reason) {
       (entry) => entry.account.toLowerCase() === transaction.from.toLowerCase(),
     );
     assert.ok(player, 'Gameplay must come from the selected browser wallets.');
-    const signed = player.writes.find((write) => write.hash === hash);
+    const signed = player.writes.findLast((write) => write.hash === hash);
     assert.ok(signed, 'Every gameplay receipt must match a browser-signed raw transaction.');
     assert.equal(signed.from, player.account, 'The signature must belong to the selected wallet.');
     assert.equal(
@@ -554,6 +580,7 @@ async function verifyMatch(id, outcome, reason) {
       block: receipt.blockNumber.toString(),
       from: transaction.from,
       broadcastMethod: 'eth_sendRawTransaction',
+      confirmationMilliseconds: signed.confirmationMilliseconds ?? null,
     });
   }
   const commits = parseEventLogs({ abi, logs, eventName: 'ActionCommitted' }).filter(
@@ -570,6 +597,7 @@ async function verifyMatch(id, outcome, reason) {
   return replay;
 }
 async function play(reference, saved) {
+  const started = performance.now();
   const id = await createMatch({ uncertain: reference.name === 'points' });
   if (reference.name === 'points') {
     await checkViewports();
@@ -641,6 +669,12 @@ async function play(reference, saved) {
   passed(
     `two independent local accounts complete ${reference.name} through real UI controls, receipts, round states and verified history`,
   );
+  report.timings.matches.push({
+    scenario: reference.name,
+    match: id.toString(),
+    rounds: reference.rounds.length,
+    durationMilliseconds: Math.round(performance.now() - started),
+  });
   return saved;
 }
 async function timeout(phase, bothMissing = false) {
@@ -686,8 +720,45 @@ async function timeout(phase, bothMissing = false) {
     () => finalize.isEnabled(),
     'Expired phases must expose a usable manual timeout control.',
   );
-  await finalize.click();
+  const host = players[0];
+  const writesBeforeTimeout = host.writes.length;
+  if (phase === 2 && bothMissing) {
+    let releaseSnapshot;
+    host.snapshotGate = new Promise((done) => {
+      releaseSnapshot = done;
+    });
+    try {
+      const refresh = host.page.getByRole('button', { name: 'Refresh chain state', exact: true });
+      await waitFor(async () => {
+        if (!host.snapshotHeld) await refresh.evaluate((button) => button.click());
+        return host.snapshotHeld;
+      }, 'The timeout snapshot read did not start.');
+      await finalize.click();
+      await waitFor(() => finalize.isDisabled(), 'Timeout submission did not lock the action.');
+      assert.equal(
+        host.writes.length,
+        writesBeforeTimeout,
+        'Timeout must wait for the pending snapshot.',
+      );
+    } finally {
+      host.snapshotGate = undefined;
+      host.snapshotHeld = false;
+      releaseSnapshot();
+    }
+  } else await finalize.click();
+  await waitFor(async () => {
+    const state = await transactionState(host.page);
+    if (state.operation !== 'timeout' || state.roomId !== id.toString()) return false;
+    if (state.status === 'failed' || state.status === 'unconfirmed')
+      throw new Error(`Timeout submission failed: ${state.diagnostic || state.message}`);
+    return !!state.hash;
+  }, 'The timeout click did not submit a transaction for this room.');
   await roundDone(id, 1);
+  assert.equal(
+    host.writes.length,
+    writesBeforeTimeout + 1,
+    'One timeout click must broadcast once.',
+  );
   players[0].blockReveal = false;
   players[1].blockReveal = false;
   await verifyMatch(id, bothMissing ? 3 : 1, phase === 2 ? 5 : 6);

@@ -266,12 +266,7 @@ export const useBattleStore = defineStore('battle', () => {
   );
   const canTimeout = computed(
     () =>
-      arena.online &&
-      !busy.value &&
-      !loading.value &&
-      !error.value &&
-      !!context.value?.account &&
-      phaseExpired.value,
+      arena.online && !busy.value && !error.value && !!context.value?.account && phaseExpired.value,
   );
   const canRetryRound = computed(
     () => progressPaused.value && (canReveal.value || canSettle.value),

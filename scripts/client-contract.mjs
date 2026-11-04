@@ -387,7 +387,7 @@ else if (command === "acceptance-summary") {
     console.log(`PASS: Geth requirement ${name}.`);
   }
   await saveJson(resolve(projectRoot, ".local/acceptance.json"), {
-    status: "passed",
+    status: "pending-cleanup",
     checkedAt: new Date().toISOString(),
     items,
     requirements: archive.requirements,

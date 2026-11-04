@@ -28,22 +28,21 @@ require_compose() {
     fi
 }
 
-require_local_images() {
-    local image
-    for image in ubuntu:24.04 postgres:16-alpine; do
-        if ! docker image inspect "$image" >/dev/null 2>&1; then
-            printf 'Required local image is missing: %s. Prepare it with docker pull %s, then run this launcher again.\n' "$image" "$image" >&2
+configure_image_platform() {
+    local architecture
+    architecture="$(docker image inspect --format '{{.Architecture}}' ubuntu:24.04 2>/dev/null)" || \
+        architecture="$(docker image inspect --format '{{.Architecture}}' onchain-arena-api:local 2>/dev/null)" || {
+            printf 'No local Ubuntu base or reusable API image is available. Prepare ubuntu:24.04 with docker pull ubuntu:24.04, then retry.\n' >&2
             return 1
-        fi
-    done
-    ARENA_API_PLATFORM="linux/$(docker image inspect --format '{{.Architecture}}' ubuntu:24.04)"
+        }
+    ARENA_API_PLATFORM="linux/$architecture"
     export ARENA_API_PLATFORM
 }
 
 reset_local_demo() {
     local answer managed_pid deadline
     printf "Reset will remove this project's Geth archive database, archived blocks/account states, old Anvil checkpoints, deployment sources/baselines, Compose database volume, contract build output, published deployments, and generated acceptance/demo/recovery/safety reports. Browser order secrets for the old deployment cannot be reused after reset.\n"
-    printf 'The local environment, downloaded tools, and macOS PostgreSQL installation are retained.\n'
+    printf 'The local environment, downloaded tools, macOS PostgreSQL installation, and frozen regression baseline are retained.\n'
     read -r -p 'Type reset to continue: ' answer
     if [[ "$answer" != "reset" ]]; then
         printf 'Reset cancelled.\n'
@@ -100,7 +99,7 @@ reset_local_demo() {
     rm -rf "$project_root/.local/indexer" "$project_root/.local/browser" "$project_root/.local/demo" \
         "$project_root/.local/chain" "$project_root/.local/deployments" \
         "$project_root/.local/geth" "$project_root/.local/archive" \
-        "$project_root/.local/test" \
+        "$project_root/.local/test" "$project_root/.local/test-build" \
         "$project_root/.local/safety" "$project_root/.local/simulation" \
         "$project_root/contracts/out" "$project_root/contracts/cache" "$project_root/contracts/broadcast"
     rm -f "$backend_pid_file" "$indexer_command_file" "$project_root/.local/indexer-failure" \

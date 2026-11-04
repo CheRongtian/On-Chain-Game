@@ -1,4 +1,13 @@
-import { cp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { createServer } from "node:net";
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
@@ -69,7 +78,29 @@ for (const { pid, port } of processes) {
     await new Promise((done) => setTimeout(done, 100));
   }
 }
-// Recreate only this launcher's disposable source copy; daily data stays outside it.
+const cache = resolve(root, ".local/test-build");
+const reusable = [
+  ".local/bin",
+  ".local/vite",
+  ".local/frontend-build.json",
+  ".local/safety/foundry-fuzz",
+  ".local/safety/foundry-invariant",
+  "contracts/out",
+  "contracts/cache",
+  "client/dist",
+];
+for (const name of reusable) {
+  const previous = resolve(workspace, name);
+  const present = await stat(previous).catch((error) => {
+    if (error.code !== "ENOENT") throw error;
+  });
+  if (!present) continue;
+  const target = resolve(cache, name);
+  await mkdir(dirname(target), { recursive: true });
+  await rm(target, { recursive: true, force: true });
+  await rename(previous, target);
+}
+// Clear chain/database evidence while retaining independently checked build inputs and outputs.
 await rm(workspace, { recursive: true, force: true });
 await mkdir(workspace, { recursive: true });
 const excluded = new Set([
@@ -94,11 +125,24 @@ for (const name of [
 ])
   await cp(resolve(root, name), resolve(workspace, name), {
     recursive: true,
+    preserveTimestamps: true,
     filter: (file) =>
       !excluded.has(file.split("/").at(-1)) &&
       !file.split("/").at(-1).startsWith(".env"),
   });
+for (const name of reusable) {
+  const source = resolve(cache, name);
+  const present = await stat(source).catch((error) => {
+    if (error.code !== "ENOENT") throw error;
+  });
+  if (!present) continue;
+  const target = resolve(workspace, name);
+  await mkdir(dirname(target), { recursive: true });
+  await rename(source, target);
+}
+await rm(cache, { recursive: true, force: true });
 await mkdir(resolve(workspace, ".local/bin"), { recursive: true });
+await rm(resolve(workspace, ".local/bin/solc-0.8.30"), { force: true });
 await symlink(
   resolve(root, ".local/bin/solc-0.8.30"),
   resolve(workspace, ".local/bin/solc-0.8.30"),

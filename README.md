@@ -144,6 +144,19 @@ The host tool baseline is Node 22.23.2, npm 10.9.8, Go 1.25.3, Foundry 1.8.1, So
 
 The [Compose definition](compose.yaml) builds the project database image `onchain-arena-db:local` from the existing `postgres:16-alpine` image and the Go API container from `ubuntu:24.04`. The database image adds `musl-locales` so PostgreSQL can enumerate system locales during initialization. The launcher compiles the native acceptance CLI and a separate static Linux executable with the installed Go toolchain. The Linux architecture matches the local Ubuntu image. The API [Dockerfile](Dockerfile) copies only that executable and its process supervisor; it has no package installation or Go dependency download steps. Readiness checks use the Go executable. The existing host PostgreSQL installation is independent of this stack. The project database is initialized automatically and published on loopback port 55432, separate from a native database on port 5432. Initialization explicitly selects trust for Unix-socket connections inside the database container and SCRAM-SHA-256 password authentication for TCP connections. Existing volumes retain their authentication configuration; these initialization arguments apply when creating an empty cluster. Database records persist in the Compose project's named volume. The host manages Geth, retained read-only Anvil history, Foundry deployment, and the two standard local accounts.
 
+The [build helper](scripts/build-cache.mjs) decides reuse from current inputs and available outputs:
+
+| Part                            | Reuse decision                                                                                                                                                                                                                                                                            |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Client dependencies and browser | Reuse the installed packages after checking direct dependency versions. Reuse the installed headless shell. Missing or incompatible packages stop with preparation instructions.                                                                                                          |
+| Go dependencies and executables | Keep local tool/module caches and existing executables. Go checks source, embedded SQL, dependency and toolchain inputs before reusing compiler work. Linux builds remove workspace-specific paths and repository metadata so daily and isolated builds can share identical image inputs. |
+| Solidity compilation            | Keep Foundry artifacts and compiler cache between test runs. Foundry checks source/compiler settings and rebuilds affected contracts.                                                                                                                                                     |
+| Frontend production files       | Reuse only when source files, build configuration, dependency records, public build environment, Node platform/version and output contents agree. Missing or changed output rebuilds. Deployment connection JSON is refreshed independently and does not invalidate the assets.           |
+| Docker images                   | Reuse only when the recorded recipe, base image, architecture, copied binary/launcher inputs and actual image ID agree. Missing or changed inputs rebuild the affected image using Docker's layer cache. API and database images are shared between daily and isolated projects.          |
+| Containers and game data        | Ordinary shutdown retains stopped containers, networks and saved data. Compose reuses containers whose image/configuration still match. Test runs recreate isolated chain/database data and rerun acceptance, while retaining reusable build caches and Foundry failure inputs.           |
+
+Input/output digests are used only to skip the more expensive Vite and Docker builds. The first run without a matching build record may rebuild once to establish it. Reuse checks make no registry request; rebuilding can resolve the required base image metadata. Build failures stop startup. Existing gameplay, source reproduction, type, formatting and fault checks still run; previous test verdicts are never reused.
+
 The tracked [environment template](.env.example) lists the project database password/port, HTTP, confirmation-depth, and Keeper settings. Existing local environment files can retain their settings; missing project database values use the template defaults. `ARENA_DATABASE_PASSWORD` and `ARENA_DATABASE_PORT` configure this stack. Keep the password stable while retaining its database volume. The launcher supplies the host SQL URL and password to its local acceptance tools; the API container receives its own internal database URL. Former native `DATABASE_URL` and `PGPASSWORD` values do not select this Compose database. No database creation command or manual SQL patch is required.
 
 Prepare missing client dependencies once, using the committed lockfile:
@@ -175,7 +188,7 @@ Open the address printed by Vite, normally http://127.0.0.1:5173. Select Account
 
 Ordinary startup uses the configured RPC port (18545 by default), HTTP port 18081, and the project database port. The managed chain keeps chain ID 31337 and its two prefunded development wallets. A saved chain restores its existing rooms, balances, transactions, and original Arena deployment. The first launch initializes an empty registry; a later ordinary launch does not create demonstration games or clear existing games. Keep the configured ports available. Test mode allocates independent available ports automatically.
 
-Standard output and error output, including container, compilation, and startup failures, appear in the terminal and the overwritten local log in the project root. Routine Geth RPC calls stay quiet; retained Anvil history has RPC logging disabled. Each invocation clears the previous log; a running owner continues appending after a maintenance invocation. Unexpected Go exits get up to three supervised recovery attempts inside the existing API container, preserving the local chain and browser rooms. A failed maintenance operation or repeated service failure stops the backend with its evidence retained. Ctrl+C closes the owned chain and Compose containers, while retaining the project database volume and local tools.
+Standard output and error output, including container, compilation, and startup failures, appear in the terminal and the overwritten local log in the project root. Routine Geth RPC calls stay quiet; retained Anvil history has RPC logging disabled. Each invocation clears the previous log; a running owner continues appending after a maintenance invocation. Unexpected Go exits get up to three supervised recovery attempts inside the existing API container, preserving the local chain and browser rooms. A failed maintenance operation or repeated service failure stops the backend with its evidence retained. Ordinary Ctrl+C checkpoints and stops the owned chain, stops Compose services, and retains reusable containers, networks, the database volume and local tools. Test cleanup removes its disposable containers and database volume.
 
 To reset demonstration data explicitly, run:
 
@@ -411,9 +424,81 @@ The overwritten root log and generated local reports retain run results, browser
 
 The earlier Anvil-based 2026-10-30 run passed Solidity formatting and checks across every Go package, as well as the bilateral browser timeout cases. The maintainer also confirmed ordinary frontend startup and backend reuse: a repeated backend invocation returned the already-running message and preserved the original room. Reset removed the project volume, and the following run initialized an empty database and passed full acceptance. A subsequent fresh-cluster startup using explicit authentication and the database image locale package completed without the previous initialization warnings and reached `Local Arena is ready`.
 
+## Stability baseline
+
+The existing backend test entry preserves the last complete successful acceptance before replacing its disposable workspace. The frozen baseline lives in a separate local directory and retains the original reports, both node deployment manifests, full compiler input and ABI, rules and vectors, SQL schema source, dependency lockfiles, actual tool versions and gas snapshot. A saved daily deployment is recorded separately when present; reading its manifest does not probe a running node. Subsequent runs compare the protocol and schema source directly with the frozen reference. Changed addresses, ports and creation blocks in fresh isolated chains are recorded per run; they do not change the frozen rules. Existing baseline evidence is never silently replaced. Reset retains this reference while clearing playable local data.
+
+The same test command now collects browser broadcast-to-successful-receipt timings, index catch-up, independently verified replay queries, automated match flows and service recovery. Receipt timing begins with the latest signed broadcast attempt and ends when its successful response is observed by the browser driver. This includes browser tooling and deliberate fault/retry waits. A page interruption can leave a receipt timing unobserved; its count is reported explicitly, while every transaction still requires a successful on-chain receipt and matching signer. Match timings include planning automation, backup checks and injected outages; they are not measurements of human thinking time. Index catch-up includes RPC/readiness polling, and replay query time includes HTTP and decoding. Node engines are reported separately. The first complete run with these measurements retains the timing reference and applied PostgreSQL schema dump after service cleanup. Later runs report current measurements beside the reference without inventing latency thresholds. Gas retains its existing enforced budgets.
+
+| Regression scope                                                                                        | Existing checks                                            | Required result                                                                          |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Permissions, deadlines, state invariants, independent rules and gas                                     | [Safety checks](scripts/check-safety.sh)                   | Matching states and all configured gas budgets met                                       |
+| Host starts, both victory conditions, timeout wins/draws, account isolation, order backups and API loss | [Browser gameplay](client/scripts/check-gameplay.mjs)      | Real signed receipts, correct round states and Verified histories                        |
+| Reorganizations, repeat scans, rebuilds and Keeper transaction recovery                                 | [Indexer checks](scripts/check-indexer.sh)                 | Canonical projections agree; displaced results are withdrawn                             |
+| PostgreSQL restart, Go crash and SSE interruption                                                       | [Browser recovery](client/scripts/check-updates.mjs)       | Open pages reconnect and receive current verified data                                   |
+| Geth SIGKILL, failed archive writes, old history, source reproduction and historical accounts           | [Persistence checks](client/scripts/check-persistence.mjs) | No false confirmation; original transactions, secrets and history recover                |
+| Protocol baseline and measured operating reference                                                      | [Baseline recording](scripts/baseline.mjs)                 | Unchanged ABI, rules, vectors, build input and schema source; original evidence retained |
+
+All automated groups and cleanup must succeed before the launcher reports overall success. A first run without an earlier successful reference establishes it only after success; a failed run cannot become the baseline. The frozen bundle contains local public-chain evidence and build inputs, not environment passwords, Keeper keys or unrevealed browser secrets. It is evidence rather than a playable chain backup. Simple visual inspection continues to use the normal frontend and backend entries. Monitoring, alert thresholds and a complete backup/restore drill remain subsequent operating work.
+
+Known reproduced issues in the accepted local environment:
+
+| Issue                                                                  | Severity                       | Reproduction and resolution                                                                                                                                             | Status                                            |
+| ---------------------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Production preview used the previous node's contract address           | P1: room creation blocked      | Switch isolated acceptance from Anvil to Geth. Deployment publication now updates preview configuration; the preview preflight and both gameplay runs check the result. | Closed in recorded combined acceptance            |
+| Archive failure left confirmation waiting on unavailable block polling | P1: receipt recovery blocked   | Block archive writes immediately after broadcast. The first receipt read now preserves persistence/RPC errors; recovery queries the original hash without another send. | Closed in recorded disk-write recovery acceptance |
+| Old log followers survived the node-engine switch                      | P2: repeated diagnostic output | Stop the Anvil API and start the Geth API. The launcher now terminates the entire log-follower process group.                                                           | Fixed; combined acceptance completed              |
+
+The latest recorded combined acceptance passed all nine groups and all four Geth archive requirements. No reproduced P0/P1 issue remains open in that tested scope. Database connection errors during the controlled restart and Geth's unclean-shutdown warning after deliberate SIGKILL are expected fault evidence; recovery must still pass. This statement does not establish coverage for untested browsers or an independent security audit.
+
+For a new fault, record the following without keys, passwords or unrevealed orders:
+
+```
+Environment and browser:
+Chain, contract and deployment identity:
+Command or UI steps:
+Expected result:
+Observed result and transaction hash, if submitted:
+Relevant log excerpt and local report:
+Severity, affected scope and current status:
+```
+
+## Backup and recovery
+
+| Data                                                                                         | Preservation and recovery                                                                                                                                                                                                                                                                                          |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PostgreSQL projections, cursors and Keeper attempts                                          | Take a logical database dump. Restore with the API and Keeper stopped, then resume indexing against the matching retained chain. An older index can catch up from the chain.                                                                                                                                       |
+| Geth database, block/receipt exports, deployment source baselines and retained Anvil history | Stop the backend with Ctrl+C and wait for checkpoint and shutdown completion. Copy the project's complete local data directory to storage outside the project. Restore that stopped-node set together before starting the backend. A schema dump or acceptance baseline does not contain this playable chain data. |
+| Unrevealed player actions and Salt                                                           | Export an encrypted Orders backup from each participating browser. Preserve its password separately. Server/database backups cannot recover a missing browser secret. Import it only into its matching deployment, room, round and account.                                                                        |
+| Local environment and custom Keeper signer                                                   | Preserve the local environment securely outside the repository. Keep the signer separate from player accounts and available only to the backend. The supplied development keys and fictitious balances belong to the accepted local environment.                                                                   |
+
+For the default daily Compose project, stop the backend first and make a logical database backup using the database image's existing tools:
+
+```
+mkdir -p "$HOME/arena-backups"
+docker compose up -d --wait db
+docker compose exec -T db pg_dump -U arena -d onchain_arena --format=custom > "$HOME/arena-backups/database.dump"
+docker compose stop db
+```
+
+Restore into the intended local database only after preserving its current contents; `--clean` replaces existing objects. Keep the backend stopped during restoration:
+
+```
+docker compose up -d --wait db
+docker compose exec -T db pg_restore --clean --if-exists --no-owner --exit-on-error -U arena -d onchain_arena < "$HOME/arena-backups/database.dump"
+docker compose stop db
+./scripts/run-backend.sh
+```
+
+If the daily Compose project name was overridden, add `--project-name` with that name to each Compose command. These commands target daily data; the disposable test project is separate. The current database setup applies the checked-in SQL idempotently and has no numbered migration history. Its source and applied schema dump provide the structural baseline. Any later schema change needs an explicit data-preservation plan; this stage introduces no migration framework. A full restore rehearsal belongs to the subsequent recovery work.
+
+For index-only recovery, retain chain data and use the existing backend `restart`, `rescan` or `reindex` operation as appropriate. A reindex rebuilds public histories and verification from retained chain evidence. A deployment mismatch stops startup and retains saved data; restore the matching sources and artifact. Changing published battle rules requires a separate deployment and rules baseline. Explicit reset clears local games and creates a new deployment identity; old browser secrets cannot continue on the new chain. Normal restart reuses the existing deployment.
+
+Keeper can submit only public settlement, timeout and waiting-room expiry transactions. It never stores unrevealed player orders. Keep its key out of browser variables, commits, fault reports and shared backups; use the existing environment template for supported settings. Key replacement must retain the existing attempt records and reconcile outstanding transactions before retiring the previous signer. Ordinary local play continues to use the two existing startup scripts.
+
 ## Current limits
 
-The local workflow implements durable confirmation, full Geth account-state history, retained old games, and archived source verification in place of the public-network path. The expanded acceptance has been wired into the existing test entry; its new Geth results must be established by an actual maintainer run. Earlier Anvil-only evidence cannot establish completion of these four requirements. It does not reproduce Base L2 fees, public-network confirmation/security, or a public explorer attestation.
+The recorded combined Anvil/Geth run passed durable confirmation, full Geth account-state history, retained old games and archived source verification in the chosen local environment. This includes an actual Geth SIGKILL, an archive write failure, independent historical replay and source reproduction. New baseline retention and timing collection require their own subsequent complete run. Local acceptance does not reproduce Base L2 fees, public-network confirmation/security or a public explorer attestation.
 
 This delivery supports local play with public development accounts and fictitious local ETH. Browser-extension wallets, public testnet deployment, and public-chain fees or confirmation times are outside its accepted scope. Local acceptance does not establish a public-network release.
 

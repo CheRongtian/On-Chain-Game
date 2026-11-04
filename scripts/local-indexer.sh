@@ -13,9 +13,9 @@ indexer_binary="$project_root/.local/bin/arena-server"
 build_go_backend() {
     cd "$project_root/server"
     mkdir -p "$project_root/.local/bin"
-    printf 'Building Go backend...\n'
+    printf 'Checking Go backend build inputs; unchanged compiler work is reused...\n'
     GOTOOLCHAIN=local GOPROXY=off go build -mod=readonly -o "$indexer_binary" ./cmd/arena-server
-    printf 'Building the local Geth archive process from cached dependencies...\n'
+    printf 'Checking the local Geth build with cached dependencies...\n'
     if ! GOTOOLCHAIN=local GOPROXY=off go build -mod=readonly -o "$project_root/.local/bin/arena-chain" ./cmd/arena-chain; then
         printf 'Full-node dependencies are incomplete. Prepare them once with cd server && go mod tidy, then start the backend again.\n' >&2
         return 1
@@ -24,9 +24,9 @@ build_go_backend() {
 
 build_linux_backend() {
     cd "$project_root/server"
-    printf 'Building the Linux backend for %s with the installed Go and module cache...\n' "$ARENA_API_PLATFORM"
+    printf 'Checking Linux backend inputs for %s with the installed Go and compiler cache...\n' "$ARENA_API_PLATFORM"
     GOTOOLCHAIN=local GOPROXY=off CGO_ENABLED=0 GOOS=linux GOARCH="${ARENA_API_PLATFORM#linux/}" \
-        go build -mod=readonly -o "$project_root/.local/bin/arena-server-linux" ./cmd/arena-server
+        go build -trimpath -buildvcs=false -mod=readonly -o "$project_root/.local/bin/arena-server-linux" ./cmd/arena-server
 }
 
 wait_for_backend_ready() {
@@ -97,7 +97,7 @@ start_go_indexer() {
     local container_id
     rm -f "$project_root/.local/indexer-failure" "$project_root/.local/container-exit"
     printf 'Starting the Go Indexer and read API container...\n'
-    arena_compose up -d --no-deps --force-recreate api
+    arena_compose up -d --no-deps --no-build api
     node "$project_root/scripts/client-contract.mjs" follow-logs "$compose_log_since" &
     indexer_log_pid=$!
     container_id="$(arena_compose ps -q api)"
@@ -148,7 +148,7 @@ stop_backend() {
     if [[ "$mode" == "test" ]]; then
         arena_compose down --volumes || backend_status=1
     else
-        arena_compose down || backend_status=1
+        arena_compose stop || backend_status=1
     fi
     if [[ -n "$indexer_log_pid" ]]; then
         kill -TERM "$indexer_log_pid" 2>/dev/null || true
@@ -161,6 +161,9 @@ stop_backend() {
     if ! stop_local_chain; then backend_status=1; fi
     rm -f "$backend_pid_file" "$indexer_command_file"
     if [[ "$mode" == "test" ]]; then
+        if [[ "$backend_status" == 0 && -f "$project_root/.local/acceptance.json" ]]; then
+            node "$project_root/scripts/baseline.mjs" retain || backend_status=1
+        fi
         if [[ "$backend_status" == 0 && -f "$project_root/.local/acceptance.json" ]]; then
             printf 'PASS: complete acceptance through the agreed delivery scope, including all four Geth archive requirements and service cleanup.\n'
         else

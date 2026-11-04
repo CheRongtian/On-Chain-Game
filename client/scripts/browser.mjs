@@ -28,8 +28,8 @@ export function transactionState(page) {
     const state =
       document.getElementById('app').__vue_app__.config.globalProperties.$pinia.state.value
         .transaction;
-    const { status, operation, hash, message, diagnostic } = state;
-    return { status, operation, hash, message, diagnostic };
+    const { status, operation, roomId, hash, message, diagnostic } = state;
+    return { status, operation, roomId, hash, message, diagnostic };
   });
 }
 

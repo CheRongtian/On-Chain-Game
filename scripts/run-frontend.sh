@@ -15,6 +15,10 @@ if [[ ! -x "$project_root/client/node_modules/.bin/vite" ]]; then
     printf 'Client dependencies are missing. In client/, run npm ci --no-audit --no-fund once, then start this script again.\n' >&2
     exit 1
 fi
+if ! npm ls --depth=0 --silent >/dev/null; then
+    printf 'Client dependencies do not match package.json. In client/, run npm ci --no-audit --no-fund, then retry.\n' >&2
+    exit 1
+fi
 printf 'Using the existing frontend dependencies...\n'
 
 if [[ -f "$project_root/contracts/out/Arena.sol/Arena.json" ]]; then
