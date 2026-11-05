@@ -337,6 +337,14 @@ else if (command === "check-sources") {
 else if (command === "acceptance-summary") {
   const reports = [
     [
+      "Anvil operational controls and database restore",
+      ".local/operations/anvil.json",
+    ],
+    [
+      "Geth operational controls and database restore",
+      ".local/operations/geth.json",
+    ],
+    [
       "Safety, rule comparisons and gas budgets",
       ".local/safety/acceptance.json",
     ],

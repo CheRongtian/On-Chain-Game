@@ -275,6 +275,7 @@ The [read API](server/internal/indexer/http.go) defaults to http://127.0.0.1:180
 
 | GET endpoint                           | Result                                                                                                    |
 | -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `/metrics`                             | Process-local RPC, indexing, replay, Keeper, SSE and database measurements with operational alert gauges  |
 | `/deployments`                         | Current Geth deployment and retained read-only history sources                                            |
 | `/accounts/{address}?block=0&slot=0x…` | Historical balance, nonce, code and optional storage at the specified block                               |
 | `/deployment`                          | Saved deployment, compiler/settings, rules, receipt identity, and startup code comparison                 |
@@ -381,7 +382,7 @@ The [shared browser connection](client/src/stores/updates.ts) opens one native E
 
 History displays push connection status separately from Indexer and block confirmation state. Live room and battle headers show a small recovery message only while updates are interrupted. Reconnection triggers fresh reads; an unavailable stream can coexist with functioning RPC gameplay and successful history HTTP reads. A cached picture alone cannot restore Verified.
 
-`/health` distinguishes database availability, RPC availability, Indexer synchronization/recovery, event delivery storage, and Keeper state. `/ready` fails while the known chain tip is ahead of the completed sync or the Indexer has a known source error. The backend identifies its PostgreSQL sessions and reacquires the deployment's advisory lock after a lost database connection. The existing launcher restarts unexpectedly terminated Go services without discarding the managed Anvil chain; readiness is checked again after recovery. Repeated failures are reported and stop the launcher. Explicit Ctrl+C still closes services owned by that launcher.
+`/health` distinguishes database availability, RPC availability, Indexer synchronization/recovery, event delivery storage, and Keeper state. `/ready` fails while the known chain tip is ahead of the completed sync or the Indexer has a known source error. The backend identifies its PostgreSQL sessions and reacquires the deployment's advisory lock after a lost database connection. The existing launcher restarts unexpectedly terminated Go services without discarding the managed chain; readiness is checked again after recovery. Repeated failures are reported and stop the launcher. Explicit Ctrl+C still closes services owned by that launcher.
 
 The [stream acceptance scenarios](server/internal/indexer/check_stream.go) run through the existing backend test suffix. They check uncommitted and rolled-back notification invisibility, identical IDs and payloads after reconnect, invalid-cursor reset, continued RPC writes during an unrequested Go SIGKILL, RPC suspension and recovery, project database connection termination, advisory-lock reacquisition, and multi-block replacement branches. They require old-branch victories to disappear and withdrawal IDs to precede replacement IDs. Recovery timings and received event IDs join the local acceptance report. Controlled chain changes are restored afterward.
 
@@ -460,7 +461,7 @@ The same test command now collects browser broadcast-to-successful-receipt timin
 | Geth SIGKILL, failed archive writes, old history, source reproduction and historical accounts           | [Persistence checks](client/scripts/check-persistence.mjs) | No false confirmation; original transactions, secrets and history recover                |
 | Protocol baseline and measured operating reference                                                      | [Baseline recording](scripts/baseline.mjs)                 | Unchanged ABI, rules, vectors, build input and schema source; original evidence retained |
 
-All automated groups and cleanup must succeed before the launcher reports overall success. A first run without an earlier successful reference establishes it only after success; a failed run cannot become the baseline. The frozen bundle contains local public-chain evidence and build inputs, not environment passwords, Keeper keys or unrevealed browser secrets. It is evidence rather than a playable chain backup. Simple visual inspection continues to use the normal frontend and backend entries. Monitoring, alert thresholds and a complete backup/restore drill remain subsequent operating work.
+All automated groups and cleanup must succeed before the launcher reports overall success. A first run without an earlier successful reference establishes it only after success; a failed run cannot become the baseline. The frozen bundle contains local public-chain evidence and build inputs, not environment passwords, Keeper keys or unrevealed browser secrets. It is evidence rather than a playable chain backup. Simple visual inspection continues to use the normal frontend and backend entries. Operational controls and a real backup/restore drill now join this entry as separate required reports; the frozen reference remains retained.
 
 Known reproduced issues in the accepted local environment:
 
@@ -484,6 +485,38 @@ Relevant log excerpt and local report:
 Severity, affected scope and current status:
 ```
 
+## Operational health and request limits
+
+Use the existing backend status suffix while the backend is running:
+
+```
+./scripts/run-backend.sh status
+```
+
+It prints the synchronization response followed by the same text measurements exposed at `/metrics`. The metrics endpoint uses the existing Go listener and requires no monitoring installation. Measurements are local to each deployment's Go process and reset on restart. The retained regression baseline remains separate from these live measurements. Reading metrics does not replay games or issue an extra RPC probe; the existing background checks supply the observations.
+
+| Signal                                                    | Meaning and response                                                                                                                                                                                                                                               |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `arena_rpc_up`, RPC probe failures and probe duration     | Last background head probe. Restore the managed node if unavailable. An unavailable receipt is not evidence of an execution failure.                                                                                                                               |
+| `arena_database_up`, pool connections                     | Last database observation and current Go connection usage. Restore the project database; live RPC actions remain independent.                                                                                                                                      |
+| `arena_indexer_ready`, lag blocks and last-sync timestamp | History has caught up with the observed canonical head. Successful checks also update last-sync time on an idle chain. A delayed index does not change a match's chain result.                                                                                     |
+| Replay Verified/Mismatch/Incomplete counters              | Counts of completed verification requests, not distinct games. Mismatch requires inspecting the field-level verification response; Incomplete cannot certify a result.                                                                                             |
+| Keeper enabled/up, failures and retries                   | Current execution error and actual work-cycle failures or resend/replacement attempts. Combine with RPC/database readiness; a disabled Keeper is distinct from an execution failure. Existing pending hashes and nonces must be reconciled before another attempt. |
+| Open SSE connections and disconnect count                 | Current server-side streams and completed stream lifetimes. Navigation also counts as a disconnect; these counters do not prove client delivery.                                                                                                                   |
+| HTTP request and limit counters                           | Requests handled and rejected by this deployment's controls.                                                                                                                                                                                                       |
+
+`/health` reports operational dependencies and can return 503 while Go itself remains alive. `/ready` returns 200 only when current indexing and known dependencies permit ready data; it returns 503 during source loss, branch recovery or catch-up. `/sync` remains a diagnostic view when the database is readable. `/metrics` remains readable during database/RPC outages using last-known background observations. A picture retained in a browser or a live Go process alone does not establish current verification.
+
+Operational alerts cover RPC loss, database loss, an unready index, a Keeper execution error and observed replay mismatch. Logs announce active/recovered transitions without logging each idle scan. Replay alerts represent the most recent checks: a successful fresh check clears the affected match; branch replacement withdraws earlier observations and requires fresh verification. Metrics retain cumulative request-result counts across branch changes until the process restarts. This does not certify unchecked matches. Probe/index alerts use the existing readiness policy, including the 45-second freshness bound; there is no idle-block timeout.
+
+Business reads allow 100 requests/second with a burst of 200 per deployment process. Replay, verification and snapshot reads also share an 8 requests/second budget with a burst of 32. A rejected request returns 429, a readable error and `Retry-After: 1`; wait before retrying. Pagination remains 1–100 items with nonnegative offsets. Health, readiness, synchronization and metrics probes bypass business throttling. SSE uses its own capacity of 16 simultaneous streams per deployment and releases capacity when a request ends. These limits leave normal two-tab play and reconnects available and do not throttle player RPC transactions.
+
+Application diagnostics redact connection URL credentials, named passwords/tokens/private keys/Salt, and configured database/Keeper secrets. Public transaction hashes remain usable for investigation. Raw request bodies and unrevealed player orders are not logged. Metrics use fixed labels without credentials or request payloads.
+
+For a fault, first inspect status and the transition message, then check the original receipt or verification response for the affected operation. Restore the unavailable component before requesting another state read. Use `restart` for a Go-only restart, `rescan` for an idempotence check, or `reindex` for reconstruction from the retained deployment block. Keep the matching node data and deployment files; resetting a chain is a separate destructive operation. If a database restore fails, keep the backend stopped and retain its dump, pre-restore backup and error output before taking another recovery action.
+
+The existing test suffix checks shared limiter/redaction logic, real metrics and pagination responses, RPC-loss metric transitions, database-outage metric transitions, and replay mismatch/recovery. For both Anvil and Geth it takes a real custom-format dump, stops the API/Keeper, accepts a new chain transaction, rejects a foreign-deployment backup without changing records, clears only the disposable test database schema, restores the dump, resumes indexing and independently verifies the original games. It also checks retained Keeper transaction identities and compares the recovered history with a full projection rebuild. Both operational reports are required alongside the nine existing regression groups before overall PASS. All faults and replacements stay inside the test workspace; ordinary data and backups are unaffected.
+
 ## Backup and recovery
 
 | Data                                                                                         | Preservation and recovery                                                                                                                                                                                                                                                                                          |
@@ -493,25 +526,24 @@ Severity, affected scope and current status:
 | Unrevealed player actions and Salt                                                           | Export an encrypted Orders backup from each participating browser. Preserve its password separately. Server/database backups cannot recover a missing browser secret. Import it only into its matching deployment, room, round and account.                                                                        |
 | Local environment and custom Keeper signer                                                   | Preserve the local environment securely outside the repository. Keep the signer separate from player accounts and available only to the backend. The supplied development keys and fictitious balances belong to the accepted local environment.                                                                   |
 
-For the default daily Compose project, stop the backend first and make a logical database backup using the database image's existing tools:
+Make a logical database backup through the existing backend entry:
 
 ```
-mkdir -p "$HOME/arena-backups"
-docker compose up -d --wait db
-docker compose exec -T db pg_dump -U arena -d onchain_arena --format=custom > "$HOME/arena-backups/database.dump"
-docker compose stop db
+./scripts/run-backend.sh backup
 ```
 
-Restore into the intended local database only after preserving its current contents; `--clean` replaces existing objects. Keep the backend stopped during restoration:
+The command prints the complete backup-directory path. It retains a custom-format PostgreSQL dump and the matching public deployment identities, including a retained history source. A bundle becomes complete only after the dump succeeds. It reuses the installed database image and its own tools; if the project database was stopped, it starts that database temporarily and stops it again afterward. A running database can be backed up using PostgreSQL's consistent snapshot. Copy the complete bundle to separate storage for machine-level protection. Local database bundles are retained by reset, but a reset removes their matching playable chain unless you preserved that chain separately.
+
+Stop the owning backend with Ctrl+C and wait for shutdown. Restore using the full directory printed by backup, then type `restore` when prompted:
 
 ```
-docker compose up -d --wait db
-docker compose exec -T db pg_restore --clean --if-exists --no-owner --exit-on-error -U arena -d onchain_arena < "$HOME/arena-backups/database.dump"
-docker compose stop db
+./scripts/run-backend.sh restore /absolute/path/to/backup-directory
 ./scripts/run-backend.sh
 ```
 
-If the daily Compose project name was overridden, add `--project-name` with that name to each Compose command. These commands target daily data; the disposable test project is separate. The current database setup applies the checked-in SQL idempotently and has no numbered migration history. Its source and applied schema dump provide the structural baseline. Any later schema change needs an explicit data-preservation plan; this stage introduces no migration framework. A full restore rehearsal belongs to the subsequent recovery work.
+Restore refuses to run with the API/Keeper container active, rejects a different published deployment before replacing data, and checks that the dump can be read. It first creates a separate pre-restore backup, then restores project objects using `--clean --if-exists --single-transaction --exit-on-error`. It verifies restored deployment records before reporting success and leaves the API stopped. Normal backend startup reconciles the retained node, catches up from the restored cursor and reconciles Keeper transactions; it does not create a replacement deployment. A failed restore exits with its recovery-backup path and no ready claim. Database bundles contain no node database, browser secrets, environment passwords or signing keys.
+
+The commands load the project's existing environment and Compose project settings. The disposable acceptance project is separate. The current database setup applies the checked-in SQL idempotently and has no numbered migration history. Its source and applied schema dump provide the structural baseline; any later schema change needs an explicit preservation plan. Restoration and full-reindex rehearsal now belong to the existing automated test entry.
 
 For index-only recovery, retain chain data and use the existing backend `restart`, `rescan` or `reindex` operation as appropriate. A reindex rebuilds public histories and verification from retained chain evidence. A deployment mismatch stops startup and retains saved data; restore the matching sources and artifact. Changing published battle rules requires a separate deployment and rules baseline. Explicit reset clears local games and creates a new deployment identity; old browser secrets cannot continue on the new chain. Normal restart reuses the existing deployment.
 
@@ -519,7 +551,7 @@ Keeper can submit only public settlement, timeout and waiting-room expiry transa
 
 ## Current limits
 
-The recorded combined Anvil/Geth run passed durable confirmation, full Geth account-state history, retained old games and archived source verification in the chosen local environment. This includes an actual Geth SIGKILL, an archive write failure, independent historical replay and source reproduction. New baseline retention and timing collection require their own subsequent complete run. Local acceptance does not reproduce Base L2 fees, public-network confirmation/security or a public explorer attestation.
+The recorded combined Anvil/Geth run passed durable confirmation, full Geth account-state history, retained old games and archived source verification in the chosen local environment. This includes an actual Geth SIGKILL, an archive write failure, independent historical replay and source reproduction. Baseline agreement, timing collection and service cleanup also passed in the retained run. The new operational controls and restore drill require their own complete run. Local acceptance does not reproduce Base L2 fees, public-network confirmation/security or a public explorer attestation.
 
 This delivery supports local play with public development accounts and fictitious local ETH. Browser-extension wallets, public testnet deployment, and public-chain fees or confirmation times are outside its accepted scope. Local acceptance does not establish a public-network release.
 

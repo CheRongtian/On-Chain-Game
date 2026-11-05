@@ -45,6 +45,7 @@ type service struct {
 	keeperState  keeperStatus
 	indexerLock  *sql.Conn
 	archives     map[string]*service
+	ops          operations
 }
 
 func Run(ctx context.Context, root, operation string) error {
@@ -165,13 +166,24 @@ func (s *service) follow(ctx context.Context) {
 		request, cancel := context.WithTimeout(ctx, 30*time.Second)
 		var head uint64
 		var databaseError, rpcError string
+		rpcChecked := false
 		err := s.ensureIndexerLock(request)
 		if err != nil {
 			databaseError = err.Error()
 		} else {
 			probe, finish := context.WithTimeout(request, 2*time.Second)
+			probeStarted := time.Now()
+			rpcChecked = true
 			var observedHead uint64
 			observedHead, err = s.chain.BlockNumber(probe)
+			duration := time.Since(probeStarted).Nanoseconds()
+			s.ops.rpcChecks.Add(1)
+			s.ops.rpcDuration.Add(duration)
+			s.ops.rpcLastDuration.Store(duration)
+			s.ops.rpcLastCheck.Store(time.Now().Unix())
+			if err != nil {
+				s.ops.rpcFailures.Add(1)
+			}
 			finish()
 			if err != nil {
 				rpcError = err.Error()
@@ -198,18 +210,22 @@ func (s *service) follow(ctx context.Context) {
 		if err == nil {
 			s.observed = observation{Head: head, Indexed: int64(head), LastSync: time.Now().UTC()}
 		} else {
-			s.observed.Error = err.Error()
-			s.observed.DatabaseError, s.observed.RPCError = databaseError, rpcError
+			if !rpcChecked {
+				rpcError = s.observed.RPCError
+			}
+			s.observed.Error = Redact(err.Error())
+			s.observed.DatabaseError, s.observed.RPCError = Redact(databaseError), Redact(rpcError)
 			s.observed.Blocked = errors.Is(err, errFork) || errors.Is(err, errDeploymentChanged)
 		}
 		s.mu.Unlock()
-		if err != nil && err.Error() != previous {
+		if err != nil && Redact(err.Error()) != previous {
 			log.Printf("Indexer paused: %v", err)
 		}
 		if err == nil && previous != "" {
 			log.Print("Indexer caught up after the previous error.")
 		}
 		if errors.Is(err, errDeploymentChanged) {
+			s.observeHealth()
 			return
 		}
 		if err == nil && s.cfg.KeeperEnabled {
@@ -217,5 +233,6 @@ func (s *service) follow(ctx context.Context) {
 			s.runKeeper(request)
 			finish()
 		}
+		s.observeHealth()
 	}
 }

@@ -165,7 +165,7 @@ stop_backend() {
             node "$project_root/scripts/baseline.mjs" retain || backend_status=1
         fi
         if [[ "$backend_status" == 0 && -f "$project_root/.local/acceptance.json" ]]; then
-            printf 'PASS: complete acceptance through the agreed delivery scope, including all four Geth archive requirements and service cleanup.\n'
+            printf 'PASS: complete acceptance through the agreed delivery scope, including operational recovery, all four Geth archive requirements and service cleanup.\n'
         else
             backend_status=1
             printf '{"status":"failed","exitCode":%d}\n' "$backend_status" > "$project_root/.local/acceptance.json"

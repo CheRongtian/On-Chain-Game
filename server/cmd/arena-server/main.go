@@ -16,8 +16,9 @@ import (
 )
 
 func main() {
+	indexer.ConfigureLogging()
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "Arena command failed:", err)
+		fmt.Fprintln(os.Stderr, "Arena command failed:", indexer.Redact(err.Error()))
 		os.Exit(1)
 	}
 }
@@ -30,6 +31,11 @@ func run(args []string) error {
 		return err
 	}
 	switch args[0] {
+	case "check-operations":
+		if len(args) != 1 {
+			return fmt.Errorf("check-operations takes no additional arguments")
+		}
+		return indexer.CheckOperations()
 	case "safety":
 		if len(args) != 1 {
 			return fmt.Errorf("safety takes no additional arguments")
@@ -136,6 +142,6 @@ func run(args []string) error {
 		fmt.Println("Every generated round matched the independent Solidity resolver. Simulation results do not determine official games.")
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q; use serve, status, check-ready, safety, verify, simulate, or check-indexer", args[0])
+		return fmt.Errorf("unknown command %q; use serve, status, check-ready, check-operations, safety, verify, simulate, or check-indexer", args[0])
 	}
 }

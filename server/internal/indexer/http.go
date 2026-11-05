@@ -152,6 +152,7 @@ func matchID(r *http.Request) (string, *apiError) {
 
 func (s *service) routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /metrics", s.metrics)
 	mux.HandleFunc("GET /deployments", func(w http.ResponseWriter, r *http.Request) {
 		items := []json.RawMessage{s.cfg.PublicDeployment}
 		for _, source := range s.archives {
@@ -307,6 +308,7 @@ func (s *service) routes() http.Handler {
 	for hash, source := range s.archives {
 		archives[hash] = source.routes()
 	}
+	limited := s.limited(mux)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		selected := r.URL.Query().Get("deployment")
 		if selected != "" && selected != s.anchor.Hash().Hex() {
@@ -317,7 +319,7 @@ func (s *service) routes() http.Handler {
 			writeResponse(w, 404, apiError{Code: "deployment_not_found", Message: "This deployment is not registered as an available history source."})
 			return
 		}
-		mux.ServeHTTP(w, r)
+		limited.ServeHTTP(w, r)
 	})
 }
 
@@ -337,6 +339,18 @@ func Status(root string) error {
 	}
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("status endpoint returned HTTP %d", response.StatusCode)
+	}
+	metrics, err := client.Get("http://" + cfg.HTTP + "/metrics")
+	if err != nil {
+		return fmt.Errorf("read operational metrics: %w", err)
+	}
+	defer metrics.Body.Close()
+	if metrics.StatusCode != http.StatusOK {
+		return fmt.Errorf("metrics endpoint returned HTTP %d", metrics.StatusCode)
+	}
+	fmt.Fprintln(os.Stdout, "\nOperational metrics:")
+	if _, err = io.Copy(os.Stdout, metrics.Body); err != nil {
+		return err
 	}
 	return nil
 }

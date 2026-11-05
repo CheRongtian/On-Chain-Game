@@ -342,10 +342,19 @@ func (c *checker) checkStreamRPC() error {
 	if err != nil || health.RPC != "unavailable" || health.Database != "available" {
 		return fmt.Errorf("health did not distinguish RPC loss: %+v; %v", health, err)
 	}
+	if err = c.expectMetric("arena_rpc_up", "0"); err != nil {
+		return err
+	}
+	if err = c.expectMetric("arena_indexer_ready", "0"); err != nil {
+		return err
+	}
 	if err = process.Signal(syscall.SIGCONT); err != nil {
 		return err
 	}
 	if _, err = c.waitAtTip(-1); err != nil {
+		return err
+	}
+	if err = c.expectMetric("arena_rpc_up", "1"); err != nil {
 		return err
 	}
 	c.recordStream("RPC suspension clears readiness and reports a recoverable source outage", started)

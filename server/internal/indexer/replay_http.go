@@ -37,6 +37,7 @@ func (s *service) replayRoute(view string) http.HandlerFunc {
 			log.Printf("Read %s for match %s: %v", view, id, err)
 			return nil, &apiError{503, "query_failed", "Could not read the indexed history needed for verification."}
 		}
+		s.observeReplay(id, result.Verification.Status)
 		if !result.Verification.Canonical && meta.Error == "" {
 			meta.Ready, meta.Error = false, result.Verification.Message
 		}

@@ -106,6 +106,7 @@ func (s *service) recoverBranch(ctx context.Context) error {
 	if err = tx.Commit(); err != nil {
 		return err
 	}
+	s.clearReplayObservations()
 	log.Printf("Recovered chain branch: cursor %d -> %d; rebuilt %d affected matches and archived displaced blocks.", value.Number, ancestor.Number, len(affected))
 	return nil
 }

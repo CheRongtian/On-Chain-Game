@@ -97,6 +97,14 @@ func (s *service) streamCursor(ctx context.Context, supplied string) (int64, boo
 }
 
 func (s *service) stream(w http.ResponseWriter, r *http.Request) {
+	if s.ops.streams.Add(1) > 16 {
+		s.ops.streams.Add(-1)
+		s.ops.rejected.Add(1)
+		w.Header().Set("Retry-After", "1")
+		writeResponse(w, 429, apiError{Code: "stream_limit", Message: "Too many open history streams. Close unused tabs and retry."})
+		return
+	}
+	defer func() { s.ops.streams.Add(-1); s.ops.disconnects.Add(1) }()
 	supplied := r.Header.Get("Last-Event-ID")
 	if supplied == "" {
 		supplied = r.URL.Query().Get("after")

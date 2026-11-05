@@ -83,6 +83,12 @@ async function api(path) {
   assert.equal(response.status, 200, `API ${path}`);
   return response.json();
 }
+async function expectMetric(name, value) {
+  await waitFor(async () => {
+    const response = await fetch(`${backend}/metrics`, { signal: AbortSignal.timeout(4_000) });
+    return response.ok && `\n${await response.text()}`.includes(`\n${name} ${value}\n`);
+  }, `Operational metric ${name} did not recover to ${value}.`);
+}
 async function ready(previousPID) {
   const block = await chain.getBlock();
   let meta;
@@ -323,6 +329,8 @@ try {
       response.status === 503 && state.services.database === 'unavailable' && !state.services.ready
     );
   }, 'Health did not report the stopped PostgreSQL service.');
+  await expectMetric('arena_database_up', 0);
+  await expectMetric('arena_indexer_ready', 0);
   await badge('Unavailable');
   await page
     .locator('.sync-status')
@@ -331,6 +339,8 @@ try {
   const room = await createRoom(0);
   await startDatabase();
   const recovered = await ready();
+  await expectMetric('arena_database_up', 1);
+  await expectMetric('arena_indexer_ready', 1);
   const database = await databaseState();
   assert.notEqual(
     database.startedAt,

@@ -26,12 +26,12 @@ func (s *service) replay(ctx context.Context, tx *sql.Tx, id string, meta metada
 		return e.result, nil
 	}
 	if err := s.canonicalCursor(ctx, value); err != nil {
-		e.result.Verification.Message = "Canonical chain evidence is unavailable: " + err.Error()
+		e.result.Verification.Message = "Canonical chain evidence is unavailable: " + Redact(err.Error())
 		return e.result, nil
 	}
 	logs, err := s.replayLogs(ctx, id, uint64(value.Number))
 	if err != nil {
-		e.result.Verification.Message = "Canonical public history is unavailable: " + err.Error()
+		e.result.Verification.Message = "Canonical public history is unavailable: " + Redact(err.Error())
 		return e.result, nil
 	}
 	if len(logs) == 0 {
@@ -77,7 +77,7 @@ func (s *service) replay(ctx context.Context, tx *sql.Tx, id string, meta metada
 	if err = s.canonicalCursor(ctx, value); err != nil {
 		e.result.Verification.Status, e.result.Verification.PrefixVerified = "Incomplete", false
 		e.result.Verification.VerifiedRounds = 0
-		e.result.Verification.Message = "The source branch changed or became unavailable during verification: " + err.Error()
+		e.result.Verification.Message = "The source branch changed or became unavailable during verification: " + Redact(err.Error())
 		e.result.Verification.Difference = nil
 		return e.result, nil
 	}

@@ -95,10 +95,11 @@ func (s *service) runKeeper(ctx context.Context) {
 		s.keeperState.Address = s.keeper.address.Hex()
 	}
 	if err != nil {
-		s.keeperState.Error = err.Error()
+		s.keeperState.Error = Redact(err.Error())
+		s.ops.keeperFailures.Add(1)
 	}
 	s.mu.Unlock()
-	if err != nil && err.Error() != previous {
+	if err != nil && Redact(err.Error()) != previous {
 		log.Printf("Keeper paused: %v. Player transactions remain available.", err)
 	} else if err == nil && previous != "" {
 		log.Print("Keeper recovered; pending transactions and current chain conditions were rechecked.")

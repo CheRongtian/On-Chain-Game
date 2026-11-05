@@ -96,7 +96,7 @@ func (k *keeper) broadcast(ctx context.Context, job keeperJob, attempt keeperAtt
 	sendErr := k.s.chain.SendTransaction(ctx, attempt.Tx)
 	state, message := "sent", ""
 	if sendErr != nil {
-		message = sendErr.Error()
+		message = Redact(sendErr.Error())
 		if strings.Contains(strings.ToLower(message), "already known") {
 			sendErr, message = nil, ""
 		} else {
@@ -203,6 +203,7 @@ func (k *keeper) recoverJob(ctx context.Context, job keeperJob) (bool, error) {
 				return true, signErr
 			}
 			log.Printf("Keeper reassigned an orphaned nonce: %d -> %d for job %d.", latest.Tx.Nonce(), pendingNonce, job.ID)
+			k.s.ops.keeperRetries.Add(1)
 			return true, k.broadcast(ctx, job, replacement)
 		}
 	}
@@ -229,9 +230,11 @@ func (k *keeper) recoverJob(ctx context.Context, job keeperJob) (bool, error) {
 		}
 		log.Printf("Keeper replacing nonce %d: previous=%s replacement=%s cancellation=%t.",
 			latest.Tx.Nonce(), latest.Tx.Hash().Hex(), replacement.Tx.Hash().Hex(), !eligible)
+		k.s.ops.keeperRetries.Add(1)
 		return true, k.broadcast(ctx, job, replacement)
 	}
 	if errors.Is(lookupErr, ethereum.NotFound) && (!latest.LastSent.Valid || time.Since(latest.LastSent.Time) >= 5*time.Second) {
+		k.s.ops.keeperRetries.Add(1)
 		return true, k.broadcast(ctx, job, latest)
 	}
 	return true, nil

@@ -12,10 +12,14 @@ if (( $# > 0 )); then
     shift
 fi
 case "$mode" in
-    start|demo|test|reset|verify|simulate|restart|rescan|reindex|status) ;;
-    *) printf 'Unknown backend mode: %s. Use start, demo, test, reset, verify, simulate, restart, rescan, reindex, or status.\n' "$mode" >&2; exit 1 ;;
+    start|demo|test|reset|verify|simulate|restart|rescan|reindex|status|backup|restore) ;;
+    *) printf 'Unknown backend mode: %s. Use start, demo, test, reset, verify, simulate, restart, rescan, reindex, status, backup, or restore.\n' "$mode" >&2; exit 1 ;;
 esac
-if [[ "$mode" != "verify" && "$mode" != "simulate" ]] && (( $# > 0 )); then
+if [[ "$mode" == "restore" && $# != 1 ]]; then
+    printf 'Use ./scripts/run-backend.sh restore /absolute/path/to/backup-directory\n' >&2
+    exit 1
+fi
+if [[ "$mode" != "verify" && "$mode" != "simulate" && "$mode" != "restore" ]] && (( $# > 0 )); then
     printf 'The %s mode takes no additional arguments.\n' "$mode" >&2
     exit 1
 fi
@@ -36,12 +40,25 @@ if [[ -f "$project_root/.env" ]]; then
 fi
 source "$project_root/scripts/local-indexer.sh"
 
+run_operational_checks() {
+    printf 'Checking operational controls and real PostgreSQL backup/recovery...\n'
+    run_backend_check node "$project_root/client/scripts/check-operations.mjs" prepare
+    stop_go_indexer
+    run_backend_check node "$project_root/client/scripts/check-operations.mjs" restore
+    start_go_indexer
+    wait_for_backend_ready "$indexer_pid"
+    run_backend_check node "$project_root/client/scripts/check-operations.mjs" recovered
+    request_indexer_operation reindex
+    run_backend_check node "$project_root/client/scripts/check-operations.mjs" reindexed
+}
+
 run_backend_tests() {
     printf 'Checking archived Solidity sources with the local compiler...\n'
     run_backend_check node "$project_root/scripts/client-contract.mjs" check-sources
     source "$project_root/scripts/check-safety.sh"
     run_safety_checks
     run_indexer_checks keeper
+    run_operational_checks
     run_frontend_checks
     printf 'PASS: Anvil rules, controlled reorgs, browser gameplay, and fault regression.\n'
     printf 'Switching the isolated environment to the production Geth archive workflow...\n'
@@ -54,6 +71,7 @@ run_backend_tests() {
     start_go_indexer
     wait_for_backend_ready "$indexer_pid"
     run_indexer_checks demo
+    run_operational_checks
     printf 'Repeating the complete browser gameplay acceptance on Geth...\n'
     run_backend_check node "$project_root/client/scripts/check-gameplay.mjs"
     printf 'Repeating database, Go and SSE browser recovery on Geth...\n'
@@ -89,6 +107,15 @@ fi
 
 require_compose
 configure_local_database
+if [[ "$mode" == "backup" || "$mode" == "restore" ]]; then
+    if [[ "$mode" == "restore" ]]; then
+        printf 'Restore will replace this project database schema and records from the selected backup. Stop the backend first. A recovery backup is saved before replacement; chain data and browser secrets remain separate.\n'
+        read -r -p 'Type restore to continue: ' restore_answer
+        if [[ "$restore_answer" != "restore" ]]; then printf 'Restore cancelled.\n'; exit; fi
+    fi
+    node "$project_root/scripts/database-backup.mjs" "$mode" "$@"
+    exit
+fi
 if [[ "$mode" == "test" ]]; then
     arena_compose down --volumes
 fi
