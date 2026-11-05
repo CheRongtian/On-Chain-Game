@@ -13,6 +13,7 @@ import (
 
 	"onchainarena/server/internal/indexer"
 	"onchainarena/server/internal/offline"
+	"onchainarena/server/internal/squad"
 )
 
 func main() {
@@ -31,6 +32,11 @@ func run(args []string) error {
 		return err
 	}
 	switch args[0] {
+	case "check-protocol":
+		if len(args) != 1 {
+			return fmt.Errorf("check-protocol takes no additional arguments")
+		}
+		return squad.CheckVectors(root, os.Stdout)
 	case "check-operations":
 		if len(args) != 1 {
 			return fmt.Errorf("check-operations takes no additional arguments")
@@ -142,6 +148,6 @@ func run(args []string) error {
 		fmt.Println("Every generated round matched the independent Solidity resolver. Simulation results do not determine official games.")
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q; use serve, status, check-ready, check-operations, safety, verify, simulate, or check-indexer", args[0])
+		return fmt.Errorf("unknown command %q; use serve, status, check-ready, check-operations, check-protocol, safety, verify, simulate, or check-indexer", args[0])
 	}
 }

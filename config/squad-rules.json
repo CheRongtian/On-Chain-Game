@@ -195,7 +195,11 @@
       "Cover-and-shield",
       "maps-and-spawns",
       "settlement",
-      "outcomes"
+      "outcomes",
+      "squad-and-action-ABI",
+      "commitment-domains",
+      "state-and-event-schemas",
+      "protocol-deadlines"
     ],
     "balancePending": [
       "unit-HP-and-skill-values",
@@ -203,12 +207,6 @@
       "match-duration",
       "victory-threshold-and-round-cap"
     ],
-    "laterFreeze": [
-      "squad-and-action-ABI",
-      "commitment-domains",
-      "state-and-event-schemas",
-      "protocol-deadlines",
-      "cross-ruleset-golden-vectors"
-    ]
+    "laterFreeze": ["cross-ruleset-golden-vectors"]
   }
 }

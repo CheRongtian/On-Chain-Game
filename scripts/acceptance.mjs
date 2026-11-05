@@ -4,6 +4,7 @@ export const browserEngines = ["chromium", "firefox", "webkit"];
 export const acceptanceReports = [
   ["Squad rule design consistency", ".local/design/rules.json"],
   ["Three-map geometry and content identity", ".local/design/maps.json"],
+  ["Squad protocol bytes, hashes and events", ".local/design/protocol.json"],
   [
     "Anvil operational controls and database restore",
     ".local/operations/anvil.json",

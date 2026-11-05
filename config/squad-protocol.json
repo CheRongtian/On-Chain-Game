@@ -1,0 +1,373 @@
+{
+  "status": "protocol-frozen",
+  "runtime": "codecs-only",
+  "domains": [
+    {
+      "text": "OTA_RULESET_V2",
+      "value": "0x857ab22248f0c1c29ec9d80559516cceae5d7074927a472417b06b451cebfeca"
+    },
+    {
+      "text": "OTA_SQUAD_V2",
+      "value": "0x5a21673fd5f0fa1ae6df00387b7d0bf417384027de3db0603047f1cc42b3e619"
+    },
+    {
+      "text": "OTA_ACTION_V2",
+      "value": "0x90f9c449f796517f3d630afb7f519aa9e98462a665967686364c089464cccb9c"
+    },
+    {
+      "text": "OTA_STATE_V2",
+      "value": "0xf7c1c8341ca716e7c26d75052a19b0b11e8ac5d3387f39a3253ea7b034322a3f"
+    }
+  ],
+  "semanticsText": "Two players on an 8x8 board select three distinct ordered professions from five. Joining only occupies a seat; the creator starts Squad Commit manually. Validate both squads against the same round-start state and reserve total skill costs before income. Full orthogonal paths cannot revisit cells or cross obstacles or other living origins; cancel all shared endpoints and allow empty intermediate crossings. Heal living friendly identities including self at post-movement Manhattan distance up to two, before damage; cap HP and discard excess without resurrection. Reduce every damage source by Cover before summing and applying Guardian shield; apply damage simultaneously including dying attackers. A legal Saboteur hit locks a surviving target in the next round only, including when its caster dies; preserve the current skill, clear death locks and expire old locks without stacks. Legal dynamic misses retain costs. Clear deaths before resource income and central majority scoring. Elimination precedes VP threshold and round limit; compare VP then surviving HP then draw. Commitments are immutable; accept submissions at the deadline and finalize defaults strictly after it. Single defaults forfeit and bilateral defaults draw without battle processing. Preserve original deployments and historical meanings.",
+  "semanticsId": "0x5531fbb3476650deb52c266f8091522a428ead5d2a1f696b1b3b49f7866a930b",
+  "rulesetId": "0x628ad73a0d0cdc3cf42e1f053679ef99dc354c72cfc0e0ad0e2ccf24a5c7d9c7",
+  "ruleDefinition": {
+    "semanticsId": "0x5531fbb3476650deb52c266f8091522a428ead5d2a1f696b1b3b49f7866a930b",
+    "matchRules": [2, 5, 0, 1, 2, 4, 12, 20],
+    "unitRules": [
+      [10, 1, 1, 2, 1],
+      [6, 2, 3, 2, 2],
+      [5, 3, 1, 1, 1],
+      [7, 2, 1, 1, 2],
+      [6, 2, 1, 1, 2]
+    ],
+    "skillRules": [2, 3, 4, 2, 2, 2, 1, 1, 1, 0],
+    "windows": [86400, 600, 600, 600, 600],
+    "schemas": [2, 2, 2],
+    "mapHashes": [
+      "0x7f266774aef1f1f2551d103897ad5c47a98ac5c13bc453576a85810d3722bf29",
+      "0x19efa6081794543361ac5a83216167fe6020de54c28c7d19f83adc203f3964ca",
+      "0x5123d32cc31fc8f3aa19bb11cfc2b508af8bb84f280c09d48d930dcaa989adba"
+    ]
+  },
+  "ruleFields": {
+    "matchRules": [
+      "initialEnergy",
+      "maxEnergy",
+      "initialVictoryPoints",
+      "resourceIncome",
+      "controlAward",
+      "controlCells",
+      "victoryThreshold",
+      "maxRounds"
+    ],
+    "unitRules": [
+      "maxHp",
+      "moveRange",
+      "attackRange",
+      "attackDamage",
+      "skillCost"
+    ],
+    "skillRules": [
+      "shieldReduction",
+      "powerShotDamage",
+      "dashRange",
+      "healRange",
+      "healAmount",
+      "lockRange",
+      "lockRoundOffset",
+      "lockDuration",
+      "coverReduction",
+      "coverFloor"
+    ],
+    "windows": [
+      "waiting",
+      "squadCommit",
+      "squadReveal",
+      "roundCommit",
+      "roundReveal"
+    ],
+    "schemas": ["actions", "state", "events"]
+  },
+  "types": {
+    "context": "(uint256 chainId,address arena,uint256 matchId)",
+    "action": "(uint8 actionType,uint8 targetCell,uint8 targetUnit,uint8 pathLength,uint32 pathBits)",
+    "unit": "(uint8 unitType,uint8 position,uint8 hp,bool alive,uint16 lockedRound)",
+    "state": "(uint8 mapId,bool battleStarted,uint16 completedRound,(uint8 unitType,uint8 position,uint8 hp,bool alive,uint16 lockedRound)[6] units,uint8[2] energy,uint8[2] victoryPoints,uint8 outcome,uint8 reason)",
+    "effects": "(uint8[2] energySpent,bool[6] moved,uint8[6] healed,uint8[6] coverReduced,uint8[6] shieldReduced,uint8[6] damageTaken,uint16[6] lockedRoundApplied,uint8[2] energyGained,uint8[2] victoryPointsGained)",
+    "rules": "(bytes32 semanticsId,uint8[8] matchRules,uint8[5][5] unitRules,uint8[10] skillRules,uint32[5] windows,uint16[3] schemas,bytes32[3] mapHashes)",
+    "squadInput": "((uint256 chainId,address arena,uint256 matchId) context,address player,bytes32 rulesetId,uint8[3] unitTypes,bytes32 salt)",
+    "actionInput": "((uint256 chainId,address arena,uint256 matchId) context,uint16 round,address player,bytes32 rulesetId,uint8 side,uint8[3] unitTypes,bool[3] alive,uint16[3] lockedRound,(uint8 actionType,uint8 targetCell,uint8 targetUnit,uint8 pathLength,uint32 pathBits)[3] actions,bytes32 salt)",
+    "stateInput": "((uint256 chainId,address arena,uint256 matchId) context,bytes32 rulesetId,(uint8 mapId,bool battleStarted,uint16 completedRound,(uint8 unitType,uint8 position,uint8 hp,bool alive,uint16 lockedRound)[6] units,uint8[2] energy,uint8[2] victoryPoints,uint8 outcome,uint8 reason) state)",
+    "eventInput": "(uint8 eventType,uint256 matchId,uint16 round,address player,bytes32 rulesetId,uint8 mapId,bytes32 mapHash,uint64 deadline,bytes32 commitment,uint8[3] unitTypes,bytes32 salt,(uint8 mapId,bool battleStarted,uint16 completedRound,(uint8 unitType,uint8 position,uint8 hp,bool alive,uint16 lockedRound)[6] units,uint8[2] energy,uint8[2] victoryPoints,uint8 outcome,uint8 reason) state,(uint8 actionType,uint8 targetCell,uint8 targetUnit,uint8 pathLength,uint32 pathBits)[3] actions,uint8 fromPhase,uint8 toPhase,bytes32 beforeHash,bytes32 afterHash,(uint8[2] energySpent,bool[6] moved,uint8[6] healed,uint8[6] coverReduced,uint8[6] shieldReduced,uint8[6] damageTaken,uint16[6] lockedRoundApplied,uint8[2] energyGained,uint8[2] victoryPointsGained) effects,address winner)"
+  },
+  "encodings": {
+    "ruleset": "bytes32,(bytes32 semanticsId,uint8[8] matchRules,uint8[5][5] unitRules,uint8[10] skillRules,uint32[5] windows,uint16[3] schemas,bytes32[3] mapHashes)",
+    "squad": "bytes32,(uint256 chainId,address arena,uint256 matchId),address,bytes32,uint8[3],bytes32",
+    "actions": "bytes32,(uint256 chainId,address arena,uint256 matchId),uint16,address,bytes32,(uint8 actionType,uint8 targetCell,uint8 targetUnit,uint8 pathLength,uint32 pathBits)[3],bytes32",
+    "state": "bytes32,(uint256 chainId,address arena,uint256 matchId),bytes32,(uint8 mapId,bool battleStarted,uint16 completedRound,(uint8 unitType,uint8 position,uint8 hp,bool alive,uint16 lockedRound)[6] units,uint8[2] energy,uint8[2] victoryPoints,uint8 outcome,uint8 reason)"
+  },
+  "phases": {
+    "NONE": 0,
+    "WAITING": 1,
+    "SQUAD_COMMIT": 2,
+    "SQUAD_REVEAL": 3,
+    "ROUND_COMMIT": 4,
+    "ROUND_REVEAL": 5,
+    "RESOLVABLE": 6,
+    "FINISHED": 7,
+    "CANCELLED": 8,
+    "EXPIRED": 9
+  },
+  "actionKinds": {
+    "HOLD": 0,
+    "MOVE": 1,
+    "ATTACK": 2,
+    "SKILL": 3
+  },
+  "outcomes": {
+    "NONE": 0,
+    "A": 1,
+    "B": 2,
+    "DRAW": 3
+  },
+  "endReasons": {
+    "NONE": 0,
+    "ELIMINATION": 1,
+    "MUTUAL_ELIMINATION": 2,
+    "VICTORY_POINTS": 3,
+    "ROUND_LIMIT": 4,
+    "COMMIT_TIMEOUT": 5,
+    "REVEAL_TIMEOUT": 6,
+    "SQUAD_COMMIT_TIMEOUT": 7,
+    "SQUAD_REVEAL_TIMEOUT": 8
+  },
+  "lifecycle": {
+    "join": "WAITING remains WAITING; a different address occupies the second seat",
+    "start": "creator-only, full unexpired room; opens SQUAD_COMMIT with activeRound=0",
+    "cancel": "creator-only while WAITING, including after the join deadline until expiry executes",
+    "expire": "public while WAITING, strictly after joinDeadline",
+    "squadCommit": "second immutable commitment opens SQUAD_REVEAL",
+    "squadReveal": "second valid reveal initializes the board and opens ROUND_COMMIT with activeRound=1 and completedRound=0",
+    "roundCommit": "second immutable commitment opens ROUND_REVEAL",
+    "roundReveal": "second valid reveal opens RESOLVABLE with deadline zero",
+    "settle": "public once in RESOLVABLE; retain completedRound=n and open activeRound=n+1 or finish",
+    "default": "public in either Squad or Round Commit/Reveal strictly after its deadline; expected phase and activeRound must still match",
+    "replacement": "accepted commitments cannot change; an originally illegal payload cannot be rescued with a different lineup or order"
+  },
+  "canonical": {
+    "unusedTarget": 255,
+    "pathOrder": "cell i occupies bits 6*i through 6*i+5, first visited cell in the least significant six bits",
+    "pathBits": "only pathLength*6 low bits may be nonzero; all other bits must be zero",
+    "deadUnit": "retain type and slot; position=255 hp=0 alive=false lockedRound=0; action=HOLD",
+    "liveLock": "zero, or completedRound+1 after at least one settled round; initial locks are zero",
+    "rounds": "activeRound belongs to protocol; completedRound belongs to the hashed battle state; both are uint16",
+    "pregame": "battleStarted=false, completedRound=0, six empty slots (type=0 position=255 hp=0 alive=false lock=0), zero Energy and VP; Squad defaults set only outcome/reason",
+    "stateExclusions": [
+      "commitments",
+      "salts",
+      "phase",
+      "deadlines",
+      "reveal-flags"
+    ],
+    "timeout": "preserve board, resources and completedRound; set dedicated outcome/reason; emit MatchFinished without RoundResolved",
+    "implementationBinding": "rulesetId binds typed parameters, the reviewed semantic definition, schema IDs and the fixed map catalogue; the separate deployment and existing archived compiler artifacts bind the actual implementation"
+  },
+  "secrets": {
+    "saltBytes": 32,
+    "randomness": "independent cryptographically secure Squad and Action salts",
+    "purposes": ["squad", "actions"],
+    "keyFields": [
+      "deploymentHash",
+      "chainId",
+      "arena",
+      "matchId",
+      "player",
+      "rulesetId",
+      "purpose",
+      "round"
+    ],
+    "squadRound": 0,
+    "saveBeforeBroadcast": true,
+    "unrevealedDestinations": "browser IndexedDB and user-controlled encrypted backups only; never logs, API, SSE or Commit events"
+  },
+  "events": [
+    {
+      "name": "MatchCreated",
+      "signature": "MatchCreated(uint256,address,bytes32,uint8,bytes32,uint64)",
+      "indexed": ["matchId", "creator"],
+      "topic": "0xdb5c8249a635b24f989992df9e345a0f8db8c188884ac2a78628b77d307fb0d5"
+    },
+    {
+      "name": "PlayerJoined",
+      "signature": "PlayerJoined(uint256,address,uint8,uint64)",
+      "indexed": ["matchId", "player"],
+      "topic": "0xe04aed70c6281e6232671346e002f80fb3affef1537c79c6928de3fd09fb9c24"
+    },
+    {
+      "name": "SquadCommitted",
+      "signature": "SquadCommitted(uint256,address,bytes32)",
+      "indexed": ["matchId", "player"],
+      "topic": "0x63629b93a7b8ba6883a1089224561a943e02ee1fa772978931e90679078fa1fd"
+    },
+    {
+      "name": "SquadRevealed",
+      "signature": "SquadRevealed(uint256,address,uint8[3],bytes32)",
+      "indexed": ["matchId", "player"],
+      "topic": "0x07dc8e24b6ba56d9eff44ffe05d1c35be89c1540dc0131fa31374772b893121b"
+    },
+    {
+      "name": "GameStarted",
+      "signature": "GameStarted(uint256,(uint8,bool,uint16,(uint8,uint8,uint8,bool,uint16)[6],uint8[2],uint8[2],uint8,uint8),bytes32)",
+      "indexed": ["matchId"],
+      "topic": "0x0d1e1d7564fc3317c6c30a9795f908d24b8f680376598f66a491c952b781ef40"
+    },
+    {
+      "name": "ActionCommitted",
+      "signature": "ActionCommitted(uint256,uint16,address,bytes32)",
+      "indexed": ["matchId", "round", "player"],
+      "topic": "0x2aadaac5e0667874498290c3f6e66fe86b72612c3bc036da601a81dfb8c1adf8"
+    },
+    {
+      "name": "ActionRevealed",
+      "signature": "ActionRevealed(uint256,uint16,address,(uint8,uint8,uint8,uint8,uint32)[3],bytes32)",
+      "indexed": ["matchId", "round", "player"],
+      "topic": "0x799ba9147eb0f3ee98aa4dbb6b5455ee89c4a9b10db17bcd0b9e8e0b2f99af4d"
+    },
+    {
+      "name": "PhaseAdvanced",
+      "signature": "PhaseAdvanced(uint256,uint16,uint8,uint8,uint64)",
+      "indexed": ["matchId", "round"],
+      "topic": "0xd5462d4461ac8ce4580f8d3c43a1341cf2feabb3125178f9c55f75d64f549198"
+    },
+    {
+      "name": "RoundResolved",
+      "signature": "RoundResolved(uint256,uint16,bytes32,bytes32,(uint8,bool,uint16,(uint8,uint8,uint8,bool,uint16)[6],uint8[2],uint8[2],uint8,uint8),(uint8[2],bool[6],uint8[6],uint8[6],uint8[6],uint8[6],uint16[6],uint8[2],uint8[2]))",
+      "indexed": ["matchId", "round"],
+      "topic": "0x63485b70bb86a66aad266e0c926a2210503a6a54d84e0e6fdf0caff95ab732c0"
+    },
+    {
+      "name": "MatchFinished",
+      "signature": "MatchFinished(uint256,uint16,address,bool,uint16,uint8,uint8,bytes32)",
+      "indexed": ["matchId", "winner"],
+      "topic": "0xcb18f0c799bd7ab8b25cf8c2512e0679449b694e1f7257991d0911bbec90928b"
+    }
+  ],
+  "functions": [
+    {
+      "name": "advanceExpiredPhase",
+      "signature": "advanceExpiredPhase(uint256,uint16,uint8)",
+      "selector": "0xcc34b53e"
+    },
+    {
+      "name": "cancelWaitingMatch",
+      "signature": "cancelWaitingMatch(uint256)",
+      "selector": "0x60570c5e"
+    },
+    {
+      "name": "commitActions",
+      "signature": "commitActions(uint256,uint16,bytes32)",
+      "selector": "0x39fb11da"
+    },
+    {
+      "name": "commitSquad",
+      "signature": "commitSquad(uint256,bytes32)",
+      "selector": "0x0af1e847"
+    },
+    {
+      "name": "createMatch",
+      "signature": "createMatch(uint8)",
+      "selector": "0xd6861e30"
+    },
+    {
+      "name": "expireWaitingMatch",
+      "signature": "expireWaitingMatch(uint256)",
+      "selector": "0x57cff775"
+    },
+    {
+      "name": "getBattleState",
+      "signature": "getBattleState(uint256)",
+      "selector": "0x781647d4"
+    },
+    {
+      "name": "getMap",
+      "signature": "getMap(uint8)",
+      "selector": "0xa3bffa19"
+    },
+    {
+      "name": "getMatch",
+      "signature": "getMatch(uint256)",
+      "selector": "0x3d092b3d"
+    },
+    {
+      "name": "getRoundStatus",
+      "signature": "getRoundStatus(uint256)",
+      "selector": "0x1086bfdc"
+    },
+    {
+      "name": "getRules",
+      "signature": "getRules()",
+      "selector": "0x45e2984a"
+    },
+    {
+      "name": "getRulesetId",
+      "signature": "getRulesetId()",
+      "selector": "0x06c57bc2"
+    },
+    {
+      "name": "getSchemaVersions",
+      "signature": "getSchemaVersions()",
+      "selector": "0xaec16350"
+    },
+    {
+      "name": "getSquadStatus",
+      "signature": "getSquadStatus(uint256)",
+      "selector": "0x3157df54"
+    },
+    {
+      "name": "joinMatch",
+      "signature": "joinMatch(uint256)",
+      "selector": "0xfeb8c438"
+    },
+    {
+      "name": "revealActions",
+      "signature": "revealActions(uint256,uint16,(uint8,uint8,uint8,uint8,uint32)[3],bytes32)",
+      "selector": "0x1c094eca"
+    },
+    {
+      "name": "revealSquad",
+      "signature": "revealSquad(uint256,uint8[3],bytes32)",
+      "selector": "0xe9998ce9"
+    },
+    {
+      "name": "settleRound",
+      "signature": "settleRound(uint256,uint16)",
+      "selector": "0x8767de93"
+    },
+    {
+      "name": "startMatch",
+      "signature": "startMatch(uint256)",
+      "selector": "0xbf725a84"
+    }
+  ],
+  "deadlineCases": [
+    {
+      "name": "before-deadline",
+      "now": 999,
+      "deadline": 1000,
+      "expected": {
+        "submit": true,
+        "timeout": false
+      }
+    },
+    {
+      "name": "at-deadline",
+      "now": 1000,
+      "deadline": 1000,
+      "expected": {
+        "submit": true,
+        "timeout": false
+      }
+    },
+    {
+      "name": "after-deadline",
+      "now": 1001,
+      "deadline": 1000,
+      "expected": {
+        "submit": false,
+        "timeout": true
+      }
+    }
+  ]
+}
