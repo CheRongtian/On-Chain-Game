@@ -1,0 +1,615 @@
+{
+  "status": "semantics-frozen",
+  "rules": "squad-rules.json",
+  "scope": "Stage-local input/output examples, not ABI payloads or complete battle/hash vectors. Unlisted units and terrain do not participate in a case. All named cells use cell=y*8+x on an otherwise empty 8x8 board; fixture terrain does not freeze a playable map.",
+  "variations": "An input unitTypes array repeats the case independently for each type; it never expands the three-unit squad.",
+  "validation": [
+    {
+      "name": "new-unit-basic-actions",
+      "check": "basic-actions",
+      "given": {
+        "unitTypes": [4, 5],
+        "moveSteps": 2,
+        "attackDistance": 1,
+        "attackShape": "orthogonal"
+      },
+      "expected": {
+        "moveLegal": true,
+        "attackLegal": true,
+        "attackDamage": 1,
+        "energySpent": 0
+      }
+    },
+    {
+      "name": "new-unit-basic-range-limits",
+      "check": "basic-actions",
+      "given": { "unitTypes": [4, 5], "moveSteps": 3, "attackDistance": 2 },
+      "expected": { "moveLegal": false, "attackLegal": false, "energySpent": 0 }
+    },
+    {
+      "name": "all-five-locked-skills",
+      "check": "locked-actions",
+      "given": { "unitTypes": [1, 2, 3, 4, 5], "round": 4, "lockedRound": 4 },
+      "expected": {
+        "SKILL": "reject",
+        "HOLD": "allow",
+        "MOVE": "allow-if-otherwise-legal",
+        "ATTACK": "allow-if-otherwise-legal"
+      }
+    },
+    {
+      "name": "dead-slot-only-holds",
+      "check": "dead-actions",
+      "given": { "hp": 0, "actions": ["HOLD", "MOVE", "ATTACK", "SKILL"] },
+      "expected": {
+        "allowed": ["HOLD"],
+        "rejected": ["MOVE", "ATTACK", "SKILL"],
+        "energySpent": 0
+      }
+    },
+    {
+      "name": "whole-squad-budget",
+      "check": "budget",
+      "given": {
+        "energy": 2,
+        "squadTypes": [1, 4, 5],
+        "actions": ["SKILL", "SKILL", "SKILL"]
+      },
+      "expected": {
+        "requiredEnergy": 5,
+        "bundle": "reject",
+        "energyAfter": 2,
+        "stateChanged": false
+      }
+    },
+    {
+      "name": "income-cannot-fund-current-skill",
+      "check": "budget",
+      "given": {
+        "energy": 1,
+        "unitType": 4,
+        "action": "SKILL",
+        "resourceOccupied": true
+      },
+      "expected": {
+        "requiredEnergy": 2,
+        "bundle": "reject",
+        "energyAfter": 1,
+        "stateChanged": false
+      }
+    },
+    {
+      "name": "heal-enemy-or-dead-target",
+      "check": "heal-targets",
+      "given": {
+        "casterOwner": "A",
+        "targets": [
+          { "owner": "B", "roundStartHp": 5 },
+          { "owner": "A", "roundStartHp": 0 }
+        ]
+      },
+      "expected": {
+        "bothTargets": "reject-at-Validate",
+        "energySpent": 0,
+        "resurrected": false
+      }
+    },
+    {
+      "name": "Saboteur-ray-validation",
+      "check": "lock-rays",
+      "given": {
+        "casterCell": 18,
+        "targetVariants": [
+          { "cell": 20, "obstacles": [] },
+          { "cell": 20, "obstacles": [19] },
+          { "cell": 27, "obstacles": [] },
+          { "cell": 21, "obstacles": [] },
+          { "cell": 18, "obstacles": [] }
+        ]
+      },
+      "expected": {
+        "legalTargets": [true, false, false, false, false]
+      }
+    }
+  ],
+  "movement": [
+    {
+      "name": "shared-endpoint-retains-Dash-cost",
+      "given": {
+        "units": [
+          {
+            "owner": "A",
+            "type": 3,
+            "cell": 8,
+            "action": "SKILL",
+            "path": [9, 10]
+          },
+          {
+            "owner": "B",
+            "type": 3,
+            "cell": 12,
+            "action": "MOVE",
+            "path": [11, 10]
+          }
+        ]
+      },
+      "expected": {
+        "cells": [8, 12],
+        "moved": [false, false],
+        "energySpent": [1, 0]
+      }
+    },
+    {
+      "name": "shared-empty-intermediate-cell",
+      "given": {
+        "units": [
+          { "type": 3, "cell": 16, "action": "MOVE", "path": [17, 18, 26] },
+          { "type": 3, "cell": 2, "action": "MOVE", "path": [10, 18, 19] }
+        ]
+      },
+      "expected": { "cells": [26, 19], "moved": [true, true] }
+    },
+    {
+      "name": "another-starting-cell-stays-blocked",
+      "given": {
+        "units": [
+          { "type": 1, "cell": 8, "action": "MOVE", "path": [9] },
+          { "type": 2, "cell": 9, "action": "MOVE", "path": [17] }
+        ]
+      },
+      "expected": { "bundle": "reject-at-Validate", "stateChanged": false }
+    }
+  ],
+  "healing": [
+    {
+      "name": "self-heal",
+      "given": {
+        "casterId": 0,
+        "targetId": 0,
+        "casterCell": 18,
+        "targetCell": 18,
+        "hp": 4,
+        "maxHp": 7
+      },
+      "expected": { "healed": 2, "hpAfterSupport": 6, "energySpent": 2 }
+    },
+    {
+      "name": "healing-caps-at-max-HP",
+      "given": { "casterCell": 18, "targetCell": 19, "hp": 9, "maxHp": 10 },
+      "expected": {
+        "healed": 1,
+        "hpAfterSupport": 10,
+        "discardedHealing": 1,
+        "energySpent": 2
+      }
+    },
+    {
+      "name": "full-HP-still-pays",
+      "given": { "casterCell": 18, "targetCell": 19, "hp": 10, "maxHp": 10 },
+      "expected": { "healed": 0, "hpAfterSupport": 10, "energySpent": 2 }
+    },
+    {
+      "name": "target-moves-into-heal-range",
+      "given": {
+        "casterCell": 18,
+        "targetStartCell": 21,
+        "targetPath": [20, 19],
+        "targetCell": 19,
+        "hp": 2,
+        "maxHp": 6
+      },
+      "expected": {
+        "staticTarget": "allow",
+        "healed": 2,
+        "hpAfterSupport": 4,
+        "energySpent": 2
+      }
+    },
+    {
+      "name": "target-moves-out-of-heal-range",
+      "given": {
+        "casterCell": 18,
+        "targetStartCell": 19,
+        "targetPath": [20, 21, 22],
+        "targetCell": 22,
+        "hp": 2,
+        "maxHp": 5
+      },
+      "expected": {
+        "staticTarget": "allow",
+        "healed": 0,
+        "hpAfterSupport": 2,
+        "energySpent": 2
+      }
+    },
+    {
+      "name": "wall-and-Cover-do-not-block-heal",
+      "given": {
+        "casterCell": 18,
+        "targetCell": 20,
+        "obstacles": [19],
+        "cover": [20],
+        "hp": 4,
+        "maxHp": 10
+      },
+      "expected": { "healed": 2, "hpAfterSupport": 6, "energySpent": 2 }
+    },
+    {
+      "name": "heal-before-lethal-looking-damage",
+      "given": {
+        "casterCell": 18,
+        "targetCell": 19,
+        "hp": 1,
+        "maxHp": 10,
+        "incomingDamage": 2
+      },
+      "expected": { "hpAfterSupport": 3, "hpAfterDamage": 1, "alive": true }
+    },
+    {
+      "name": "healed-unit-can-still-die",
+      "given": {
+        "casterCell": 18,
+        "targetCell": 19,
+        "hp": 1,
+        "maxHp": 5,
+        "incomingDamage": 4
+      },
+      "expected": {
+        "hpAfterSupport": 3,
+        "hpAfterDamage": 0,
+        "alive": false,
+        "resurrected": false
+      }
+    },
+    {
+      "name": "Medic-dies-after-healing",
+      "given": {
+        "casterCell": 18,
+        "targetCell": 19,
+        "casterHp": 1,
+        "casterIncomingDamage": 2,
+        "hp": 4,
+        "maxHp": 10
+      },
+      "expected": {
+        "hpAfterSupport": 6,
+        "casterHpAfterDamage": 0
+      }
+    }
+  ],
+  "damage": [
+    {
+      "name": "Cover-before-aggregate-shield",
+      "given": {
+        "targetType": 1,
+        "hp": 10,
+        "incomingSources": [1, 2, 3],
+        "onCover": true,
+        "shield": true
+      },
+      "expected": {
+        "sourcesAfterCover": [0, 1, 2],
+        "aggregate": 3,
+        "shielded": 2,
+        "damageTaken": 1,
+        "hpAfterDamage": 9
+      }
+    },
+    {
+      "name": "Cover-floors-each-source",
+      "given": {
+        "hp": 5,
+        "incomingSources": [1, 1],
+        "onCover": true,
+        "shield": false
+      },
+      "expected": {
+        "sourcesAfterCover": [0, 0],
+        "damageTaken": 0,
+        "hpAfterDamage": 5
+      }
+    },
+    {
+      "name": "Power-shot-misses-a-moving-target",
+      "given": {
+        "attackerCell": 18,
+        "targetCell": 21,
+        "enemyStartCell": 21,
+        "enemyMovedCell": 22,
+        "enemyHp": 5
+      },
+      "expected": {
+        "staticShot": "allow",
+        "damageTaken": 0,
+        "enemyHpAfterDamage": 5,
+        "energySpent": 2
+      }
+    },
+    {
+      "name": "simultaneously-dying-attackers-still-hit",
+      "given": {
+        "attackerCells": [18, 20],
+        "hp": [2, 2],
+        "targetCells": [20, 18],
+        "damage": [2, 2],
+        "onCover": [false, false]
+      },
+      "expected": {
+        "hpAfterDamage": [0, 0],
+        "appliedAttacks": 2,
+        "iterationOrderChangesResult": false
+      }
+    }
+  ],
+  "skillLock": [
+    {
+      "name": "lock-next-round-despite-caster-death",
+      "given": {
+        "round": 4,
+        "casterStartCell": 19,
+        "targetCell": 21,
+        "casterHpAfterDamage": 0,
+        "enemyMovedCell": 21,
+        "enemyHpAfterDamage": 5,
+        "validatedSkill": true
+      },
+      "expected": {
+        "targetLockedRound": 5,
+        "currentSkillCancelled": false,
+        "energySpent": 2
+      }
+    },
+    {
+      "name": "empty-or-friendly-lock-cell",
+      "given": {
+        "round": 4,
+        "casterCell": 19,
+        "targetCell": 21,
+        "occupantsAfterMovement": ["empty", "friendly"]
+      },
+      "expected": {
+        "bothTargets": "legal-miss",
+        "lockApplied": false,
+        "energySpent": 2
+      }
+    },
+    {
+      "name": "lock-target-moves-away",
+      "given": {
+        "round": 4,
+        "casterCell": 19,
+        "targetCell": 21,
+        "enemyStartCell": 21,
+        "enemyMovedCell": 22,
+        "enemyHpAfterDamage": 5
+      },
+      "expected": { "lockApplied": false, "energySpent": 2 }
+    },
+    {
+      "name": "dead-victim-retains-no-lock",
+      "given": {
+        "round": 4,
+        "targetCell": 21,
+        "enemyMovedCell": 21,
+        "enemyHpAfterDamage": 0,
+        "previousLockedRound": 4
+      },
+      "expected": {
+        "lockApplied": false,
+        "lockedRoundAfterWorldUpdate": 0,
+        "positionAfterWorldUpdate": "cleared",
+        "energySpent": 2
+      }
+    },
+    {
+      "name": "current-shield-is-not-cancelled",
+      "given": {
+        "round": 4,
+        "targetType": 1,
+        "hp": 10,
+        "currentSkill": "Shield",
+        "incomingDamage": 3,
+        "onCover": false,
+        "validLockHit": true
+      },
+      "expected": {
+        "shielded": 2,
+        "hpAfterDamage": 9,
+        "lockedRound": 5,
+        "targetSkillEnergySpent": 1,
+        "casterSkillEnergySpent": 2
+      }
+    },
+    {
+      "name": "old-lock-expires",
+      "given": {
+        "round": 5,
+        "lockedRound": 5,
+        "action": "HOLD",
+        "hpAfterDamage": 3,
+        "newLockHit": false
+      },
+      "expected": {
+        "lockedRoundAfterWorldUpdate": 0,
+        "skillAllowedNextRound": true
+      }
+    },
+    {
+      "name": "new-hit-renews-only-the-next-round",
+      "given": {
+        "round": 5,
+        "lockedRound": 5,
+        "action": "ATTACK",
+        "newLockHit": true,
+        "hpAfterDamage": 3
+      },
+      "expected": {
+        "currentAttackApplies": true,
+        "lockedRoundAfterWorldUpdate": 6,
+        "blockedSkillRounds": [6]
+      }
+    }
+  ],
+  "worldUpdate": [
+    {
+      "name": "each-resource-awards-once-with-cap",
+      "given": {
+        "energyAfterCosts": [4, 2],
+        "resources": [18, 45],
+        "occupantsAfterDamage": [
+          { "owner": "A", "cell": 18, "hp": 10 },
+          { "owner": "A", "cell": 45, "hp": 7 }
+        ]
+      },
+      "expected": {
+        "incomeBeforeCap": [2, 0],
+        "creditedEnergy": [1, 0],
+        "energyAfterIncome": [5, 2]
+      }
+    },
+    {
+      "name": "dead-resource-occupant-and-Energy-cap",
+      "given": {
+        "energyAfterCosts": [5, 2],
+        "resources": [18, 45],
+        "occupantsAfterDamage": [
+          { "owner": "A", "cell": 18, "hp": 10 },
+          { "owner": "B", "cell": 45, "hp": 0 }
+        ]
+      },
+      "expected": { "creditedEnergy": [0, 0], "energyAfterIncome": [5, 2] }
+    },
+    {
+      "name": "only-survivors-count-for-control",
+      "given": {
+        "controlCells": [27, 28, 35, 36],
+        "occupantsAfterDamage": [
+          { "owner": "A", "cell": 27, "hp": 8 },
+          { "owner": "A", "cell": 28, "hp": 7 },
+          { "owner": "B", "cell": 35, "hp": 5 },
+          { "owner": "B", "cell": 36, "hp": 0 }
+        ]
+      },
+      "expected": {
+        "survivingControlCounts": [2, 1],
+        "victoryPointsGained": [2, 0]
+      }
+    },
+    {
+      "name": "equal-control-counts-do-not-score",
+      "given": { "survivingControlCounts": [1, 1] },
+      "expected": { "victoryPointsGained": [0, 0] }
+    }
+  ],
+  "outcomes": [
+    {
+      "name": "elimination-before-points-and-cap",
+      "given": {
+        "round": 20,
+        "victoryPoints": [12, 10],
+        "survivingHp": [10, 0]
+      },
+      "expected": { "outcome": "A", "reason": "Elimination", "round": 20 }
+    },
+    {
+      "name": "mutual-elimination-draws",
+      "given": { "round": 20, "victoryPoints": [10, 8], "survivingHp": [0, 0] },
+      "expected": {
+        "outcome": "Draw",
+        "reason": "MutualElimination",
+        "round": 20
+      }
+    },
+    {
+      "name": "points-before-HP",
+      "given": {
+        "round": 8,
+        "victoryPoints": [12, 10],
+        "survivingHp": [1, 18]
+      },
+      "expected": { "outcome": "A", "reason": "VictoryPoints", "round": 8 }
+    },
+    {
+      "name": "round-cap-compares-points",
+      "given": {
+        "round": 20,
+        "victoryPoints": [10, 8],
+        "survivingHp": [5, 10]
+      },
+      "expected": { "outcome": "A", "reason": "RoundLimit", "round": 20 }
+    },
+    {
+      "name": "round-cap-HP-tiebreak",
+      "given": { "round": 20, "victoryPoints": [8, 8], "survivingHp": [8, 10] },
+      "expected": { "outcome": "B", "reason": "RoundLimit", "round": 20 }
+    },
+    {
+      "name": "round-cap-complete-tie",
+      "given": { "round": 20, "victoryPoints": [8, 8], "survivingHp": [8, 8] },
+      "expected": { "outcome": "Draw", "reason": "RoundLimit", "round": 20 }
+    },
+    {
+      "name": "continue-before-limits",
+      "given": {
+        "round": 19,
+        "victoryPoints": [10, 10],
+        "survivingHp": [14, 8]
+      },
+      "expected": { "outcome": "Ongoing", "reason": "None", "round": 20 }
+    }
+  ],
+  "protocolDefaults": [
+    {
+      "name": "one-missing-Commit",
+      "given": {
+        "phase": "Commit",
+        "submitted": [true, false],
+        "expired": true
+      },
+      "expected": {
+        "outcome": "A",
+        "reason": "CommitTimeout",
+        "boardEnergyVpAndRound": "unchanged"
+      }
+    },
+    {
+      "name": "both-missing-Commit",
+      "given": {
+        "phase": "Commit",
+        "submitted": [false, false],
+        "expired": true
+      },
+      "expected": {
+        "outcome": "Draw",
+        "reason": "CommitTimeout",
+        "boardEnergyVpAndRound": "unchanged"
+      }
+    },
+    {
+      "name": "one-missing-Reveal",
+      "given": {
+        "phase": "Reveal",
+        "submitted": [false, true],
+        "expired": true
+      },
+      "expected": {
+        "outcome": "B",
+        "reason": "RevealTimeout",
+        "boardEnergyVpAndRound": "unchanged"
+      }
+    },
+    {
+      "name": "both-missing-Reveal",
+      "given": {
+        "phase": "Reveal",
+        "submitted": [false, false],
+        "expired": true
+      },
+      "expected": {
+        "outcome": "Draw",
+        "reason": "RevealTimeout",
+        "boardEnergyVpAndRound": "unchanged"
+      }
+    }
+  ]
+}

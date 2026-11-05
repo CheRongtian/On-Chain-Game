@@ -26,6 +26,69 @@ A waiting room lasts 24 hours. Its creator is the host. A different address may 
 
 Commitments cannot be replaced. Invalid reveals can be retried before the deadline using the original committed data. Both valid reveals enter Resolvable, allowing anyone to settle that round once. Nonterminal settlement advances the round, clears old commitments and revealed orders, and opens a new Commit window. Terminal settlement preserves the final round and closes the match permanently. Match rules and map settings remain fixed throughout play.
 
+## Squad rules design
+
+The approved five-type design is recorded in the [squad rules](config/squad-rules.json), with explicit inputs and expected effects in the [stage-local cases](config/squad-cases.json). Approval freezes these gameplay semantics and initial numeric values for implementation. The current contracts, Go resolver, browser and archived games continue using the existing fixed-squad rules. The new data is not loaded by those runtimes or their existing vector runners.
+
+Matches retain two players, three units per side and an 8x8 board. Each player chooses three distinct types from the five below; squad order binds the three birth slots. Each living unit takes one HOLD, MOVE, ATTACK or type-specific SKILL. Only MOVE and Scout's Dash move their caster; Dash replaces the action. Unit identity and slot ownership remain stable after movement and death.
+
+| Code | Type     |  HP | MOVE limit | ATTACK                                       | SKILL                                                                             | Energy |
+| ---: | -------- | --: | ---------: | -------------------------------------------- | --------------------------------------------------------------------------------- | -----: |
+|    1 | Guardian |  10 |          1 | Orthogonal adjacent, damage 2                | Shield reduces this round's aggregate incoming damage by up to 2                  |      1 |
+|    2 | Ranger   |   6 |          2 | Horizontal/vertical ray, range 1–3, damage 2 | Power shot uses the same ray and deals damage 3                                   |      2 |
+|    3 | Scout    |   5 |          3 | Orthogonal adjacent, damage 1                | Dash follows a complete path of up to 4 steps                                     |      1 |
+|    4 | Medic    |   7 |          2 | Orthogonal adjacent, damage 1                | Heal a living friendly unit, including self, by up to 2 HP                        |      2 |
+|    5 | Saboteur |   6 |          2 | Orthogonal adjacent, damage 1                | A horizontal/vertical ray of range 1–2 locks a surviving enemy's next-round skill |      2 |
+
+HOLD, MOVE and ATTACK cost no Energy. All three chosen skill costs must fit the player's round-start Energy together. An illegal action rejects the complete bundle without changing state or charging Energy. A legal movement conflict, missed shot, out-of-range heal or missed lock keeps its reserved cost. Dead slots must HOLD. A unit with `lockedRound == currentRound` may HOLD, MOVE or ATTACK, but may not use any SKILL, including Shield or Dash.
+
+### Settlement order
+
+1. **Validate:** validate both complete bundles against the same round-start state before mutation. Reserve and deduct skill costs before any resource income. Range and obstacle checks for attacks and lock rays use the starting position. Rays have positive distance, obstacles block them and units do not. Empty or friendly target cells are legal; actual effects require an enemy. Heal validation checks a living friendly unit's identity, with range checked later. Action/Reveal processing order cannot change the result.
+2. **Movement:** compute all endpoints from the same initial snapshot. Retain full orthogonal path validation, including blocked obstacles, all other living units' starting cells and repeated cells including the mover's origin. Every mover sharing a destination stays at its origin; intermediate empty path crossings remain valid. Swaps remain prohibited by initial occupancy.
+3. **Support:** Medic targets a stable unit ID, so the target's movement does not change its identity. At moved positions, Manhattan distance must be at most 2. The target must have been alive at round start and remain alive during Support. Walls and Cover do not affect healing. Restore `min(2, maxHp - hp)`, discard excess and allow no resurrection or deferred healing. A full-HP or out-of-range target receives zero HP while retaining the cost. Guardian registers its current shield.
+4. **Damage:** attacks hit living enemies at their target cells after movement. For each source, Cover reduces damage by 1 with a floor of zero, including Power shot. Sum the remaining sources per victim, then apply Guardian's total shield reduction of up to 2. Apply all HP losses simultaneously, capped by the victim's current HP after healing. Attacks from units killed in this same stage still apply. Cover affects no healing, lock, movement, resource or control rule.
+5. **Status:** a previously validated Saboteur skill locks an enemy still alive at the targeted moved cell by setting `lockedRound = currentRound + 1`. Empty cells, friendly occupants, moved-away targets and dead victims receive no lock. The victim's current action remains effective; the lock applies only to the following round. A caster dying during Damage still applies its legal lock to a surviving victim. Locks do not stack. A new hit can renew the following round's lock without extending it further.
+6. **WorldUpdate:** clear dead units' positions and locks. Clear expiring old locks while preserving locks just applied for the next round. Award each resource once to its surviving occupant, cap Energy at 5, then award 2 VP to the sole majority across the central four cells. Equal surviving counts score zero. Newly earned Energy funds later rounds.
+7. **Finalize:** apply the outcome priority below. Continuing games advance one round; terminal games retain their final round and reject repeated settlement. The exact new state encoding, hash and events are reserved for the protocol freeze.
+
+Healing therefore precedes lethal damage; it cannot bring back a unit after Damage. The simultaneous-action rule also preserves an already legal attack or lock when its caster dies that round. These outcomes depend on the common snapshots and stage boundaries, never on a loop's unit order.
+
+### Outcomes and review status
+
+Initial Energy remains 2, its cap remains 5, each occupied resource supplies 1, the VP threshold starts at 12 and the round limit starts at 20.
+
+| Priority | Condition after WorldUpdate          | Result                                                        |
+| -------: | ------------------------------------ | ------------------------------------------------------------- |
+|        1 | Both sides have no surviving units   | Draw, MutualElimination                                       |
+|        1 | Exactly one side has surviving units | That side wins, Elimination                                   |
+|        2 | Either side reaches 12 VP            | Compare VP, then total surviving HP, then draw; VictoryPoints |
+|        3 | Round 20 finishes                    | Compare VP, then total surviving HP, then draw; RoundLimit    |
+|        4 | No terminal condition                | Continue to the next round                                    |
+
+Commit/Reveal defaults retain their dedicated reasons: a sole missing submission forfeits, and bilateral absence draws. They preserve the preceding board, Energy, VP and round without executing movement, skills, income or control. Terminal protocol results cannot be overwritten by battle scoring. Exact protocol deadlines and encoding are reviewed separately.
+
+The stage-local cases form the rule review matrix: legal and illegal basic actions, all five locked skills, total budgets, blocked paths and movement conflicts, self/full/overflow/moved-target healing, simultaneous damage, Cover/shield order, dying casters, lock expiry/renewal, surviving objective occupancy, outcome priority and protocol defaults. They provide the relevant stage inputs and expected outputs; their terrain examples are local fixtures. The [offline consistency check](scripts/check-squad-rules.mjs) validates approved scope/parameters, calculates the examples by rule category and checks their policy annotations. It rejects unknown calculations and prints the case, field, expected value and actual value on a difference. A built-in negative check verifies that an altered healing expectation is rejected. `unitTypes` denotes independent type variations; `squadTypes` denotes one ordered three-type squad.
+
+Run the existing backend entry to check this design data and then the existing Go/Solidity vectors:
+
+```
+./scripts/run-backend.sh verify
+```
+
+The command uses existing tools without starting a node, database or browser. Output appears in the terminal and overwrites the root log. Success ends with `PASS: offline verification completed: squad-rule consistency and existing Go/Solidity vectors.` A failed design check exits before the Go/Solidity comparison. The new check establishes arithmetic and example consistency; integration and timing behavior of the future Solidity/Go implementation require their later acceptance. Full action ABI, state hashes, playable maps and balance measurements remain outside this check.
+
+| Item                                                                            | Status                                      | Next work                                                            |
+| ------------------------------------------------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------- |
+| Two players, three distinct ordered types, five professions                     | Approved                                    | Preserve these limits in later implementations                       |
+| Unit values, healing, Cover/shield, lock lifetime and seven settlement stages   | Frozen for implementation                   | Apply exactly the same semantics in Solidity and Go                  |
+| HP, skill strength/cost, 12 VP and 20 rounds                                    | Approved initial values; balance unmeasured | Measure complete games and combinations before making balance claims |
+| Three exact maps and birth layouts                                              | Pending map review                          | Freeze map cells and slot geometry                                   |
+| Squad/Action ABI, domains, ruleset identity, state hashes, events and deadlines | Pending protocol review                     | Freeze bytes and schemas before contract integration                 |
+| Full battle vectors, implementation harnesses and compatibility dispatch        | Pending cross-ruleset review                | Preserve existing vectors and replay interpretation                  |
+
+This approval is recorded here and in the two configuration files. Existing deployed rules, ABI, commitments, hashes, events and historical interpretation remain fixed; the approved design will use a separate authoritative ruleset and deployment. No additional planning documents are required.
+
 ## Architecture
 
 - **Solidity / Foundry:** authoritative room and turn protocol storage, pure battle resolution, atomic settlement, and complete matches.
@@ -84,7 +147,7 @@ Run the fixed-vector comparison from the project root:
 ./scripts/run-backend.sh verify
 ```
 
-This mode compares Go with the fixed references, then runs the existing Solidity outcome and battle checks and the new protocol comparison inside Forge's offline EVM. It requires neither Anvil nor PostgreSQL. The backend script uses `go run -mod=mod` for offline commands, which may download missing Go dependencies. Normal startup uses the installed Go toolchain and cached dependencies with `GOTOOLCHAIN=local`, `GOPROXY=off`, and `-mod=readonly`; missing dependencies stop the build for the maintainer to prepare. Routine startup does not run `go mod tidy`, which also resolves dependencies used by upstream tests and other platforms.
+This mode first checks the squad design parameters and stage-local cases, then compares Go with the existing fixed references and runs the existing Solidity outcome, battle and protocol comparisons inside Forge's offline EVM. It requires neither Anvil nor PostgreSQL. The backend script uses `go run -mod=mod` for offline commands, which may download missing Go dependencies. Normal startup uses the installed Go toolchain and cached dependencies with `GOTOOLCHAIN=local`, `GOPROXY=off`, and `-mod=readonly`; missing dependencies stop the build for the maintainer to prepare. Routine startup does not run `go mod tidy`, which also resolves dependencies used by upstream tests and other platforms.
 
 Run deterministic multi-round simulation and differential comparison:
 

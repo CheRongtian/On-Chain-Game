@@ -1,0 +1,214 @@
+{
+  "status": "semantics-frozen",
+  "runtime": "design-only",
+  "balance": "initial-values-unmeasured",
+  "scope": {
+    "width": 8,
+    "height": 8,
+    "players": 2,
+    "squadSize": 3,
+    "distinctTypes": true,
+    "orderedSlots": true,
+    "actionsPerLivingUnit": 1
+  },
+  "match": {
+    "initialEnergy": 2,
+    "maxEnergy": 5,
+    "initialVictoryPoints": 0,
+    "resourceIncome": 1,
+    "controlAward": 2,
+    "controlCells": 4,
+    "victoryThreshold": 12,
+    "maxRounds": 20
+  },
+  "units": [
+    {
+      "code": 1,
+      "name": "Guardian",
+      "maxHp": 10,
+      "moveRange": 1,
+      "attack": { "shape": "orthogonal-adjacent", "range": 1, "damage": 2 },
+      "skill": {
+        "name": "Shield",
+        "energyCost": 1,
+        "target": "self",
+        "stage": "Support",
+        "totalDamageReduction": 2
+      }
+    },
+    {
+      "code": 2,
+      "name": "Ranger",
+      "maxHp": 6,
+      "moveRange": 2,
+      "attack": { "shape": "orthogonal-ray", "range": 3, "damage": 2 },
+      "skill": {
+        "name": "Power shot",
+        "energyCost": 2,
+        "target": "cell",
+        "stage": "Damage",
+        "range": 3,
+        "damage": 3
+      }
+    },
+    {
+      "code": 3,
+      "name": "Scout",
+      "maxHp": 5,
+      "moveRange": 3,
+      "attack": { "shape": "orthogonal-adjacent", "range": 1, "damage": 1 },
+      "skill": {
+        "name": "Dash",
+        "energyCost": 1,
+        "target": "path",
+        "stage": "Movement",
+        "range": 4
+      }
+    },
+    {
+      "code": 4,
+      "name": "Medic",
+      "maxHp": 7,
+      "moveRange": 2,
+      "attack": { "shape": "orthogonal-adjacent", "range": 1, "damage": 1 },
+      "skill": {
+        "name": "Heal",
+        "energyCost": 2,
+        "target": "friendly-unit-id",
+        "stage": "Support",
+        "range": 2,
+        "amount": 2
+      }
+    },
+    {
+      "code": 5,
+      "name": "Saboteur",
+      "maxHp": 6,
+      "moveRange": 2,
+      "attack": { "shape": "orthogonal-adjacent", "range": 1, "damage": 1 },
+      "skill": {
+        "name": "Skill lock",
+        "energyCost": 2,
+        "target": "cell",
+        "stage": "Status",
+        "shape": "orthogonal-ray",
+        "range": 2,
+        "effectiveRoundOffset": 1,
+        "durationRounds": 1
+      }
+    }
+  ],
+  "validation": {
+    "snapshot": "round-start",
+    "actionNames": ["HOLD", "MOVE", "ATTACK", "SKILL"],
+    "freeActions": ["HOLD", "MOVE", "ATTACK"],
+    "energyBudget": "sum-of-all-three-skill-costs-before-income",
+    "invalidBundle": "reject-without-state-or-energy-change",
+    "deadUnit": "HOLD-only",
+    "lockedUnit": "reject-SKILL-only-when-lockedRound-equals-currentRound",
+    "rayRange": "positive-distance-from-round-start-position",
+    "rayBlockers": "obstacles-only",
+    "attackAndLockTargets": "in-range-empty-and-friendly-cells-are-legal",
+    "legalDynamicMiss": "keep-reserved-cost"
+  },
+  "movement": {
+    "movingActions": "MOVE-and-Scout-Dash-only",
+    "path": "nonempty-orthogonal-full-path-excluding-origin",
+    "blocked": "obstacles-and-all-other-living-round-start-origins",
+    "repeatedCells": "forbidden-including-own-origin",
+    "sharedEndpoints": "cancel-all-candidates",
+    "sharedIntermediateEmptyCells": "allowed",
+    "swaps": "forbidden-by-origin-occupancy"
+  },
+  "healing": {
+    "target": "stable-friendly-unit-id",
+    "selfTarget": "allowed",
+    "requiredLife": ["round-start", "Support"],
+    "distance": "Manhattan-at-post-movement-positions",
+    "distanceCheck": "Support-only",
+    "obstaclesAndCover": "do-not-block-or-reduce-healing",
+    "amount": "min(skill-amount,maxHp-currentHp)",
+    "fullHpOrOutOfRange": "zero-healing-with-cost-retained",
+    "resurrectionOrOverflow": "forbidden"
+  },
+  "damage": {
+    "hit": "living-enemy-at-target-cell-after-movement",
+    "coverPerSourceReduction": 1,
+    "coverFloor": 0,
+    "order": [
+      "per-source-cover",
+      "sum-by-victim",
+      "Guardian-shield",
+      "simultaneous-HP-loss"
+    ],
+    "damageApplied": "min(remaining-damage,currentHp)",
+    "dyingAttacker": "its-previously-validated-attack-still-applies",
+    "coverOtherEffects": "no-effect-on-healing-lock-movement-income-or-control"
+  },
+  "skillLock": {
+    "hit": "surviving-enemy-at-target-cell-after-Damage",
+    "effect": "lockedRound=currentRound+1",
+    "currentSkill": "continues",
+    "blockedActions": ["SKILL"],
+    "allowedActions": ["HOLD", "MOVE", "ATTACK"],
+    "stacking": "none",
+    "renewal": "a-new-valid-hit-locks-the-following-round-only",
+    "dyingCaster": "its-previously-validated-lock-still-applies",
+    "death": "clear-lock",
+    "expiration": "WorldUpdate-clears-old-locks-and-preserves-new-next-round-locks"
+  },
+  "settlementOrder": [
+    "Validate",
+    "Movement",
+    "Support",
+    "Damage",
+    "Status",
+    "WorldUpdate",
+    "Finalize"
+  ],
+  "worldUpdate": {
+    "death": "zero-HP-units-lose-position-and-lock",
+    "resources": "each-resource-once-for-its-surviving-occupant-then-cap-Energy",
+    "control": "compare-total-survivors-in-central-four-cells-sole-majority-scores",
+    "controlTie": "neither-player-scores",
+    "incomeAvailability": "later-rounds-only"
+  },
+  "outcomes": {
+    "priority": ["elimination", "victory-threshold", "round-cap"],
+    "singleElimination": "surviving-side-wins",
+    "mutualElimination": "draw",
+    "thresholdOrCapComparison": [
+      "victory-points",
+      "surviving-total-HP",
+      "draw"
+    ],
+    "continuingRound": "advance-by-one",
+    "terminalRound": "retain-final-round-and-reject-further-settlement",
+    "protocolDefault": "preserve-board-energy-VP-and-round-use-dedicated-reason"
+  },
+  "review": {
+    "approved": [
+      "scope",
+      "unit-values",
+      "healing",
+      "lock",
+      "Cover-and-shield",
+      "settlement",
+      "outcomes"
+    ],
+    "balancePending": [
+      "unit-HP-and-skill-values",
+      "map-and-squad-win-rates",
+      "match-duration",
+      "victory-threshold-and-round-cap"
+    ],
+    "laterFreeze": [
+      "exact-maps-and-spawns",
+      "squad-and-action-ABI",
+      "commitment-domains",
+      "state-and-event-schemas",
+      "protocol-deadlines",
+      "cross-ruleset-golden-vectors"
+    ]
+  }
+}

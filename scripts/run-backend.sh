@@ -110,7 +110,13 @@ esac
 
 cd "$project_root/server"
 if [[ "$mode" == "verify" || "$mode" == "simulate" ]]; then
+    if [[ "$mode" == "verify" ]]; then
+        node "$project_root/scripts/check-squad-rules.mjs"
+    fi
     go run -mod=mod ./cmd/arena-server "$mode" "$@"
+    if [[ "$mode" == "verify" ]]; then
+        printf 'PASS: offline verification completed: squad-rule consistency and existing Go/Solidity vectors.\n'
+    fi
     exit
 fi
 
