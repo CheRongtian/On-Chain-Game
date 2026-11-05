@@ -4,13 +4,21 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
-import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { createPublicClient, createWalletClient, http, parseEventLogs } from 'viem';
 import { anvil } from 'viem/chains';
-import { installedBrowser } from './browser.mjs';
+import {
+  browserTypes,
+  installedBrowser,
+  observeEventSource,
+  replayState,
+  waitForVerifiedReplay,
+} from './browser.mjs';
 
 const browserPort = Number(process.env.ARENA_BROWSER_PORT || 5174);
+const browserName = process.argv[2] || 'chromium';
+const browserType = browserTypes[browserName];
+assert.ok(browserType, `Unsupported recovery browser: ${browserName}`);
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const output = resolve(root, '.local/browser');
 const binary = resolve(root, '.local/bin/arena-server');
@@ -35,6 +43,7 @@ const chain = createPublicClient({
 const wallet = createWalletClient({ chain: anvil, transport: http(deployment.rpcUrl) });
 const report = {
   engine: deployment.engine ?? 'anvil',
+  browserName,
   status: 'running',
   checks: [],
   events: [],
@@ -76,7 +85,7 @@ async function waitFor(check, message, timeout = 30_000) {
 function passed(name, started) {
   const durationMilliseconds = Date.now() - started;
   report.checks.push({ name, durationMilliseconds });
-  console.log(`PASS: browser ${name} in ${durationMilliseconds}ms.`);
+  console.log(`PASS: ${browserName} recovery ${name} in ${durationMilliseconds}ms.`);
 }
 async function api(path) {
   const response = await fetch(`${backend}${path}`, { signal: AbortSignal.timeout(35_000) });
@@ -229,7 +238,7 @@ async function restoreChain() {
 }
 
 try {
-  const executablePath = await installedBrowser();
+  const executablePath = await installedBrowser(browserName);
   server = await createServer({
     root: resolve(root, 'client'),
     configFile: resolve(root, 'client/vite.config.js'),
@@ -270,11 +279,13 @@ try {
       `ws://127.0.0.1:${browserPort}`,
     );
   await server.listen();
-  browser = await chromium.launch({ headless: true, executablePath });
+  browser = await browserType.launch({ headless: true, executablePath });
+  report.browser = browser.version();
   context = await browser.newContext({
     viewport: { width: 1100, height: 760 },
     reducedMotion: 'no-preference',
   });
+  await observeEventSource(context, report);
   page = await context.newPage();
   page.setDefaultTimeout(30_000);
   page.on('pageerror', (error) => report.errors.push(error.message));
@@ -283,36 +294,32 @@ try {
     if (/\/api\/matches\/\d+\/replay/.test(request.url())) replayReads++;
     if (new URL(request.url()).pathname === '/api/events') streamRequests.push(request.url());
   });
-  const protocol = await context.newCDPSession(page);
-  await protocol.send('Network.enable');
-  const eventStreams = new Set();
-  protocol.on('Network.requestWillBeSent', (event) => {
-    if (new URL(event.request.url).pathname === '/api/events') eventStreams.add(event.requestId);
-  });
-  for (const name of ['Network.loadingFailed', 'Network.loadingFinished'])
-    protocol.on(name, (event) => {
-      if (eventStreams.delete(event.requestId))
+  for (const name of ['requestfailed', 'requestfinished'])
+    page.on(name, (request) => {
+      if (new URL(request.url()).pathname === '/api/events')
         report.connections.push({ kind: name, at: Date.now() });
     });
-  protocol.on('Network.eventSourceMessageReceived', (event) => {
-    if (!['change', 'reorg', 'reset'].includes(event.eventName)) return;
-    const notice = JSON.parse(event.data);
-    report.events.push({
-      kind: event.eventName,
-      id: event.eventId,
-      matches: notice.matches,
-      block: notice.block,
-    });
-  });
   accounts = await wallet.getAddresses();
   const initial = await ready();
   baseline = await databaseState();
   assert.ok(baseline.indexerLockPid > 0, 'Indexer must own its database lock before faults.');
   if (deployment.engine !== 'geth') original = await chain.request({ method: 'evm_snapshot' });
   const first = acceptance.matches[0];
+  const verifiedFirstReplay = async () => {
+    report.replayRecovery = { match: first.id };
+    await waitForVerifiedReplay(
+      page,
+      {
+        frame: 0,
+        hash: first.snapshots[0].stateHash,
+        last: first.snapshots.length - 1,
+      },
+      report.replayRecovery,
+    );
+  };
+  report.currentStep = 'initial verified history';
   await page.goto(`${base}/history/${first.id}`);
-  await badge('Verified');
-  await connected();
+  await verifiedFirstReplay();
 
   let started = Date.now();
   const loadsBeforeDatabase = documentLoads,
@@ -320,6 +327,7 @@ try {
   console.log(
     'Deliberately stopping the project PostgreSQL container to check the real outage and browser recovery.',
   );
+  report.currentStep = 'database outage and recovery';
   databaseStopped = true;
   await compose('stop', '--timeout', '10', 'db');
   await waitFor(async () => {
@@ -366,8 +374,7 @@ try {
         `Database restart changed existing ${table}.`,
       );
   }
-  await badge('Verified');
-  await connected();
+  await verifiedFirstReplay();
   assert.ok(
     replayReads > readsBeforeDatabase,
     'Verification must be fetched again after recovery.',
@@ -393,6 +400,7 @@ try {
 
   // Keep timed branch fixtures from triggering background work in other rooms.
   await holdKeeper();
+  report.currentStep = 'SSE interruption and HTTP fallback';
   started = Date.now();
   const pageNumber = ((room - 1n) / 10n + 1n).toString();
   await page.goto(`${base}/history?page=${pageNumber}`);
@@ -401,6 +409,10 @@ try {
     .locator('tbody tr')
     .filter({ has: page.getByRole('link', { name: `View match ${room}`, exact: true }) });
   await row.getByText('Open seat').waitFor();
+  await waitFor(
+    () => !!report.events.at(-1)?.id,
+    'The browser did not observe an event cursor before interruption.',
+  );
   const previousCursor = report.events.at(-1)?.id,
     previousRejections = rejectedStreams,
     previousRequests = streamRequests.length;
@@ -452,24 +464,25 @@ try {
   );
 
   started = Date.now();
+  report.currentStep = 'Go crash and recovery';
   await page.goto(`${base}/history/${first.id}`);
-  await badge('Verified');
-  await connected();
+  await verifiedFirstReplay();
   const oldGo = await ready(),
     loadsBeforeGo = documentLoads,
     readsBeforeGo = replayReads,
     endedBeforeGo = report.connections.length;
   console.log('Deliberately terminating Go while its history page stays open.');
   assert.ok(oldGo.processId > 1, 'Go must run as a child inside its container.');
-  await compose('exec', '-T', 'api', 'sh', '-c', 'kill -KILL "$1"', 'sh', String(oldGo.processId));
-  await waitFor(
-    () => report.connections.length > endedBeforeGo,
-    'The API proxy did not close the browser SSE connection after Go exited.',
-  );
-  await badge('Unavailable');
+  await Promise.all([
+    badge('Unavailable'),
+    waitFor(
+      () => report.connections.length > endedBeforeGo,
+      'The API proxy did not close the browser SSE connection after Go exited.',
+    ),
+    compose('exec', '-T', 'api', 'sh', '-c', 'kill -KILL "$1"', 'sh', String(oldGo.processId)),
+  ]);
   const newGo = await ready(oldGo.processId);
-  await badge('Verified');
-  await connected();
+  await verifiedFirstReplay();
   assert.equal(newGo.indexedHash, oldGo.indexedHash, 'Go restart must retain the chain.');
   assert.ok(replayReads > readsBeforeGo, 'Go recovery must trigger a new history read.');
   assert.equal(documentLoads, loadsBeforeGo, 'Go recovery must not reload the document.');
@@ -479,6 +492,7 @@ try {
   );
 
   if (deployment.engine !== 'geth') {
+    report.currentStep = 'canonical branch replacement';
     started = Date.now();
     const branch = await chain.request({ method: 'evm_snapshot' });
     const match = await createRoom(0);
@@ -584,15 +598,21 @@ try {
     );
   }
   assert.deepEqual(report.errors, [], 'Uncaught browser errors');
+  report.currentStep = 'completed';
   report.status = 'passed';
 } catch (error) {
   report.status = 'failed';
   report.error = error.stack || String(error);
+  report.page = page ? await replayState(page).catch(() => undefined) : undefined;
   process.exitCode = 1;
-  console.error(`Browser recovery acceptance failed: ${error.message}`);
+  console.error(`${browserName} recovery failed at ${report.currentStep}: ${error.message}`);
   if (!databaseStopped && !interrupted && page && !page.isClosed())
     await page
-      .screenshot({ path: resolve(output, 'recovery-failure.png'), fullPage: true, timeout: 5_000 })
+      .screenshot({
+        path: resolve(output, `recovery-failure-${report.engine}-${browserName}.png`),
+        fullPage: true,
+        timeout: 5_000,
+      })
       .catch(() => {});
 } finally {
   cleaning = true;
@@ -618,9 +638,15 @@ try {
   for (const response of streams) response.destroy();
   await server?.close();
   report.finishedAt = new Date().toISOString();
-  await writeFile(resolve(output, 'recovery.json'), `${JSON.stringify(report, null, 2)}\n`);
+  if (browserName === 'chromium')
+    await writeFile(resolve(output, 'recovery.json'), `${JSON.stringify(report, null, 2)}\n`);
   await writeFile(
-    resolve(output, `recovery-${report.engine}.json`),
+    resolve(
+      output,
+      browserName === 'chromium'
+        ? `recovery-${report.engine}.json`
+        : `recovery-${report.engine}-${browserName}.json`,
+    ),
     `${JSON.stringify(report, null, 2)}\n`,
   );
   if (report.status === 'passed')

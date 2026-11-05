@@ -10,6 +10,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
+import { acceptanceReports } from "./acceptance.mjs";
 import {
   checkpoint,
   archiveLegacyHistory,
@@ -335,45 +336,8 @@ else if (command === "check-sources") {
   );
 } else if (command === "start-legacy") await startLegacy();
 else if (command === "acceptance-summary") {
-  const reports = [
-    [
-      "Anvil operational controls and database restore",
-      ".local/operations/anvil.json",
-    ],
-    [
-      "Geth operational controls and database restore",
-      ".local/operations/geth.json",
-    ],
-    [
-      "Safety, rule comparisons and gas budgets",
-      ".local/safety/acceptance.json",
-    ],
-    [
-      "Anvil indexing, Keeper and controlled branch faults",
-      ".local/indexer/anvil-acceptance.json",
-    ],
-    ["Anvil two-player browser gameplay", ".local/browser/gameplay-anvil.json"],
-    [
-      "Anvil database, Go and SSE browser recovery",
-      ".local/browser/recovery-anvil.json",
-    ],
-    [
-      "Anvil deployment and secret recovery",
-      ".local/browser/persistence-anvil.json",
-    ],
-    [
-      "Geth full matches and independent replay",
-      ".local/indexer/acceptance.json",
-    ],
-    ["Geth two-player browser gameplay", ".local/browser/gameplay-geth.json"],
-    [
-      "Geth database, Go and SSE browser recovery",
-      ".local/browser/recovery-geth.json",
-    ],
-    ["Geth persistence and archives", ".local/browser/persistence-geth.json"],
-  ];
   const items = [];
-  for (const [name, file] of reports) {
+  for (const [name, file] of acceptanceReports) {
     const result = await readJson(resolve(projectRoot, file));
     if (result.status !== "passed")
       throw new Error(`Acceptance incomplete: ${name}.`);

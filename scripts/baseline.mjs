@@ -11,6 +11,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { readJson, saveJson } from "./deployment.mjs";
+import { distribution, prepareRelease, retainRelease } from "./release.mjs";
 
 const workspace = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const isolated = process.env.ARENA_TEST_PROJECT_ROOT === workspace;
@@ -141,23 +142,6 @@ function protocol(manifest) {
   };
 }
 
-function distribution(values) {
-  if (!values.length) return null;
-  if (values.some((value) => !Number.isFinite(value) || value < 0))
-    throw new Error("A timing sample is missing or invalid.");
-  const sorted = values.toSorted((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return {
-    samples: sorted.length,
-    minimumMilliseconds: sorted[0],
-    medianMilliseconds:
-      sorted.length % 2
-        ? sorted[middle]
-        : (sorted[middle - 1] + sorted[middle]) / 2,
-    maximumMilliseconds: sorted.at(-1),
-  };
-}
-
 async function check() {
   const summary = await accepted(workspace, "pending-cleanup");
   const reference = await exists(resolve(frozen, "baseline.json"));
@@ -232,6 +216,7 @@ async function check() {
       throw new Error(`${engine} has no measured confirmations.`);
     measurements.environments[engine] = {
       browser: gameplay.browser,
+      measurementScope: gameplay.measurementScope,
       confirmation: distribution(confirmation),
       unobservedReceiptTimings: gameplay.receipts.length - confirmation.length,
       indexing: distribution(
@@ -258,6 +243,7 @@ async function check() {
     ...summary,
     baseline: { status: "passed", report: ".local/regression/acceptance.json" },
   });
+  await prepareRelease(workspace, frozen);
   console.log(
     "PASS: baseline ABI, rules, vectors, compiler input, schema and all regression evidence agree.",
   );
@@ -306,6 +292,7 @@ if (command === "preserve") {
       await saveJson(resolve(frozen, "measurements.json"), report.measurements);
     }
     await saveJson(resolve(workspace, ".local/acceptance.json"), summary);
+    await retainRelease(workspace, root);
     console.log(
       "PASS: successful baseline and original evidence retained outside the disposable test workspace.",
     );

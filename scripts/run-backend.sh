@@ -12,8 +12,8 @@ if (( $# > 0 )); then
     shift
 fi
 case "$mode" in
-    start|demo|test|reset|verify|simulate|restart|rescan|reindex|status|backup|restore) ;;
-    *) printf 'Unknown backend mode: %s. Use start, demo, test, reset, verify, simulate, restart, rescan, reindex, status, backup, or restore.\n' "$mode" >&2; exit 1 ;;
+    start|demo|test|reset|verify|simulate|restart|rescan|reindex|status|backup|restore|release) ;;
+    *) printf 'Unknown backend mode: %s. Use start, demo, test, reset, verify, simulate, restart, rescan, reindex, status, backup, restore, or release.\n' "$mode" >&2; exit 1 ;;
 esac
 if [[ "$mode" == "restore" && $# != 1 ]]; then
     printf 'Use ./scripts/run-backend.sh restore /absolute/path/to/backup-directory\n' >&2
@@ -28,6 +28,7 @@ if [[ ( "$mode" == "test" || "$mode" == "reset" ) && "${ARENA_TEST_PROJECT_ROOT:
     node "$project_root/scripts/baseline.mjs" preserve
 fi
 if [[ "$mode" == "test" && "${ARENA_TEST_PROJECT_ROOT:-}" != "$project_root" ]]; then
+    node "$project_root/scripts/release.mjs" begin
     node "$project_root/scripts/test-workspace.mjs"
     export ARENA_TEST_PROJECT_ROOT="$project_root/.local/test"
     exec "$ARENA_TEST_PROJECT_ROOT/scripts/run-backend.sh" test
@@ -53,6 +54,7 @@ run_operational_checks() {
 }
 
 run_backend_tests() {
+    local browser
     printf 'Checking archived Solidity sources with the local compiler...\n'
     run_backend_check node "$project_root/scripts/client-contract.mjs" check-sources
     source "$project_root/scripts/check-safety.sh"
@@ -74,8 +76,14 @@ run_backend_tests() {
     run_operational_checks
     printf 'Repeating the complete browser gameplay acceptance on Geth...\n'
     run_backend_check node "$project_root/client/scripts/check-gameplay.mjs"
-    printf 'Repeating database, Go and SSE browser recovery on Geth...\n'
-    run_backend_check node "$project_root/client/scripts/check-updates.mjs"
+    for browser in firefox webkit; do
+        printf 'Checking the same two-player gameplay, secret recovery and replay on %s...\n' "$browser"
+        run_backend_check node "$project_root/client/scripts/check-gameplay.mjs" "$browser"
+    done
+    for browser in chromium firefox webkit; do
+        printf 'Checking database, Go and SSE recovery on Geth with %s...\n' "$browser"
+        run_backend_check node "$project_root/client/scripts/check-updates.mjs" "$browser"
+    done
     printf 'Checking Geth crash recovery, archives, frozen sources, and historical accounts...\n'
     run_backend_check node "$project_root/client/scripts/check-persistence.mjs"
     run_backend_check node "$project_root/scripts/client-contract.mjs" acceptance-summary
@@ -87,6 +95,7 @@ run_backend_tests() {
 }
 
 case "$mode" in
+    release) node "$project_root/scripts/release.mjs"; exit ;;
     restart|rescan|reindex) request_indexer_operation "$mode"; exit ;;
     status)
         if [[ ! -x "$indexer_binary" ]]; then

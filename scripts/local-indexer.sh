@@ -165,10 +165,11 @@ stop_backend() {
             node "$project_root/scripts/baseline.mjs" retain || backend_status=1
         fi
         if [[ "$backend_status" == 0 && -f "$project_root/.local/acceptance.json" ]]; then
-            printf 'PASS: complete acceptance through the agreed delivery scope, including operational recovery, all four Geth archive requirements and service cleanup.\n'
+            printf 'PASS: complete automated acceptance, browser-engine coverage, operational recovery, all four Geth archive requirements and service cleanup. The local release still requires the recorded manual walkthrough.\n'
         else
             backend_status=1
             printf '{"status":"failed","exitCode":%d}\n' "$backend_status" > "$project_root/.local/acceptance.json"
+            node "$project_root/scripts/release.mjs" record-outcome || backend_status=1
             printf 'FAIL: complete acceptance did not finish. Earlier stage PASS messages do not establish overall completion.\n' >&2
         fi
     fi

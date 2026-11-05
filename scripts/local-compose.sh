@@ -42,7 +42,7 @@ configure_image_platform() {
 reset_local_demo() {
     local answer managed_pid deadline
     printf "Reset will remove this project's Geth archive database, archived blocks/account states, old Anvil checkpoints, deployment sources/baselines, Compose database volume, contract build output, published deployments, and generated acceptance/demo/recovery/safety reports. Browser order secrets for the old deployment cannot be reused after reset.\n"
-    printf 'The local environment, downloaded tools, macOS PostgreSQL installation, database backup bundles, and frozen regression baseline are retained.\n'
+    printf 'The local environment, downloaded tools, macOS PostgreSQL installation, database backup bundles, frozen regression baseline, and retained release evidence are preserved.\n'
     read -r -p 'Type reset to continue: ' answer
     if [[ "$answer" != "reset" ]]; then
         printf 'Reset cancelled.\n'

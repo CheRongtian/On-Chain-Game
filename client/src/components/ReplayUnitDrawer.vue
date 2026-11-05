@@ -130,8 +130,8 @@ h2 {
   margin: 3px 0 0;
 }
 .dismiss {
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   flex-shrink: 0;
   display: grid;
   place-content: center;
@@ -165,5 +165,20 @@ p {
 }
 .read-only {
   margin-top: 16px;
+}
+@media (max-width: 600px) {
+  .unit-panel {
+    padding: 8px;
+  }
+  header {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .dismiss {
+    align-self: flex-end;
+  }
+  dl {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

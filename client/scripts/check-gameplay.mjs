@@ -4,7 +4,6 @@ import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { chromium } from 'playwright';
 import { preview } from 'vite';
 import {
   createPublicClient,
@@ -18,15 +17,22 @@ import {
 } from 'viem';
 import { anvil } from 'viem/chains';
 import {
+  browserTypes,
   installedBrowser,
+  replayState,
   requirePreviewDeployment,
   transactionState,
   waitForReceiptRecovery,
+  waitForVerifiedReplay,
 } from './browser.mjs';
 
 const browserPort = Number(process.env.ARENA_BROWSER_PORT || 5174);
+const browserName = process.argv[2] || 'chromium';
+const browserType = browserTypes[browserName];
+assert.ok(browserType, `Unsupported gameplay browser: ${browserName}`);
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const output = resolve(root, '.local/browser');
+const screenshots = resolve(output, browserName);
 const base = `http://127.0.0.1:${browserPort}`;
 const backend = `http://${process.env.HTTP_ADDRESS || '127.0.0.1:18081'}`;
 const binary = resolve(root, '.local/bin/arena-server');
@@ -56,10 +62,23 @@ const selectors = Object.fromEntries(
 const report = {
   engine: deployment.engine ?? 'anvil',
   status: 'running',
+  browserName,
   checks: [],
   viewports: [],
   receipts: [],
-  timings: { indexing: [], verification: [], matches: [] },
+  timings: { indexing: [], verification: [], matches: [], rounds: [], interactions: [] },
+  measurementScope: {
+    confirmation:
+      'signed broadcast to the successful receipt response, grouped by scripted conditions',
+    indexing: 'captured chain head through readiness at that same canonical block',
+    verification: 'one replay HTTP request and JSON decode after index catch-up',
+    match:
+      'room creation through final settlement; scripted planning, setup and deliberate faults included',
+    play: 'confirmed host start and board readiness through final settlement',
+    round: 'planning through the observed settled state; no post-game replay inspection',
+    inspection: 'post-settlement verification and replay controls, measured separately',
+  },
+  replayChecks: { attempted: 0, verified: 0 },
   errors: [],
   screenshots: [],
   startedAt: new Date().toISOString(),
@@ -89,7 +108,21 @@ async function waitFor(check, message, timeout = 35_000) {
 }
 function passed(name) {
   report.checks.push(name);
-  console.log(`PASS: browser ${name}.`);
+  console.log(`PASS: ${browserName} gameplay ${name}.`);
+}
+function requireNoGameplayFaults() {
+  assert.equal(apiOffline, false, 'Normal gameplay requires the history API to be available.');
+  for (const player of players) {
+    assert.ok(
+      !player.offline &&
+        !player.wrongChain &&
+        !player.receiptBlocked &&
+        !player.blockReveal &&
+        !player.snapshotGate &&
+        player.failSends === 0,
+      'A fault from the preceding scenario is still active.',
+    );
+  }
 }
 async function api(path) {
   const response = await fetch(`${backend}${path}`, { signal: AbortSignal.timeout(35_000) });
@@ -126,8 +159,25 @@ async function createPlayer(index, account) {
   const context = await browser.newContext({
     viewport: { width: 1100, height: 760 },
     acceptDownloads: true,
-    permissions: ['clipboard-read', 'clipboard-write'],
+    permissions: browserName === 'chromium' ? ['clipboard-read', 'clipboard-write'] : [],
     reducedMotion: 'no-preference',
+  });
+  // Observe successful real writes without requiring browser-specific clipboard-read permissions.
+  await context.addInitScript(() => {
+    const write = navigator.clipboard.writeText.bind(navigator.clipboard);
+    navigator.clipboard.writeText = async (text) => {
+      window.arenaInvitationCopy = { status: 'pending' };
+      try {
+        await write(text);
+        window.arenaInvitationCopy = { status: 'copied', text };
+      } catch (error) {
+        window.arenaInvitationCopy = {
+          status: 'failed',
+          error: `${error.name}: ${error.message}`,
+        };
+        throw error;
+      }
+    };
   });
   context.on('request', (request) => {
     const url = new URL(request.url());
@@ -180,6 +230,7 @@ async function createPlayer(index, account) {
         selector: data.slice(0, 10),
         from: await recoverTransactionAddress({ serializedTransaction }),
         chainId: transaction.chainId,
+        conditions: report.scenario?.conditions,
         startedAt: performance.now(),
       });
     const failed =
@@ -286,8 +337,19 @@ async function createMatch({ uncertain = false } = {}) {
     'Host start stays visible before the opponent joins.',
   );
   await host.page.bringToFront();
+  await host.page.evaluate(() => {
+    window.arenaInvitationCopy = undefined;
+  });
   await host.page.getByRole('button', { name: 'Copy invitation', exact: true }).click();
-  const invitation = await host.page.evaluate(() => navigator.clipboard.readText());
+  let invitation;
+  await waitFor(async () => {
+    const copy = await host.page.evaluate(() => window.arenaInvitationCopy);
+    if (copy?.status === 'failed')
+      throw new Error(`Copy invitation failed (${browserName}): ${copy.error}`);
+    if (copy?.status !== 'copied') return false;
+    invitation = copy.text;
+    return true;
+  }, 'The browser did not complete this invitation clipboard write.');
   assert.equal(invitation, `${base}/rooms/${id}`);
   await guest.page.bringToFront();
   await guest.page.getByLabel('Room ID or invitation link', { exact: true }).fill(invitation);
@@ -384,6 +446,35 @@ async function backup(player, file, password, error) {
       .waitFor();
   await dialog.getByRole('button', { name: 'Close backup', exact: true }).click();
 }
+async function closeUnitDrawer(page, cell, inspection) {
+  inspection.stage = 'closing';
+  await page.getByRole('button', { name: 'Close unit details', exact: true }).focus();
+  await page.evaluate(() => {
+    window.arenaUnitDrawerClosed = false;
+    document.querySelector('dialog[open]').addEventListener(
+      'close',
+      () => {
+        // Read focus after the close handlers and Vue's next-tick restoration have run.
+        requestAnimationFrame(() => {
+          window.arenaUnitDrawerClosed = true;
+        });
+      },
+      { once: true },
+    );
+  });
+  await page.keyboard.press('Escape');
+  await waitFor(async () => {
+    const closed = await page.evaluate(() => ({
+      restored: window.arenaUnitDrawerClosed,
+      open: !!document.querySelector('dialog[open]'),
+      focusedCell: document.activeElement?.getAttribute('data-cell'),
+    }));
+    inspection.focusedCell = closed.focusedCell;
+    inspection.closeEventObserved = closed.restored;
+    return closed.restored && !closed.open && closed.focusedCell === String(cell);
+  }, `Unit drawer did not close and restore focus to board cell ${cell}.`);
+  inspection.stage = 'closed';
+}
 async function checkViewports() {
   const [host, guest] = players;
   for (const viewport of [
@@ -392,11 +483,77 @@ async function checkViewports() {
     { width: 390, height: 844 },
   ]) {
     for (const player of players) {
+      await player.page.bringToFront();
       await player.page.setViewportSize(viewport);
+      const cell = await player.page
+        .locator(
+          `.keyboard-grid button[aria-label*="Player ${player.index === 0 ? 'A' : 'B'} Scout,"]`,
+        )
+        .getAttribute('data-cell');
+      assert.notEqual(cell, null, 'The Scout must have an accessible board tile.');
+      const focus = {
+        viewport,
+        player: player.index,
+        expectedCell: cell,
+        stage: 'opening',
+        navigation: [],
+      };
+      report.drawerFocus = focus;
+      const started = performance.now();
       await player.page
         .locator('.squad')
         .getByRole('button', { name: /^Scout,/ })
         .click();
+      const drawer = player.page.getByRole('dialog', { name: 'Scout', exact: true });
+      await drawer.waitFor();
+      report.timings.interactions.push({
+        operation: 'open-unit-drawer',
+        viewport,
+        player: player.index,
+        durationMilliseconds: Math.round(performance.now() - started),
+      });
+      const focusState = () =>
+        drawer.evaluate((element) => {
+          const active = document.activeElement;
+          return {
+            open: element.open,
+            inside: element.contains(active),
+            neutral: active === document.body || active === document.documentElement,
+            documentFocused: document.hasFocus(),
+            tag: active?.tagName ?? null,
+            id: active?.id ?? null,
+            label: active?.getAttribute('aria-label') ?? null,
+            cell: active?.getAttribute('data-cell') ?? null,
+          };
+        });
+      await waitFor(async () => {
+        focus.initial = await focusState();
+        return focus.initial.open && focus.initial.inside;
+      }, 'Opening the unit drawer did not focus a control inside it.');
+      focus.stage = 'navigation';
+      for (const key of ['Tab', 'Shift+Tab']) {
+        await player.page.keyboard.press(key);
+        const actual = await focusState();
+        focus.navigation.push({ key, ...actual });
+        // Native dialogs may send focus to browser controls, but never to background page controls.
+        assert.ok(actual.open && (actual.inside || actual.neutral), JSON.stringify(focus));
+      }
+      focus.stage = 'background';
+      focus.background = await player.page
+        .locator('.squad button')
+        .first()
+        .evaluate((element) => {
+          element.focus({ preventScroll: true });
+          return { enabled: !element.disabled, blocked: document.activeElement !== element };
+        });
+      focus.afterBackgroundAttempt = await focusState();
+      assert.ok(
+        focus.background.enabled &&
+          focus.background.blocked &&
+          focus.afterBackgroundAttempt.open &&
+          (focus.afterBackgroundAttempt.inside || focus.afterBackgroundAttempt.neutral),
+        JSON.stringify(focus),
+      );
       const layout = await player.page.locator('.drawer-panel').evaluate((panel) => {
         const rect = panel.getBoundingClientRect();
         const close = panel.querySelector('.dismiss').getBoundingClientRect();
@@ -439,21 +596,23 @@ async function checkViewports() {
         'Controls must leave usable space for the complete board.',
       );
       const screenshot = `battle-drawer-${report.engine}-${player.index}-${viewport.width}.png`;
-      await player.page.screenshot({ path: resolve(output, screenshot) });
-      report.screenshots.push(screenshot);
-      await player.page.keyboard.press('Escape');
-      assert.equal(
-        await player.page.getByRole('dialog').count(),
-        0,
-        'Escape must close the unit drawer.',
-      );
+      await player.page.screenshot({ path: resolve(screenshots, screenshot) });
+      report.screenshots.push(`${browserName}/${screenshot}`);
+      await closeUnitDrawer(player.page, cell, focus);
     }
     report.viewports.push({ ...viewport, browser: report.browser });
   }
   for (const player of [host, guest])
     await player.page.setViewportSize({ width: 1100, height: 760 });
+  const tile = host.page.locator('[data-cell="0"]');
+  await host.page.bringToFront();
+  await tile.focus();
+  await tile.press('ArrowRight');
+  assert.equal(await host.page.evaluate(() => document.activeElement.dataset.cell), '1');
+  await host.page.keyboard.press('Home');
+  assert.equal(await host.page.evaluate(() => document.activeElement.dataset.cell), '0');
   passed(
-    'desktop, editor-sized and phone-sized viewports keep the board, birth-side drawer, close control and keyboard dismissal usable',
+    'desktop, editor-sized and phone-sized viewports preserve board space, birth-side drawers, native modal focus, background isolation and keyboard dismissal',
   );
 }
 async function recovery(id) {
@@ -558,7 +717,7 @@ async function recovery(id) {
   passed('ordinary RPC refresh preserves the open backup dialog and its password input');
   const download = host.page.waitForEvent('download');
   await dialog.getByRole('button', { name: 'Export encrypted backup', exact: true }).click();
-  const path = resolve(output, 'gameplay-backup.json');
+  const path = resolve(screenshots, `gameplay-backup-${report.engine}.json`);
   await (await download).saveAs(path);
   const encrypted = JSON.parse(await readFile(path, 'utf8'));
   assert.equal(encrypted.cipher, 'AES-GCM');
@@ -610,8 +769,8 @@ async function recovery(id) {
   await host.page.reload();
   await host.page.getByRole('alert').filter({ hasText: 'Original orders are missing' }).waitFor();
   const missingScreenshot = `missing-orders-${report.engine}.png`;
-  await host.page.screenshot({ path: resolve(output, missingScreenshot) });
-  report.screenshots.push(missingScreenshot);
+  await host.page.screenshot({ path: resolve(screenshots, missingScreenshot) });
+  report.screenshots.push(`${browserName}/${missingScreenshot}`);
   await backup(host, path, 'incorrect password', /Cannot unlock/);
   await backup(host, path, password);
   await host.page.getByText('Orders confirmed', { exact: true }).waitFor();
@@ -649,7 +808,9 @@ async function protection(id) {
       .waitFor();
     assert.equal(host.writes.length, before, 'Storage failure must prevent all signed broadcasts.');
     assert.equal((await read('getRoundStatus', [id])).committed[0], false);
-    await host.page.screenshot({ path: resolve(output, `storage-recovery-${report.engine}.png`) });
+    await host.page.screenshot({
+      path: resolve(screenshots, `storage-recovery-${report.engine}.png`),
+    });
   } finally {
     await host.page.evaluate(() => {
       window.restoreOrderStorage();
@@ -676,7 +837,7 @@ async function protection(id) {
       true,
     );
     assert.equal(host.writes.length, before, 'Wrong-chain reads must never trigger a broadcast.');
-    await host.page.screenshot({ path: resolve(output, `wrong-chain-${report.engine}.png`) });
+    await host.page.screenshot({ path: resolve(screenshots, `wrong-chain-${report.engine}.png`) });
   } finally {
     host.wrongChain = false;
   }
@@ -705,6 +866,7 @@ async function roundDone(id, round, expected) {
 async function verifyMatch(id, outcome, reason) {
   await ready();
   const started = performance.now();
+  report.replayChecks.attempted++;
   const replay = await api(`/matches/${id}/replay?limit=100`);
   assert.equal(replay.match.outcome, outcome);
   assert.equal(replay.match.reason, reason);
@@ -713,6 +875,7 @@ async function verifyMatch(id, outcome, reason) {
     'Verified',
     'Actual UI transactions must independently replay to the chain state.',
   );
+  report.replayChecks.verified++;
   report.timings.verification.push({
     match: id.toString(),
     durationMilliseconds: Math.round(performance.now() - started),
@@ -747,7 +910,10 @@ async function verifyMatch(id, outcome, reason) {
       block: receipt.blockNumber.toString(),
       from: transaction.from,
       broadcastMethod: 'eth_sendRawTransaction',
+      operation: Object.keys(selectors).find((name) => selectors[name] === signed.selector),
+      gasUsed: Number(receipt.gasUsed),
       confirmationMilliseconds: signed.confirmationMilliseconds ?? null,
+      conditions: signed.conditions,
     });
   }
   const commits = parseEventLogs({ abi, logs, eventName: 'ActionCommitted' }).filter(
@@ -763,15 +929,28 @@ async function verifyMatch(id, outcome, reason) {
   );
   return replay;
 }
-async function play(reference, saved) {
+async function play(reference) {
+  const faulted = reference.name === 'points';
+  report.scenario = {
+    name: reference.name,
+    conditions: faulted ? 'controlled-faults' : 'normal',
+    step: 'create-and-start',
+  };
+  if (!faulted) requireNoGameplayFaults();
   const started = performance.now();
-  const id = await createMatch({ uncertain: reference.name === 'points' });
-  if (reference.name === 'points') {
+  const id = await createMatch({ uncertain: faulted });
+  const playStarted = performance.now();
+  let saved;
+  if (faulted) {
+    report.scenario.step = 'layout-and-order-recovery';
     await checkViewports();
     await protection(id);
     saved = await recovery(id);
-  } else await backup(players[0], saved.path, saved.password, /do not match/);
+  }
   for (const round of reference.rounds) {
+    const roundStarted = round.round === 1 ? playStarted : performance.now();
+    report.scenario.step = 'round';
+    report.scenario.round = round.round;
     if (reference.name !== 'points' || round.round !== 1) {
       for (const player of players) await plan(player, round.orders[player.index]);
       if (reference.name === 'points' && round.round === 2) {
@@ -836,13 +1015,33 @@ async function play(reference, saved) {
     )?.state;
     assert.ok(expected, 'The existing acceptance must provide a real expected round snapshot.');
     await roundDone(id, round.round, expected);
+    report.timings.rounds.push({
+      scenario: reference.name,
+      round: round.round,
+      conditions: report.scenario.conditions,
+      durationMilliseconds: Math.round(performance.now() - roundStarted),
+    });
   }
+  const playFinished = performance.now();
   apiOffline = false;
-  await verifyMatch(id, reference.state.outcome, reference.state.reason);
+  requireNoGameplayFaults();
+  report.scenario.step = 'history-recovery';
+  const replay = await verifyMatch(id, reference.state.outcome, reference.state.reason);
   for (const player of players) {
     await player.page.getByRole('link', { name: 'View replay', exact: true }).click();
-    await player.page.locator('[data-verification="Verified"]').waitFor();
+    report.replayRecovery = { player: player.index, match: id.toString() };
+    await waitForVerifiedReplay(
+      player.page,
+      {
+        frame: 0,
+        hash: replay.items[0].computedHash,
+        last: replay.items.length - 1,
+      },
+      report.replayRecovery,
+    );
   }
+  report.scenario.step = 'replay-controls';
+  await checkReplay(players[0].page, replay);
   passed(
     `two independent local accounts complete ${reference.name} through real UI controls, receipts, round states and verified history`,
   );
@@ -850,12 +1049,115 @@ async function play(reference, saved) {
     scenario: reference.name,
     match: id.toString(),
     rounds: reference.rounds.length,
-    durationMilliseconds: Math.round(performance.now() - started),
+    durationMilliseconds: Math.round(playFinished - started),
+    playMilliseconds: Math.round(playFinished - playStarted),
+    inspectionMilliseconds: Math.round(performance.now() - playFinished),
+    conditions: report.scenario.conditions,
   });
   return saved;
 }
-async function timeout(phase, bothMissing = false) {
+async function checkReplay(page, replay) {
+  requireNoGameplayFaults();
+  report.replayEntry = {};
+  await waitForVerifiedReplay(
+    page,
+    {
+      frame: 0,
+      hash: replay.items[0].computedHash,
+      last: replay.items.length - 1,
+    },
+    report.replayEntry,
+  );
+  const jump = page.getByRole('combobox', { name: 'Jump to round', exact: true });
+  await page.locator('.renderer[data-ready="true"]').waitFor();
+  for (const viewport of [
+    { width: 1100, height: 760 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await jump.selectOption('0');
+    for (const unitId of [0, 3]) {
+      const cell = replay.items[0].state.units[unitId].cell;
+      const coordinate = `${String.fromCharCode(65 + (cell % 8))}${Math.floor(cell / 8) + 1}`;
+      const inspection = {
+        viewport,
+        unitId,
+        cell,
+        expectedOwner: `Player ${unitId < 3 ? 'A' : 'B'} · ${coordinate}`,
+        expectedSide: unitId < 3 ? 'left' : 'right',
+        stage: 'opening',
+      };
+      report.replayInspection = inspection;
+      await page.locator(`[data-cell="${cell}"]`).focus();
+      await page.keyboard.press('Enter');
+      await waitFor(async () => {
+        inspection.actual = await page.evaluate(() => {
+          const element = document.querySelector('dialog[open] .unit-panel');
+          if (!element) return null;
+          const rect = element.getBoundingClientRect();
+          const close = element.querySelector('.dismiss').getBoundingClientRect();
+          return {
+            owner: element.querySelector('.owner').textContent.replace(/\s+/g, ' ').trim(),
+            left: rect.left,
+            right: rect.right,
+            bottom: rect.bottom,
+            width: rect.width,
+            scroll: element.scrollWidth,
+            client: element.clientWidth,
+            closeLeft: close.left,
+            closeRight: close.right,
+            closeHeight: close.height,
+          };
+        });
+        return inspection.actual?.owner === inspection.expectedOwner;
+      }, `Replay drawer did not show ${inspection.expectedOwner}.`);
+      inspection.stage = 'layout';
+      const bounds = inspection.actual;
+      const diagnostic = JSON.stringify(inspection);
+      assert.ok(unitId < 3 ? bounds.left < 16 : bounds.right > viewport.width - 16, diagnostic);
+      assert.ok(bounds.width < viewport.width / 4, diagnostic);
+      assert.ok(bounds.right <= viewport.width && bounds.bottom <= viewport.height, diagnostic);
+      assert.ok(bounds.scroll <= bounds.client + 1, diagnostic);
+      assert.ok(bounds.closeLeft >= bounds.left && bounds.closeRight <= bounds.right, diagnostic);
+      assert.ok(bounds.closeHeight >= 44, diagnostic);
+      await closeUnitDrawer(page, cell, inspection);
+    }
+  }
+  await page.setViewportSize({ width: 1100, height: 760 });
+  await page.getByRole('combobox', { name: 'Playback speed', exact: true }).selectOption('2');
+  await page.getByRole('button', { name: 'Play replay', exact: true }).click();
+  await waitFor(
+    async () => Number(await page.locator('.replay-screen').getAttribute('data-frame-index')) > 0,
+    'Replay playback did not advance.',
+  );
+  await page.getByRole('button', { name: 'Pause replay', exact: true }).click();
+  const terminal = {
+    phase: 'seek',
+  };
+  report.replayTerminal = terminal;
+  const end = {
+    frame: replay.items.length - 1,
+    last: replay.items.length - 1,
+    hash: replay.match.stateHash,
+  };
+  await jump.selectOption(String(end.frame));
+  await waitForVerifiedReplay(page, end, terminal);
+  terminal.phase = 'refresh';
+  await page.getByRole('button', { name: 'Refresh replay', exact: true }).click();
+  await waitForVerifiedReplay(page, end, terminal);
+  passed(
+    'replay keyboard inspection, narrow drawer, playback, speed, terminal timeline and refresh',
+  );
+}
+async function timeout(phase, bothMissing = false, saved) {
+  report.scenario = {
+    name: `${phase === 2 ? 'Commit' : 'Reveal'} timeout ${bothMissing ? 'draw' : 'win'}`,
+    conditions: 'controlled-faults',
+    step: 'create-and-start',
+  };
   const id = await createMatch();
+  if (saved) await backup(players[0], saved.path, saved.password, /do not match/);
+  report.scenario.step = 'withholding-and-expiry';
   players[0].blockReveal = phase === 3 && bothMissing;
   players[1].blockReveal = phase === 3;
   if (phase === 3 || !bothMissing) {
@@ -922,7 +1224,7 @@ async function timeout(phase, bothMissing = false) {
     );
     assert.equal(host.writes.length, writesBeforeExpiry);
     await host.page.screenshot({
-      path: resolve(output, `expired-confirmation-${report.engine}.png`),
+      path: resolve(screenshots, `expired-confirmation-${report.engine}.png`),
     });
     await expiredReminder
       .locator('.confirmation-actions')
@@ -983,6 +1285,11 @@ async function timeout(phase, bothMissing = false) {
 
 async function battleReorganization() {
   if (deployment.engine === 'geth') return;
+  report.scenario = {
+    name: 'battle reorganization',
+    conditions: 'controlled-faults',
+    step: 'branch replacement',
+  };
   apiOffline = true;
   for (const response of streams) response.destroy();
   try {
@@ -1020,7 +1327,7 @@ async function battleReorganization() {
       'A displaced Commit must keep the original orders and Salt.',
     );
     assert.equal((await read('getRoundStatus', [id])).committed[0], false);
-    await host.page.screenshot({ path: resolve(output, 'battle-reorganization.png') });
+    await host.page.screenshot({ path: resolve(screenshots, 'battle-reorganization.png') });
     await host.page.getByRole('button', { name: 'Retry confirmation', exact: true }).click();
     await committed(id, 0);
     await confirm(players[1]);
@@ -1034,6 +1341,7 @@ async function battleReorganization() {
 }
 
 await mkdir(output, { recursive: true });
+await mkdir(screenshots, { recursive: true });
 for (const signal of ['SIGINT', 'SIGTERM'])
   process.on(signal, () => {
     interrupted = true;
@@ -1041,7 +1349,7 @@ for (const signal of ['SIGINT', 'SIGTERM'])
   });
 try {
   await requirePreviewDeployment(root, deployment);
-  const executablePath = await installedBrowser();
+  const executablePath = await installedBrowser(browserName);
   const assets = resolve(root, 'client/dist/assets');
   report.chunks = await Promise.all(
     (await readdir(assets))
@@ -1100,7 +1408,7 @@ try {
       },
     ],
   });
-  browser = await chromium.launch({ headless: true, executablePath });
+  browser = await browserType.launch({ headless: true, executablePath });
   report.browser = browser.version();
   const accounts = await chain.request({ method: 'eth_accounts' });
   await createPlayer(0, getAddress(accounts[0]));
@@ -1114,8 +1422,8 @@ try {
   passed(
     'API and SSE outage permits RPC room creation, invitation join, manual host start and a complete points game; history recovers afterward',
   );
-  await play(elimination, saved);
-  await timeout(2);
+  await play(elimination);
+  await timeout(2, false, saved);
   await timeout(3);
   await timeout(2, true);
   await timeout(3, true);
@@ -1124,6 +1432,7 @@ try {
     'all gameplay receipts match locally signed raw transactions from the selected wallets on chain 31337; node-managed browser signing is rejected',
   );
   assert.deepEqual(report.errors, [], 'Uncaught browser errors');
+  report.scenario.step = 'completed';
   report.status = 'passed';
 } catch (error) {
   report.status = 'failed';
@@ -1131,13 +1440,18 @@ try {
   report.transactions = await Promise.all(
     players.map((player) => transactionState(player.page).catch(() => undefined)),
   );
+  report.pages = await Promise.all(
+    players.map((player) => replayState(player.page).catch(() => undefined)),
+  );
   process.exitCode = 1;
-  console.error(`Browser gameplay acceptance failed: ${error.message}`);
+  console.error(
+    `${browserName} gameplay failed in ${report.scenario?.name} at ${report.scenario?.step}: ${error.message}`,
+  );
   for (const player of players)
     if (!player.page.isClosed())
       await player.page
         .screenshot({
-          path: resolve(output, `gameplay-failure-${player.index}.png`),
+          path: resolve(screenshots, `gameplay-failure-${report.engine}-${player.index}.png`),
           fullPage: true,
           timeout: 5_000,
         })
@@ -1174,9 +1488,15 @@ try {
   for (const response of streams) response.destroy();
   await server?.close();
   report.finishedAt = new Date().toISOString();
-  await writeFile(resolve(output, 'gameplay.json'), `${JSON.stringify(report, null, 2)}\n`);
+  if (browserName === 'chromium')
+    await writeFile(resolve(output, 'gameplay.json'), `${JSON.stringify(report, null, 2)}\n`);
   await writeFile(
-    resolve(output, `gameplay-${report.engine}.json`),
+    resolve(
+      output,
+      browserName === 'chromium'
+        ? `gameplay-${report.engine}.json`
+        : `gameplay-${report.engine}-${browserName}.json`,
+    ),
     `${JSON.stringify(report, null, 2)}\n`,
   );
   if (report.status === 'passed')
