@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { readJson } from "./deployment.mjs";
+import { readJson, saveJson } from "./deployment.mjs";
 
 let rules, cases;
+const report = {
+  status: "running",
+  scope:
+    "design data and arithmetic; new Solidity/Go gameplay is not exercised",
+  groups: [],
+  startedAt: new Date().toISOString(),
+};
 const config = new URL("../config/", import.meta.url);
 const groups = [
   "validation",
@@ -650,6 +657,7 @@ try {
     console.log(
       `PASS: squad-rule consistency ${group}: ${cases[group].length} cases.`,
     );
+    report.groups.push({ name: group, cases: cases[group].length });
   }
   // An incorrect expectation must fail instead of being copied into a passing report.
   const incorrect = structuredClone(cases.healing[0]);
@@ -659,6 +667,9 @@ try {
     assert.AssertionError,
     "The checker must reject an incorrect healing expectation.",
   );
+  report.status = "passed";
+  report.cases = names.size;
+  report.incorrectExpectationRejected = true;
   console.log(
     `PASS: squad-rule consistency: approved parameters and ${names.size} stage-local cases matched; incorrect-expectation self-check passed.`,
   );
@@ -666,10 +677,18 @@ try {
     "Scope: design data and arithmetic only. New Solidity/Go gameplay is not exercised by this check.",
   );
 } catch (error) {
+  report.status = "failed";
+  report.error = error.message;
   console.error(`FAIL: squad-rule consistency: ${error.message}`);
   if (error.code === "ERR_ASSERTION") {
     console.error(`Expected: ${JSON.stringify(error.expected)}`);
     console.error(`Actual: ${JSON.stringify(error.actual)}`);
   }
   process.exitCode = 1;
+} finally {
+  report.finishedAt = new Date().toISOString();
+  await saveJson(
+    fileURLToPath(new URL("../.local/design/rules.json", import.meta.url)),
+    report,
+  );
 }

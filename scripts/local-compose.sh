@@ -97,7 +97,7 @@ reset_local_demo() {
             -f "$project_root/.local/test/compose.yaml" down --volumes
     fi
     rm -rf "$project_root/.local/indexer" "$project_root/.local/browser" "$project_root/.local/demo" \
-        "$project_root/.local/operations" \
+        "$project_root/.local/operations" "$project_root/.local/design" \
         "$project_root/.local/chain" "$project_root/.local/deployments" \
         "$project_root/.local/geth" "$project_root/.local/archive" \
         "$project_root/.local/test" "$project_root/.local/test-build" \

@@ -1,0 +1,118 @@
+{
+  "status": "geometry-frozen",
+  "runtime": "design-only",
+  "balance": "unmeasured",
+  "selection": {
+    "selectedBy": "host",
+    "visibility": "public-before-join",
+    "fixedFrom": "room-creation",
+    "practice": "same-three-maps"
+  },
+  "hashEncoding": {
+    "algorithm": "keccak256",
+    "encoding": "abi.encode",
+    "fields": [
+      { "name": "mapId", "type": "uint8" },
+      { "name": "width", "type": "uint8" },
+      { "name": "height", "type": "uint8" },
+      { "name": "obstacles", "type": "uint64" },
+      { "name": "cover", "type": "uint64" },
+      { "name": "resources", "type": "uint64" },
+      { "name": "controlZone", "type": "uint64" },
+      { "name": "spawnsA", "type": "uint8[3]" },
+      { "name": "spawnsB", "type": "uint8[3]" }
+    ]
+  },
+  "maps": [
+    {
+      "mapId": 1,
+      "name": "Arena",
+      "width": 8,
+      "height": 8,
+      "obstacles": [17, 22, 41, 46],
+      "cover": [21, 29, 34, 42],
+      "resources": [18, 45],
+      "controlZone": [27, 28, 35, 36],
+      "spawns": { "A": [8, 24, 40], "B": [55, 39, 23] },
+      "ascii": [
+        "........",
+        "A.......",
+        ".#R..C#B",
+        "A..OOC..",
+        "..COO..B",
+        "A#C..R#.",
+        ".......B",
+        "........"
+      ],
+      "bitmaps": {
+        "obstacles": "0x0000420000420000",
+        "cover": "0x0000040420200000",
+        "resources": "0x0000200000040000",
+        "controlZone": "0x0000001818000000",
+        "spawnA": "0x0000010001000100",
+        "spawnB": "0x0080008000800000"
+      },
+      "mapHash": "0x7f266774aef1f1f2551d103897ad5c47a98ac5c13bc453576a85810d3722bf29"
+    },
+    {
+      "mapId": 2,
+      "name": "Ruins",
+      "width": 8,
+      "height": 8,
+      "obstacles": [10, 11, 26, 30, 33, 37, 52, 53],
+      "cover": [19, 29, 34, 44],
+      "resources": [18, 45],
+      "controlZone": [27, 28, 35, 36],
+      "spawns": { "A": [8, 24, 40], "B": [55, 39, 23] },
+      "ascii": [
+        "........",
+        "A.##....",
+        "..RC...B",
+        "A.#OOC#.",
+        ".#COO#.B",
+        "A...CR..",
+        "....##.B",
+        "........"
+      ],
+      "bitmaps": {
+        "obstacles": "0x0030002244000c00",
+        "cover": "0x0000100420080000",
+        "resources": "0x0000200000040000",
+        "controlZone": "0x0000001818000000",
+        "spawnA": "0x0000010001000100",
+        "spawnB": "0x0080008000800000"
+      },
+      "mapHash": "0x19efa6081794543361ac5a83216167fe6020de54c28c7d19f83adc203f3964ca"
+    },
+    {
+      "mapId": 3,
+      "name": "Crossroads",
+      "width": 8,
+      "height": 8,
+      "obstacles": [11, 25, 29, 34, 38, 52],
+      "cover": [17, 20, 43, 46],
+      "resources": [18, 45],
+      "controlZone": [27, 28, 35, 36],
+      "spawns": { "A": [8, 24, 40], "B": [55, 39, 23] },
+      "ascii": [
+        "........",
+        "A..#....",
+        ".CR.C..B",
+        "A#.OO#..",
+        "..#OO.#B",
+        "A..C.RC.",
+        "....#..B",
+        "........"
+      ],
+      "bitmaps": {
+        "obstacles": "0x0010004422000800",
+        "cover": "0x0000480000120000",
+        "resources": "0x0000200000040000",
+        "controlZone": "0x0000001818000000",
+        "spawnA": "0x0000010001000100",
+        "spawnB": "0x0080008000800000"
+      },
+      "mapHash": "0x5123d32cc31fc8f3aa19bb11cfc2b508af8bb84f280c09d48d930dcaa989adba"
+    }
+  ]
+}

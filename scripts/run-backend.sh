@@ -55,6 +55,9 @@ run_operational_checks() {
 
 run_backend_tests() {
     local browser
+    printf 'Checking frozen squad rules and three-map geometry before integration acceptance...\n'
+    run_backend_check node "$project_root/scripts/check-squad-rules.mjs"
+    run_backend_check node "$project_root/scripts/check-maps.mjs"
     printf 'Checking archived Solidity sources with the local compiler...\n'
     run_backend_check node "$project_root/scripts/client-contract.mjs" check-sources
     source "$project_root/scripts/check-safety.sh"
@@ -112,10 +115,11 @@ cd "$project_root/server"
 if [[ "$mode" == "verify" || "$mode" == "simulate" ]]; then
     if [[ "$mode" == "verify" ]]; then
         node "$project_root/scripts/check-squad-rules.mjs"
+        node "$project_root/scripts/check-maps.mjs"
     fi
     go run -mod=mod ./cmd/arena-server "$mode" "$@"
     if [[ "$mode" == "verify" ]]; then
-        printf 'PASS: offline verification completed: squad-rule consistency and existing Go/Solidity vectors.\n'
+        printf 'PASS: offline verification completed: squad rules, map geometry and existing Go/Solidity vectors.\n'
     fi
     exit
 fi

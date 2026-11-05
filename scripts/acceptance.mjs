@@ -2,6 +2,8 @@ export const browserEngines = ["chromium", "firefox", "webkit"];
 
 // Required evidence for the existing backend test entry and its release report.
 export const acceptanceReports = [
+  ["Squad rule design consistency", ".local/design/rules.json"],
+  ["Three-map geometry and content identity", ".local/design/maps.json"],
   [
     "Anvil operational controls and database restore",
     ".local/operations/anvil.json",

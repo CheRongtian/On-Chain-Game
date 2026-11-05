@@ -193,6 +193,7 @@
       "healing",
       "lock",
       "Cover-and-shield",
+      "maps-and-spawns",
       "settlement",
       "outcomes"
     ],
@@ -203,7 +204,6 @@
       "victory-threshold-and-round-cap"
     ],
     "laterFreeze": [
-      "exact-maps-and-spawns",
       "squad-and-action-ABI",
       "commitment-domains",
       "state-and-event-schemas",
