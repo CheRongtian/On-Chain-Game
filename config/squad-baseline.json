@@ -1,0 +1,917 @@
+{
+  "status": "design-baseline-frozen",
+  "profiles": [
+    {
+      "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+      "schemas": [1, 1, 1],
+      "abi": "fixed-arena",
+      "engine": "fixed",
+      "replay": true
+    },
+    {
+      "rulesetId": "0x628ad73a0d0cdc3cf42e1f053679ef99dc354c72cfc0e0ad0e2ccf24a5c7d9c7",
+      "schemas": [2, 2, 2],
+      "abi": "squad-arena",
+      "engine": "squad",
+      "replay": false
+    }
+  ],
+  "selections": [
+    {
+      "name": "original-replay",
+      "registered": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "observed": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "capability": "replay",
+      "matchId": "1",
+      "expected": {
+        "accepted": true,
+        "engine": "fixed",
+        "globalKey": "31337:0x00000000000000000000000000000000000000f1:1",
+        "localKey": "31337:0x00000000000000000000000000000000000000f1:0x0000000000000000000000000000000000000000000000000000000000000065:1",
+        "url": "/chains/31337/arenas/0x00000000000000000000000000000000000000f1/matches/1?deployment=0x0000000000000000000000000000000000000000000000000000000000000065"
+      }
+    },
+    {
+      "name": "squad-codec",
+      "registered": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f2",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000066",
+        "rulesetId": "0x628ad73a0d0cdc3cf42e1f053679ef99dc354c72cfc0e0ad0e2ccf24a5c7d9c7",
+        "schemas": [2, 2, 2],
+        "abi": "squad-arena"
+      },
+      "observed": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f2",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000066",
+        "rulesetId": "0x628ad73a0d0cdc3cf42e1f053679ef99dc354c72cfc0e0ad0e2ccf24a5c7d9c7",
+        "schemas": [2, 2, 2],
+        "abi": "squad-arena"
+      },
+      "capability": "codec",
+      "matchId": "1",
+      "expected": {
+        "accepted": true,
+        "engine": "squad",
+        "globalKey": "31337:0x00000000000000000000000000000000000000f2:1",
+        "localKey": "31337:0x00000000000000000000000000000000000000f2:0x0000000000000000000000000000000000000000000000000000000000000066:1",
+        "url": "/chains/31337/arenas/0x00000000000000000000000000000000000000f2/matches/1?deployment=0x0000000000000000000000000000000000000000000000000000000000000066"
+      }
+    },
+    {
+      "name": "squad-replay-unavailable",
+      "registered": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f2",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000066",
+        "rulesetId": "0x628ad73a0d0cdc3cf42e1f053679ef99dc354c72cfc0e0ad0e2ccf24a5c7d9c7",
+        "schemas": [2, 2, 2],
+        "abi": "squad-arena"
+      },
+      "observed": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f2",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000066",
+        "rulesetId": "0x628ad73a0d0cdc3cf42e1f053679ef99dc354c72cfc0e0ad0e2ccf24a5c7d9c7",
+        "schemas": [2, 2, 2],
+        "abi": "squad-arena"
+      },
+      "capability": "replay",
+      "matchId": "1",
+      "expected": {
+        "accepted": false,
+        "error": "replay_unavailable"
+      }
+    },
+    {
+      "name": "mismatch-chainId",
+      "registered": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "observed": {
+        "chainId": "31338",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "capability": "codec",
+      "matchId": "1",
+      "expected": {
+        "accepted": false,
+        "error": "metadata_mismatch"
+      }
+    },
+    {
+      "name": "mismatch-arena",
+      "registered": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "observed": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f3",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "capability": "codec",
+      "matchId": "1",
+      "expected": {
+        "accepted": false,
+        "error": "metadata_mismatch"
+      }
+    },
+    {
+      "name": "mismatch-deploymentHash",
+      "registered": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "observed": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000067",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "capability": "codec",
+      "matchId": "1",
+      "expected": {
+        "accepted": false,
+        "error": "metadata_mismatch"
+      }
+    },
+    {
+      "name": "mismatch-rulesetId",
+      "registered": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "observed": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0x628ad73a0d0cdc3cf42e1f053679ef99dc354c72cfc0e0ad0e2ccf24a5c7d9c7",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "capability": "codec",
+      "matchId": "1",
+      "expected": {
+        "accepted": false,
+        "error": "metadata_mismatch"
+      }
+    },
+    {
+      "name": "mismatch-abi",
+      "registered": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "observed": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "squad-arena"
+      },
+      "capability": "codec",
+      "matchId": "1",
+      "expected": {
+        "accepted": false,
+        "error": "metadata_mismatch"
+      }
+    },
+    {
+      "name": "mismatch-schemas",
+      "registered": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "observed": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [2, 2, 2],
+        "abi": "fixed-arena"
+      },
+      "capability": "codec",
+      "matchId": "1",
+      "expected": {
+        "accepted": false,
+        "error": "metadata_mismatch"
+      }
+    },
+    {
+      "name": "isolated-chainId",
+      "registered": {
+        "chainId": "31338",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "observed": {
+        "chainId": "31338",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "capability": "replay",
+      "matchId": "1",
+      "expected": {
+        "accepted": true,
+        "engine": "fixed",
+        "globalKey": "31338:0x00000000000000000000000000000000000000f1:1",
+        "localKey": "31338:0x00000000000000000000000000000000000000f1:0x0000000000000000000000000000000000000000000000000000000000000065:1",
+        "url": "/chains/31338/arenas/0x00000000000000000000000000000000000000f1/matches/1?deployment=0x0000000000000000000000000000000000000000000000000000000000000065"
+      }
+    },
+    {
+      "name": "isolated-arena",
+      "registered": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f3",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "observed": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f3",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "capability": "replay",
+      "matchId": "1",
+      "expected": {
+        "accepted": true,
+        "engine": "fixed",
+        "globalKey": "31337:0x00000000000000000000000000000000000000f3:1",
+        "localKey": "31337:0x00000000000000000000000000000000000000f3:0x0000000000000000000000000000000000000000000000000000000000000065:1",
+        "url": "/chains/31337/arenas/0x00000000000000000000000000000000000000f3/matches/1?deployment=0x0000000000000000000000000000000000000000000000000000000000000065"
+      }
+    },
+    {
+      "name": "isolated-deploymentHash",
+      "registered": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000067",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "observed": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000067",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "capability": "replay",
+      "matchId": "1",
+      "expected": {
+        "accepted": true,
+        "engine": "fixed",
+        "globalKey": "31337:0x00000000000000000000000000000000000000f1:1",
+        "localKey": "31337:0x00000000000000000000000000000000000000f1:0x0000000000000000000000000000000000000000000000000000000000000067:1",
+        "url": "/chains/31337/arenas/0x00000000000000000000000000000000000000f1/matches/1?deployment=0x0000000000000000000000000000000000000000000000000000000000000067"
+      }
+    },
+    {
+      "name": "unknown-schema-0",
+      "registered": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f2",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000066",
+        "rulesetId": "0x628ad73a0d0cdc3cf42e1f053679ef99dc354c72cfc0e0ad0e2ccf24a5c7d9c7",
+        "schemas": [3, 2, 2],
+        "abi": "squad-arena"
+      },
+      "observed": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f2",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000066",
+        "rulesetId": "0x628ad73a0d0cdc3cf42e1f053679ef99dc354c72cfc0e0ad0e2ccf24a5c7d9c7",
+        "schemas": [3, 2, 2],
+        "abi": "squad-arena"
+      },
+      "capability": "codec",
+      "matchId": "1",
+      "expected": {
+        "accepted": false,
+        "error": "unsupported_ruleset"
+      }
+    },
+    {
+      "name": "unknown-schema-1",
+      "registered": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f2",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000066",
+        "rulesetId": "0x628ad73a0d0cdc3cf42e1f053679ef99dc354c72cfc0e0ad0e2ccf24a5c7d9c7",
+        "schemas": [2, 3, 2],
+        "abi": "squad-arena"
+      },
+      "observed": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f2",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000066",
+        "rulesetId": "0x628ad73a0d0cdc3cf42e1f053679ef99dc354c72cfc0e0ad0e2ccf24a5c7d9c7",
+        "schemas": [2, 3, 2],
+        "abi": "squad-arena"
+      },
+      "capability": "codec",
+      "matchId": "1",
+      "expected": {
+        "accepted": false,
+        "error": "unsupported_ruleset"
+      }
+    },
+    {
+      "name": "unknown-schema-2",
+      "registered": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f2",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000066",
+        "rulesetId": "0x628ad73a0d0cdc3cf42e1f053679ef99dc354c72cfc0e0ad0e2ccf24a5c7d9c7",
+        "schemas": [2, 2, 3],
+        "abi": "squad-arena"
+      },
+      "observed": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f2",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000066",
+        "rulesetId": "0x628ad73a0d0cdc3cf42e1f053679ef99dc354c72cfc0e0ad0e2ccf24a5c7d9c7",
+        "schemas": [2, 2, 3],
+        "abi": "squad-arena"
+      },
+      "capability": "codec",
+      "matchId": "1",
+      "expected": {
+        "accepted": false,
+        "error": "unsupported_ruleset"
+      }
+    },
+    {
+      "name": "unknown-ruleset",
+      "registered": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f2",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000066",
+        "rulesetId": "0x00000000000000000000000000000000000000000000000000000000000003e7",
+        "schemas": [2, 2, 2],
+        "abi": "squad-arena"
+      },
+      "observed": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f2",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000066",
+        "rulesetId": "0x00000000000000000000000000000000000000000000000000000000000003e7",
+        "schemas": [2, 2, 2],
+        "abi": "squad-arena"
+      },
+      "capability": "codec",
+      "matchId": "1",
+      "expected": {
+        "accepted": false,
+        "error": "unsupported_ruleset"
+      }
+    },
+    {
+      "name": "same-number-different-match",
+      "registered": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "observed": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "capability": "replay",
+      "matchId": "2",
+      "expected": {
+        "accepted": true,
+        "engine": "fixed",
+        "globalKey": "31337:0x00000000000000000000000000000000000000f1:2",
+        "localKey": "31337:0x00000000000000000000000000000000000000f1:0x0000000000000000000000000000000000000000000000000000000000000065:2",
+        "url": "/chains/31337/arenas/0x00000000000000000000000000000000000000f1/matches/2?deployment=0x0000000000000000000000000000000000000000000000000000000000000065"
+      }
+    },
+    {
+      "name": "full-width-chain",
+      "registered": {
+        "chainId": "1606938044258990275541962092341162602522202993782792835301377",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "observed": {
+        "chainId": "1606938044258990275541962092341162602522202993782792835301377",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "capability": "replay",
+      "matchId": "1606938044258990275541962092341162602522202993782792835301378",
+      "expected": {
+        "accepted": true,
+        "engine": "fixed",
+        "globalKey": "1606938044258990275541962092341162602522202993782792835301377:0x00000000000000000000000000000000000000f1:1606938044258990275541962092341162602522202993782792835301378",
+        "localKey": "1606938044258990275541962092341162602522202993782792835301377:0x00000000000000000000000000000000000000f1:0x0000000000000000000000000000000000000000000000000000000000000065:1606938044258990275541962092341162602522202993782792835301378",
+        "url": "/chains/1606938044258990275541962092341162602522202993782792835301377/arenas/0x00000000000000000000000000000000000000f1/matches/1606938044258990275541962092341162602522202993782792835301378?deployment=0x0000000000000000000000000000000000000000000000000000000000000065"
+      }
+    },
+    {
+      "name": "normalized-address",
+      "registered": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "observed": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000F1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "capability": "replay",
+      "matchId": "1",
+      "expected": {
+        "accepted": true,
+        "engine": "fixed",
+        "globalKey": "31337:0x00000000000000000000000000000000000000f1:1",
+        "localKey": "31337:0x00000000000000000000000000000000000000f1:0x0000000000000000000000000000000000000000000000000000000000000065:1",
+        "url": "/chains/31337/arenas/0x00000000000000000000000000000000000000f1/matches/1?deployment=0x0000000000000000000000000000000000000000000000000000000000000065"
+      }
+    },
+    {
+      "name": "zero-match",
+      "registered": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "observed": {
+        "chainId": "31337",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "capability": "replay",
+      "matchId": "0",
+      "expected": {
+        "accepted": false,
+        "error": "invalid_identity"
+      }
+    },
+    {
+      "name": "noncanonical-chain",
+      "registered": {
+        "chainId": "01",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "observed": {
+        "chainId": "01",
+        "arena": "0x00000000000000000000000000000000000000f1",
+        "deploymentHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "rulesetId": "0xbe12820f0ee44f8c9d9796acb034a829fb50d65fc9e94394cb91cbcc0c1cd191",
+        "schemas": [1, 1, 1],
+        "abi": "fixed-arena"
+      },
+      "capability": "codec",
+      "matchId": "1",
+      "expected": {
+        "accepted": false,
+        "error": "invalid_identity"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "topic": "rules",
+      "source": "config/squad-rules.json",
+      "status": "frozen-for-implementation"
+    },
+    {
+      "topic": "maps",
+      "source": "config/maps.json",
+      "status": "frozen-for-implementation"
+    },
+    {
+      "topic": "squad",
+      "source": "config/squad-protocol.json",
+      "status": "frozen-for-implementation"
+    },
+    {
+      "topic": "settlement",
+      "source": "config/squad-battle-vectors.json",
+      "status": "frozen-for-implementation"
+    },
+    {
+      "topic": "data-model",
+      "source": "config/squad-baseline.json",
+      "status": "frozen-for-implementation"
+    },
+    {
+      "topic": "encoding",
+      "source": "config/squad-protocol.json",
+      "status": "frozen-for-implementation"
+    },
+    {
+      "topic": "hash",
+      "source": "config/squad-protocol-vectors.json",
+      "status": "frozen-for-implementation"
+    },
+    {
+      "topic": "events",
+      "source": "contracts/src/ISquadArena.sol",
+      "status": "frozen-for-implementation"
+    },
+    {
+      "topic": "AI-policy",
+      "source": "config/squad-baseline.json",
+      "status": "frozen-for-implementation"
+    },
+    {
+      "topic": "testing",
+      "source": "scripts/acceptance.mjs",
+      "status": "frozen-for-implementation"
+    }
+  ],
+  "compatibility": {
+    "globalIdentity": ["chainId", "arena", "matchId"],
+    "localIdentity": ["chainId", "arena", "deploymentHash", "matchId"],
+    "url": "/chains/{chainId}/arenas/{arena}/matches/{matchId}?deployment={deploymentHash}",
+    "existingRoutes": "retain existing /matches/{id} and deployment selection; no routing or database migration in this design stage",
+    "unknownMetadata": "reject; never select from a display version or retry another engine",
+    "originalContracts": "separate deployment; never change original rules, vectors, events, saved secrets or historic interpretation",
+    "schemaAuthority": "original profile schema IDs are registry annotations for its frozen ABI; squad schema IDs are the frozen protocol metadata"
+  },
+  "dataModel": {
+    "deploymentFields": [
+      "chainId",
+      "arena",
+      "deploymentHash",
+      "deploymentBlock",
+      "rulesetId",
+      "actionSchema",
+      "stateSchema",
+      "eventSchema",
+      "abi"
+    ],
+    "matchKey": ["deploymentId", "matchId"],
+    "eventKey": ["deploymentId", "blockHash", "transactionHash", "logIndex"],
+    "stateFields": [
+      "mapId",
+      "battleStarted",
+      "completedRound",
+      "units",
+      "energy",
+      "victoryPoints",
+      "outcome",
+      "reason"
+    ],
+    "plannedTables": {
+      "ruleset_registry": [
+        "rulesetId",
+        "actionSchema",
+        "stateSchema",
+        "eventSchema",
+        "abi",
+        "implementation"
+      ],
+      "map_catalog": ["rulesetId", "mapId", "mapHash", "terrain", "spawns"],
+      "match_squads": [
+        "deploymentId",
+        "matchId",
+        "player",
+        "commitment",
+        "revealedTypes",
+        "revealEvent"
+      ],
+      "practice_matches": [
+        "practiceId",
+        "rulesetId",
+        "mapId",
+        "policy",
+        "seed",
+        "state",
+        "actions",
+        "effects"
+      ]
+    },
+    "publicData": "no unrevealed squad, actions or salts; derive public records only from canonical accepted events",
+    "reorg": "withdraw orphaned squad/start/round projections and verification in the same rollback; reconstruct from canonical evidence",
+    "migration": "add metadata and separate practice records in the indexing stage; preserve original tables, source logs, archives and API behavior"
+  },
+  "ai": {
+    "mode": "off-chain-practice-only",
+    "difficulties": ["Easy", "Normal", "Hard"],
+    "input": "public-round-start-state-and-policy-seed-only",
+    "order": [
+      "select-AI-bundle-from-public-state",
+      "persist-AI-bundle-policy-and-seed",
+      "accept-player-current-bundle",
+      "resolve-both-bundles"
+    ],
+    "secrets": "never accept official pre-Reveal inputs",
+    "reproducibility": [
+      "rulesetId",
+      "initialState",
+      "policy",
+      "seed",
+      "both-action-bundles",
+      "effects"
+    ],
+    "hardSearch": "bounded candidates, nodes, depth and deadline; no unbounded minimax",
+    "overBudget": "legal deterministic Normal fallback from the same public state and seed; record reason and limits",
+    "storage": "separate IDs, tables and APIs; never official Verified, PvP statistics or rankings",
+    "runtime": "pending-practice-implementation"
+  },
+  "coverage": {
+    "initialization": {
+      "maps": 3,
+      "orderedSquads": 60,
+      "combinations": 10,
+      "sides": 2,
+      "rows": 360,
+      "opponent": [1, 2, 3],
+      "scope": "every ordered lineup on both sides of every map against the fixed reference lineup; not all 3600 lineup pairs"
+    },
+    "requiredTags": [
+      "healing",
+      "heal-full",
+      "heal-overflow",
+      "heal-self",
+      "dynamic-miss",
+      "Cover",
+      "shield",
+      "per-source-floor",
+      "lock",
+      "current-skill",
+      "dying-caster",
+      "expiry",
+      "renewal",
+      "death-clears-status",
+      "movement",
+      "conflict",
+      "shared-intermediate",
+      "simultaneous-damage",
+      "overkill",
+      "resources",
+      "energy-cap",
+      "control",
+      "victory-threshold",
+      "elimination",
+      "round-cap",
+      "draw",
+      "invalid-bundle",
+      "budget",
+      "obstacle",
+      "occupancy",
+      "range"
+    ],
+    "families": [
+      {
+        "name": "canonical-protocol",
+        "source": "config/squad-protocol-vectors.json",
+        "gate": "codec-executed"
+      },
+      {
+        "name": "full-settlement",
+        "source": "config/squad-battle-vectors.json",
+        "gate": "reference-frozen; resolver-execution-pending"
+      },
+      {
+        "name": "original-rules-and-replay",
+        "source": "scripts/acceptance.mjs",
+        "gate": "existing-real-chain-and-browser-regression"
+      },
+      {
+        "name": "stateful-and-differential-games",
+        "source": "config/squad-baseline.json",
+        "gate": "later-resolver-and-protocol-implementation"
+      },
+      {
+        "name": "AI-recovery-and-strength",
+        "source": "config/squad-baseline.json",
+        "gate": "later-practice-implementation"
+      },
+      {
+        "name": "Squad-reorg-and-multi-Arena",
+        "source": "config/squad-baseline.json",
+        "gate": "later-indexer-implementation"
+      }
+    ]
+  },
+  "decisions": [
+    {
+      "topic": "gameplay-and-canonical-encoding",
+      "classification": "implementation-blocking",
+      "status": "closed",
+      "basis": "approved squad rules, maps and protocol; concrete full-state cases"
+    },
+    {
+      "topic": "deployment-and-schema-dispatch",
+      "classification": "implementation-blocking",
+      "status": "closed",
+      "basis": "immutable binding and rejection vectors; no unknown-engine fallback"
+    },
+    {
+      "topic": "practice-privacy-and-official-isolation",
+      "classification": "implementation-blocking",
+      "status": "closed",
+      "basis": "public-state policy, persist-before-input order and separate records"
+    },
+    {
+      "topic": "map-squad-balance-and-match-length",
+      "classification": "measurement-required-before-release",
+      "status": "unmeasured",
+      "stage": "simulation and integration",
+      "rule": "retain approved numeric values until evidence supports a separately reviewed ruleset"
+    },
+    {
+      "topic": "gas",
+      "classification": "measurement-required-before-release",
+      "status": "unmeasured",
+      "stage": "contract implementation and integration",
+      "targets": {
+        "squadCommit": 100000,
+        "squadReveal": 250000,
+        "roundCommit": 100000,
+        "roundReveal": 300000,
+        "settlement": 2000000
+      },
+      "rule": "measure reachable dense cases; optimize or obtain an explicit decision before release, without dropping specified behavior"
+    },
+    {
+      "topic": "AI-strength-latency-and-search-limits",
+      "classification": "measurement-required-before-release",
+      "status": "unmeasured",
+      "stage": "practice implementation",
+      "rule": "measure bounded search and legal fallback before fixing latency or strength gates; no current performance claim"
+    }
+  ],
+  "boundaries": {
+    "current": "design references, codecs and immutable-metadata selection only",
+    "later": [
+      "Solidity resolver",
+      "Squad and round storage transactions",
+      "independent Go squad resolver",
+      "database migration and multi-ruleset indexing",
+      "new UI",
+      "Practice runtime"
+    ],
+    "originalRegression": "existing backend test remains required and preserves the original baseline"
+  },
+  "api": {
+    "implementation": "pending-indexing-and-client-integration",
+    "meta": [
+      "chainId",
+      "arena",
+      "deploymentHash",
+      "deploymentBlock",
+      "rulesetId",
+      "actionSchema",
+      "stateSchema",
+      "eventSchema"
+    ],
+    "match": [
+      "meta",
+      "matchId",
+      "players",
+      "mapId",
+      "phase",
+      "activeRound",
+      "completedRound",
+      "stateHash",
+      "outcome",
+      "reason",
+      "source",
+      "confirmation"
+    ],
+    "replay": ["meta", "matchId", "squad", "frames", "rounds", "verification"],
+    "squad": ["commitments", "committed", "revealed", "reveals"],
+    "squadReveal": ["unitTypes", "salt", "source"],
+    "round": ["round", "commitments", "reveals"],
+    "actionReveal": ["actions", "salt", "source"],
+    "frame": [
+      "kind",
+      "round",
+      "state",
+      "stateHash",
+      "computedHash",
+      "effects",
+      "source"
+    ],
+    "verification": [
+      "status",
+      "canonical",
+      "complete",
+      "prefixVerified",
+      "verifiedRounds",
+      "throughBlock",
+      "throughHash",
+      "difference"
+    ],
+    "verificationStatuses": ["Verified", "Mismatch", "Incomplete"],
+    "confirmation": ["status", "confirmations", "requiredDescendants"],
+    "confirmationStatuses": ["unknown", "observed", "provisional", "confirmed"],
+    "source": ["block", "blockHash", "transactionHash", "logIndex"],
+    "integerFormat": "uint256 identifiers are canonical decimal strings; addresses and hashes are lowercase hexadecimal",
+    "hiddenData": "unrevealed payloads are absent; salt and actions/types appear only in accepted public reveals",
+    "futureReadRoutes": [
+      "/rulesets",
+      "/maps",
+      "/units",
+      "/chains/{chainId}/arenas/{arena}/matches/{matchId}"
+    ],
+    "practiceRoutes": [
+      "POST /practice",
+      "POST /practice/{practiceId}/actions",
+      "GET /practice/{practiceId}"
+    ],
+    "officialWrites": "player-to-contract only; read API cannot create official results"
+  }
+}

@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { readJson, saveJson } from '../../scripts/deployment.mjs';
+import { prepareSquadBaseline } from '../../scripts/squad-baseline.mjs';
 
 const root = new URL('../../', import.meta.url);
 const path = (name) => fileURLToPath(new URL(name, root));
@@ -19,6 +20,8 @@ const report = {
   languages: {},
   startedAt: new Date().toISOString(),
 };
+const baselineReport = { status: 'running', startedAt: report.startedAt };
+const computedEncodings = new Map();
 
 function compare(entry, actual, language) {
   const label = `${language}: ${entry.name}`;
@@ -31,7 +34,16 @@ function compare(entry, actual, language) {
     );
     return;
   }
-  assert.equal(actual.encoding, entry.expectedEncoding, `${label}: ABI bytes`);
+  if (entry.expectedEncoding)
+    assert.equal(actual.encoding, entry.expectedEncoding, `${label}: ABI bytes`);
+  else assert.ok(entry.expectedHash, `${label}: a fixed expected hash is required`);
+  if (language === 'TypeScript') computedEncodings.set(entry.name, actual.encoding);
+  else
+    assert.equal(
+      actual.encoding,
+      computedEncodings.get(entry.name),
+      `${label}: cross-language bytes`,
+    );
   if (entry.expectedHash) assert.equal(actual.hash, entry.expectedHash, `${label}: hash`);
   assert.deepEqual(actual.topics ?? [], entry.expectedTopics ?? [], `${label}: event topics`);
 }
@@ -97,9 +109,12 @@ try {
   const ts = require('typescript');
   selector = viem.toFunctionSelector('InvalidProtocol()');
   const config = await readJson(path('config/squad-protocol.json'));
-  const { cases } = await readJson(path('config/squad-protocol-vectors.json'));
+  const { cases: protocolCases } = await readJson(path('config/squad-protocol-vectors.json'));
   const rules = await readJson(path('config/squad-rules.json'));
   const { maps } = await readJson(path('config/maps.json'));
+  const baseline = await prepareSquadBaseline(root, rules, maps, config);
+  Object.assign(baselineReport, baseline.report);
+  const cases = [...protocolCases, ...baseline.cases];
 
   function loadTypeScript(source, localRequire = require) {
     const { outputText } = ts.transpileModule(source, {
@@ -116,6 +131,32 @@ try {
     await readFile(path('client/src/lib/squadProtocol.ts'), 'utf8'),
     (name) => (name === '../generated/squadArena' ? generated : require(name)),
   );
+  const registry = loadTypeScript(await readFile(path('client/src/lib/rulesets.ts'), 'utf8'));
+  const selections = baseline.manifest.selections.map((entry) => {
+    try {
+      return {
+        accepted: true,
+        ...registry.selectRuleset(
+          baseline.manifest.profiles,
+          entry.registered,
+          entry.observed,
+          entry.capability,
+          entry.matchId,
+        ),
+      };
+    } catch (error) {
+      if (!(error instanceof registry.RulesetError)) throw error;
+      return { accepted: false, error: error.message };
+    }
+  });
+  selections.forEach((actual, index) =>
+    assert.deepEqual(
+      actual,
+      baseline.manifest.selections[index].expected,
+      `TypeScript ruleset selection: ${baseline.manifest.selections[index].name}`,
+    ),
+  );
+  baselineReport.typescriptSelections = selections.length;
   assert.equal(config.status, 'protocol-frozen');
   assert.equal(config.runtime, 'codecs-only');
   assert.ok(cases.length > 0);
@@ -333,51 +374,89 @@ try {
     );
 
   const options = { maxBuffer: 8 * 1024 * 1024, signal: abort.signal };
-  report.currentCase = 'Go execution';
-  const go = await run('go', ['run', '-mod=readonly', './cmd/arena-server', 'check-protocol'], {
-    ...options,
-    cwd: path('server'),
-    env: { ...process.env, GOTOOLCHAIN: 'local', GOPROXY: 'off' },
-  });
-  compareBatch(cases, JSON.parse(go.stdout), 'Go');
   await mkdir(path('.local/simulation/protocol'), { recursive: true });
-  const batch = viem.encodeAbiParameters(viem.parseAbiParameters('(uint8 kind,bytes payload)[]'), [
-    cases.map((entry, index) => ({ kind: entry.kind, payload: inputs[index] })),
-  ]);
+  const fixtureFile = path('.local/simulation/protocol/cases.json');
+  await writeFile(
+    fixtureFile,
+    JSON.stringify({
+      cases,
+      profiles: baseline.manifest.profiles,
+      selections: baseline.manifest.selections,
+    }),
+  );
+  report.currentCase = 'Go execution';
+  const go = await run(
+    'go',
+    ['run', '-mod=readonly', './cmd/arena-server', 'check-protocol', fixtureFile],
+    {
+      ...options,
+      cwd: path('server'),
+      env: { ...process.env, GOTOOLCHAIN: 'local', GOPROXY: 'off' },
+    },
+  );
+  const goResult = JSON.parse(go.stdout);
+  compareBatch(cases, goResult.vectors, 'Go');
+  assert.equal(goResult.selections.length, selections.length);
+  for (const [index, result] of goResult.selections.entries()) {
+    assert.equal(result.name, baseline.manifest.selections[index].name);
+    assert.deepEqual(
+      result.accepted
+        ? { accepted: true, ...result.selection }
+        : { accepted: false, error: result.error },
+      selections[index],
+      `Go ruleset selection: ${result.name}`,
+    );
+  }
+  assert.ok(
+    Object.values(goResult.original).every((count) => count > 0),
+    'Original vectors must execute',
+  );
+  baselineReport.goSelections = goResult.selections.length;
+  baselineReport.originalGoVectors = goResult.original;
   const inputFile = path('.local/simulation/protocol/input.abi');
   const outputFile = path('.local/simulation/protocol/output.ndjson');
-  await writeFile(inputFile, Buffer.from(batch.slice(2), 'hex'));
   report.currentCase = 'Solidity execution';
-  const forge = await run(
-    'forge',
-    [
-      'script',
-      'script/CompareSquadProtocol.s.sol:CompareSquadProtocol',
-      '--sig',
-      'run(string,string)',
-      inputFile,
-      outputFile,
-      '--use',
-      path('.local/bin/solc-0.8.30'),
-      '--offline',
-      '--ast',
-      '--disable-external-identification',
-      '--out',
-      path('.local/simulation/protocol/artifacts'),
-      '--cache-path',
-      path('.local/simulation/protocol/cache.json'),
-    ],
-    { ...options, cwd: path('contracts') },
-  );
-  if (forge.stderr.trim()) process.stderr.write(forge.stderr);
-  compareBatch(
-    cases,
-    (await readFile(outputFile, 'utf8'))
-      .trim()
-      .split('\n')
-      .map((line) => JSON.parse(line)),
-    'Solidity',
-  );
+  // Keep the EVM fixture working set bounded as the shared catalogue grows.
+  const solidityResults = [];
+  for (let offset = 0; offset < cases.length; offset += 96) {
+    const entries = cases
+      .slice(offset, offset + 96)
+      .map((entry, index) => ({ kind: entry.kind, payload: inputs[offset + index] }));
+    const batch = viem.encodeAbiParameters(
+      viem.parseAbiParameters('(uint8 kind,bytes payload)[]'),
+      [entries],
+    );
+    await writeFile(inputFile, Buffer.from(batch.slice(2), 'hex'));
+    const forge = await run(
+      'forge',
+      [
+        'script',
+        'script/CompareSquadProtocol.s.sol:CompareSquadProtocol',
+        '--sig',
+        'run(string,string)',
+        inputFile,
+        outputFile,
+        '--use',
+        path('.local/bin/solc-0.8.30'),
+        '--offline',
+        '--ast',
+        '--disable-external-identification',
+        '--out',
+        path('.local/simulation/protocol/artifacts'),
+        '--cache-path',
+        path('.local/simulation/protocol/cache.json'),
+      ],
+      { ...options, cwd: path('contracts') },
+    );
+    if (forge.stderr.trim()) process.stderr.write(forge.stderr);
+    solidityResults.push(
+      ...(await readFile(outputFile, 'utf8'))
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line)),
+    );
+  }
+  compareBatch(cases, solidityResults, 'Solidity');
   const artifact = await readJson(
     path('.local/simulation/protocol/artifacts/ISquadArena.sol/ISquadArena.json'),
   );
@@ -417,6 +496,8 @@ try {
     status: 'passed',
     rulesetId: config.rulesetId,
     cases: cases.length,
+    originalProtocolCases: protocolCases.length,
+    baselineCodecCases: baseline.cases.length,
     orderedSquads: squads.length,
     eventSchemas: events.length,
     functionSchemas: functions.length,
@@ -427,9 +508,20 @@ try {
   console.log(
     `PASS: squad protocol: ${squads.length} ordered squads, ${events.length} event schemas, isolated secret keys and deadline boundary data. Phase transactions and gameplay remain later implementation work.`,
   );
+  Object.assign(baselineReport, {
+    status: 'passed',
+    combinedCodecCases: cases.length,
+    combinedProtocolLanguages: report.languages,
+    metadataSelections: selections.length,
+  });
+  console.log(
+    `PASS: squad design baseline: ${baselineReport.initializations} map/side/lineup initializations, ${baselineReport.rounds} complete seven-stage references, ${baselineReport.rejectionReferences} atomic rejection references and ${selections.length} immutable-metadata selections. Resolver execution remains pending implementation.`,
+  );
 } catch (error) {
   report.status = 'failed';
   report.error = error.message;
+  baselineReport.status = 'failed';
+  baselineReport.error = error.message;
   if (error.expected !== undefined) report.expected = error.expected;
   if (error.actual !== undefined) report.actual = error.actual;
   console.error(
@@ -440,5 +532,7 @@ try {
   process.exitCode = 1;
 } finally {
   report.completedAt = new Date().toISOString();
+  baselineReport.completedAt = report.completedAt;
   await saveJson(path('.local/design/protocol.json'), report);
+  await saveJson(path('.local/design/baseline.json'), baselineReport);
 }

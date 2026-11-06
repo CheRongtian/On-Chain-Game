@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"onchainarena/server/internal/game"
+	"onchainarena/server/internal/offline"
 )
 
 type vector struct {
@@ -94,13 +95,24 @@ func evaluate(entry vector) (vectorResult, error) {
 }
 
 // This command computes independent ABI words; the launcher compares all three languages.
-func CheckVectors(root string, output io.Writer) error {
-	data, err := os.ReadFile(filepath.Join(root, "config", "squad-protocol-vectors.json"))
+func CheckVectors(root, inputPath string, output io.Writer) error {
+	if inputPath == "" {
+		inputPath = filepath.Join(root, "config", "squad-protocol-vectors.json")
+	}
+	data, err := os.ReadFile(inputPath)
 	if err != nil {
 		return err
 	}
 	var input struct {
-		Cases []vector `json:"cases"`
+		Cases      []vector         `json:"cases"`
+		Profiles   []RulesetProfile `json:"profiles"`
+		Selections []struct {
+			Name       string            `json:"name"`
+			Registered DeploymentBinding `json:"registered"`
+			Observed   DeploymentBinding `json:"observed"`
+			Capability string            `json:"capability"`
+			MatchID    string            `json:"matchId"`
+		} `json:"selections"`
 	}
 	if err = json.Unmarshal(data, &input); err != nil {
 		return err
@@ -116,5 +128,30 @@ func CheckVectors(root string, output io.Writer) error {
 		}
 		results = append(results, result)
 	}
-	return json.NewEncoder(output).Encode(results)
+	type selectionResult struct {
+		Name      string     `json:"name"`
+		Accepted  bool       `json:"accepted"`
+		Selection *Selection `json:"selection,omitempty"`
+		Error     string     `json:"error,omitempty"`
+	}
+	selections := []selectionResult{}
+	for _, entry := range input.Selections {
+		selected, failure := SelectRuleset(input.Profiles, entry.Registered, entry.Observed, entry.Capability, entry.MatchID)
+		result := selectionResult{Name: entry.Name, Accepted: failure == nil}
+		if failure != nil {
+			result.Error = failure.Error()
+		} else {
+			result.Selection = &selected
+		}
+		selections = append(selections, result)
+	}
+	original, err := offline.VerifyVectors(root)
+	if err != nil {
+		return fmt.Errorf("original rule vectors: %w", err)
+	}
+	return json.NewEncoder(output).Encode(struct {
+		Vectors    []vectorResult       `json:"vectors"`
+		Selections []selectionResult    `json:"selections"`
+		Original   offline.VectorCounts `json:"original"`
+	}{results, selections, original})
 }

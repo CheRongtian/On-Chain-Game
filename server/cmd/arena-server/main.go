@@ -33,10 +33,14 @@ func run(args []string) error {
 	}
 	switch args[0] {
 	case "check-protocol":
-		if len(args) != 1 {
-			return fmt.Errorf("check-protocol takes no additional arguments")
+		if len(args) > 2 {
+			return fmt.Errorf("check-protocol accepts at most one fixture input file")
 		}
-		return squad.CheckVectors(root, os.Stdout)
+		inputPath := ""
+		if len(args) == 2 {
+			inputPath = args[1]
+		}
+		return squad.CheckVectors(root, inputPath, os.Stdout)
 	case "check-operations":
 		if len(args) != 1 {
 			return fmt.Errorf("check-operations takes no additional arguments")

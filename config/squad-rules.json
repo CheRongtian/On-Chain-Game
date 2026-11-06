@@ -199,7 +199,8 @@
       "squad-and-action-ABI",
       "commitment-domains",
       "state-and-event-schemas",
-      "protocol-deadlines"
+      "protocol-deadlines",
+      "cross-ruleset-golden-vectors"
     ],
     "balancePending": [
       "unit-HP-and-skill-values",
@@ -207,6 +208,6 @@
       "match-duration",
       "victory-threshold-and-round-cap"
     ],
-    "laterFreeze": ["cross-ruleset-golden-vectors"]
+    "laterFreeze": []
   }
 }

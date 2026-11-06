@@ -6,6 +6,10 @@ export const acceptanceReports = [
   ["Three-map geometry and content identity", ".local/design/maps.json"],
   ["Squad protocol bytes, hashes and events", ".local/design/protocol.json"],
   [
+    "Shared design baseline and ruleset compatibility",
+    ".local/design/baseline.json",
+  ],
+  [
     "Anvil operational controls and database restore",
     ".local/operations/anvil.json",
   ],
