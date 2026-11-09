@@ -485,6 +485,7 @@ export async function prepareSquadBaseline(root, rules, maps, protocol) {
   return {
     cases: output,
     manifest,
+    references: vectors,
     report: {
       scope:
         "frozen full-state references, coverage, codec agreement and metadata selection; resolver execution is pending",

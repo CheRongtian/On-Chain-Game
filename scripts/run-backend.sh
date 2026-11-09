@@ -55,7 +55,7 @@ run_operational_checks() {
 
 run_backend_tests() {
     local browser
-    printf 'Checking frozen squad rules, maps, protocol, shared compatibility baseline and actual Solidity data implementation before integration acceptance...\n'
+    printf 'Checking frozen squad rules, maps, protocol, shared compatibility baseline, actual Solidity data and static action validation before integration acceptance...\n'
     run_backend_check node "$project_root/scripts/check-squad-rules.mjs"
     run_backend_check node "$project_root/scripts/check-maps.mjs"
     run_backend_check node "$project_root/client/scripts/check-squad-protocol.mjs"
@@ -121,7 +121,7 @@ if [[ "$mode" == "verify" || "$mode" == "simulate" ]]; then
     fi
     go run -mod=mod ./cmd/arena-server "$mode" "$@"
     if [[ "$mode" == "verify" ]]; then
-        printf 'PASS: offline verification completed: squad rules, map geometry, protocol encoding, shared compatibility baseline, actual Solidity data implementation and existing Go/Solidity vectors.\n'
+        printf 'PASS: offline verification completed: squad rules, map geometry, protocol encoding, shared compatibility baseline, actual Solidity data, static action validation and existing Go/Solidity vectors.\n'
     fi
     exit
 fi

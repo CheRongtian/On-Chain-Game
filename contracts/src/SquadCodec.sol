@@ -180,11 +180,7 @@ library SquadCodec {
     }
 
     function actionEncoding(ActionInput memory input) internal pure returns (bytes memory) {
-        _require(input.round >= 1 && input.round <= Parameters.MAX_ROUNDS && input.side <= 1);
-        validateSquad(input.unitTypes);
-        for (uint256 slot = 0; slot < 3; ++slot) {
-            _validateAction(input, slot);
-        }
+        validateActions(input);
         return abi.encode(
             ACTION_DOMAIN,
             input.context,
@@ -194,6 +190,14 @@ library SquadCodec {
             input.actions,
             input.salt
         );
+    }
+
+    function validateActions(ActionInput memory input) internal pure {
+        _require(input.round >= 1 && input.round <= Parameters.MAX_ROUNDS && input.side <= 1);
+        validateSquad(input.unitTypes);
+        for (uint256 slot = 0; slot < 3; ++slot) {
+            _validateAction(input, slot);
+        }
     }
 
     function _validateAction(ActionInput memory input, uint256 slot) private pure {
@@ -237,7 +241,11 @@ library SquadCodec {
     }
 
     function stateEncoding(StateInput memory input) internal pure returns (bytes memory) {
-        State memory state = input.state;
+        validateState(input.state);
+        return abi.encode(STATE_DOMAIN, input.context, input.rulesetId, input.state);
+    }
+
+    function validateState(State memory state) internal pure {
         uint64 obstacles = Parameters.terrain(state.mapId)[0];
         _require(state.completedRound <= Parameters.MAX_ROUNDS);
         _require(state.outcome <= 3 && state.reason <= 8);
@@ -290,7 +298,6 @@ library SquadCodec {
                 }
             }
         }
-        return abi.encode(STATE_DOMAIN, input.context, input.rulesetId, state);
     }
 }
 // forge-lint: disable-end(literal-instead-of-constant)

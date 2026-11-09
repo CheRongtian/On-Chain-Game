@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { readJson, saveJson } from '../../scripts/deployment.mjs';
 import { prepareSquadBaseline } from '../../scripts/squad-baseline.mjs';
 import { prepareSquadTypes } from './squad-types.mjs';
+import { prepareSquadActions } from './squad-actions.mjs';
 
 const root = new URL('../../', import.meta.url);
 const path = (name) => fileURLToPath(new URL(name, root));
@@ -23,6 +24,7 @@ const report = {
 };
 const baselineReport = { status: 'running', startedAt: report.startedAt };
 const typesReport = { status: 'running', startedAt: report.startedAt };
+const actionsReport = { status: 'running', startedAt: report.startedAt };
 const computedEncodings = new Map();
 
 function compare(entry, actual, language) {
@@ -105,6 +107,54 @@ function eventArguments(value) {
   };
 }
 
+async function runSolidityCases(script, directory, entries, viem, options) {
+  await mkdir(path(directory), { recursive: true });
+  const inputFile = path(`${directory}/input.abi`),
+    outputFile = path(`${directory}/output.ndjson`);
+  const results = [];
+  // Bound the local EVM working set while reusing each runner's compiler cache.
+  for (let offset = 0; offset < entries.length; offset += 96) {
+    const batch = viem.encodeAbiParameters(
+      viem.parseAbiParameters('(uint8 kind,bytes payload)[]'),
+      [
+        entries
+          .slice(offset, offset + 96)
+          .map((entry) => ({ kind: entry.kind, payload: entry.payload })),
+      ],
+    );
+    await writeFile(inputFile, Buffer.from(batch.slice(2), 'hex'));
+    const forge = await run(
+      'forge',
+      [
+        'script',
+        script,
+        '--sig',
+        'run(string,string)',
+        inputFile,
+        outputFile,
+        '--use',
+        path('.local/bin/solc-0.8.30'),
+        '--offline',
+        '--ast',
+        '--disable-external-identification',
+        '--out',
+        path(`${directory}/artifacts`),
+        '--cache-path',
+        path(`${directory}/cache.json`),
+      ],
+      { ...options, cwd: path('contracts') },
+    );
+    if (forge.stderr.trim()) process.stderr.write(forge.stderr);
+    results.push(
+      ...(await readFile(outputFile, 'utf8'))
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line)),
+    );
+  }
+  return results;
+}
+
 let selector;
 try {
   const viem = require('viem');
@@ -131,6 +181,8 @@ try {
   );
   const types = prepareSquadTypes(config, rules, maps, baseline, generated.squadArenaAbi, viem);
   Object.assign(typesReport, types.report);
+  const staticActions = prepareSquadActions(config, rules, maps, baseline, viem);
+  Object.assign(actionsReport, staticActions.report);
   const codec = loadTypeScript(
     await readFile(path('client/src/lib/squadProtocol.ts'), 'utf8'),
     (name) => (name === '../generated/squadArena' ? generated : require(name)),
@@ -417,53 +469,18 @@ try {
   );
   baselineReport.goSelections = goResult.selections.length;
   baselineReport.originalGoVectors = goResult.original;
-  const inputFile = path('.local/simulation/protocol/input.abi');
-  const outputFile = path('.local/simulation/protocol/output.ndjson');
   report.currentCase = 'Solidity execution';
-  // Keep the EVM fixture working set bounded as the shared catalogue grows.
-  const solidityResults = [];
   const solidityCases = [
     ...cases.map((entry, index) => ({ kind: entry.kind, payload: inputs[index] })),
     ...types.cases,
   ];
-  for (let offset = 0; offset < solidityCases.length; offset += 96) {
-    const entries = solidityCases
-      .slice(offset, offset + 96)
-      .map((entry) => ({ kind: entry.kind, payload: entry.payload }));
-    const batch = viem.encodeAbiParameters(
-      viem.parseAbiParameters('(uint8 kind,bytes payload)[]'),
-      [entries],
-    );
-    await writeFile(inputFile, Buffer.from(batch.slice(2), 'hex'));
-    const forge = await run(
-      'forge',
-      [
-        'script',
-        'script/CompareSquadProtocol.s.sol:CompareSquadProtocol',
-        '--sig',
-        'run(string,string)',
-        inputFile,
-        outputFile,
-        '--use',
-        path('.local/bin/solc-0.8.30'),
-        '--offline',
-        '--ast',
-        '--disable-external-identification',
-        '--out',
-        path('.local/simulation/protocol/artifacts'),
-        '--cache-path',
-        path('.local/simulation/protocol/cache.json'),
-      ],
-      { ...options, cwd: path('contracts') },
-    );
-    if (forge.stderr.trim()) process.stderr.write(forge.stderr);
-    solidityResults.push(
-      ...(await readFile(outputFile, 'utf8'))
-        .trim()
-        .split('\n')
-        .map((line) => JSON.parse(line)),
-    );
-  }
+  const solidityResults = await runSolidityCases(
+    'script/CompareSquadProtocol.s.sol:CompareSquadProtocol',
+    '.local/simulation/protocol',
+    solidityCases,
+    viem,
+    options,
+  );
   assert.equal(solidityResults.length, cases.length + types.cases.length);
   compareBatch(cases, solidityResults.slice(0, cases.length), 'Solidity');
   for (const [index, entry] of types.cases.entries()) {
@@ -515,6 +532,31 @@ try {
     assert.equal(`${fn.name}(${fn.inputs.map(canonical).join(',')})`, frozen.signature);
     assert.equal(viem.toFunctionSelector(fn), frozen.selector, `${fn.name}: selector`);
   }
+  report.currentCase = 'Solidity static validation';
+  const actionResults = await runSolidityCases(
+    'script/CheckSquadActions.s.sol:CheckSquadActions',
+    '.local/simulation/actions',
+    staticActions.cases,
+    viem,
+    options,
+  );
+  assert.equal(actionResults.length, staticActions.cases.length, 'Static validation result count');
+  for (const [index, entry] of staticActions.cases.entries()) {
+    report.currentCase = entry.name;
+    const actual = actionResults[index];
+    assert.equal(actual.accepted, entry.valid, `${entry.name}: static acceptance`);
+    if (entry.valid)
+      assert.equal(
+        actual.encoding,
+        entry.expectedEncoding,
+        `${entry.name}: result and unchanged inputs`,
+      );
+    else assert.equal(actual.rejection, selector, `${entry.name}: explicit protocol rejection`);
+  }
+  Object.assign(actionsReport, { status: 'passed', inputPreservation: 'passed' });
+  console.log(
+    `PASS: actual Solidity static validation: ${actionsReport.cases} terrain, coordinate, ray and complete-bundle cases; ${actionsReport.legalReferenceBundles} legal reference bundles and ${actionsReport.rejectionReferenceBundles} rejected references. Required costs match and accepted inputs remain unchanged.`,
+  );
   delete report.currentCase;
   Object.assign(report, {
     status: 'passed',
@@ -556,6 +598,9 @@ try {
   baselineReport.error = error.message;
   typesReport.status = 'failed';
   typesReport.error = error.message;
+  actionsReport.status = 'failed';
+  actionsReport.error = error.message;
+  if (report.currentCase) actionsReport.currentCase = report.currentCase;
   if (error.expected !== undefined) report.expected = error.expected;
   if (error.actual !== undefined) report.actual = error.actual;
   console.error(
@@ -568,7 +613,9 @@ try {
   report.completedAt = new Date().toISOString();
   baselineReport.completedAt = report.completedAt;
   typesReport.completedAt = report.completedAt;
+  actionsReport.completedAt = report.completedAt;
   await saveJson(path('.local/design/protocol.json'), report);
   await saveJson(path('.local/design/baseline.json'), baselineReport);
   await saveJson(path('.local/design/types.json'), typesReport);
+  await saveJson(path('.local/design/actions.json'), actionsReport);
 }

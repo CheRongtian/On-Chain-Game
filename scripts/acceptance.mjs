@@ -14,6 +14,10 @@ export const acceptanceReports = [
     ".local/design/types.json",
   ],
   [
+    "Solidity map geometry and complete squad validation",
+    ".local/design/actions.json",
+  ],
+  [
     "Anvil operational controls and database restore",
     ".local/operations/anvil.json",
   ],
