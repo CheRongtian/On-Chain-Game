@@ -85,6 +85,7 @@ const reusable = [
   ".local/frontend-build.json",
   ".local/safety/foundry-fuzz",
   ".local/safety/foundry-invariant",
+  ".local/safety/squad-failures",
   "contracts/out",
   "contracts/cache",
   "client/dist",

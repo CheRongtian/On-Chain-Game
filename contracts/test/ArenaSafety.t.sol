@@ -16,6 +16,16 @@ contract ArenaInvariantTest {
         address addr;
         bytes4[] selectors;
     }
+
+    struct FuzzArtifactSelector {
+        string artifact;
+        bytes4[] selectors;
+    }
+
+    struct FuzzInterface {
+        address addr;
+        string[] artifacts;
+    }
     ArenaHandler private handler;
 
     function setUp() public {
@@ -39,6 +49,39 @@ contract ArenaInvariantTest {
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = ArenaHandler.step.selector;
         targets[0] = FuzzSelector({ addr: address(handler), selectors: selectors });
+    }
+
+    // Empty optional discovery hooks follow Foundry's standard invariant interface.
+    function targetArtifacts() external pure returns (string[] memory) {
+        return new string[](0);
+    }
+
+    function excludeArtifacts() external pure returns (string[] memory) {
+        return new string[](0);
+    }
+
+    function targetArtifactSelectors() external pure returns (FuzzArtifactSelector[] memory) {
+        return new FuzzArtifactSelector[](0);
+    }
+
+    function targetInterfaces() external pure returns (FuzzInterface[] memory) {
+        return new FuzzInterface[](0);
+    }
+
+    function targetSenders() external pure returns (address[] memory) {
+        return new address[](0);
+    }
+
+    function excludeSenders() external pure returns (address[] memory) {
+        return new address[](0);
+    }
+
+    function excludeContracts() external pure returns (address[] memory) {
+        return new address[](0);
+    }
+
+    function excludeSelectors() external pure returns (FuzzSelector[] memory) {
+        return new FuzzSelector[](0);
     }
 
     function invariantProtocolState() public view {

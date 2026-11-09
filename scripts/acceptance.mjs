@@ -35,6 +35,10 @@ export const acceptanceReports = [
   ],
   ["Safety, rule comparisons and gas budgets", ".local/safety/acceptance.json"],
   [
+    "Squad rule fuzz, invariants, generated games and Gas pressure",
+    ".local/safety/squad.json",
+  ],
+  [
     "Anvil indexing, Keeper and controlled branch faults",
     ".local/indexer/anvil-acceptance.json",
   ],

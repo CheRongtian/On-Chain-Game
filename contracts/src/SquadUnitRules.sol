@@ -16,7 +16,11 @@ library SquadUnitRules {
         if (
             side > 1 || !state.battleStarted || state.outcome != 0
                 || state.completedRound >= Parameters.MAX_ROUNDS
-        ) revert SquadCodec.InvalidProtocol();
+        ) {
+            // Round and side guards remain necessary for each generated or batched bundle.
+            // forge-lint: disable-next-line(require-revert-in-loop)
+            revert SquadCodec.InvalidProtocol();
+        }
         SquadCodec.validateState(state);
         SquadCodec.ActionInput memory input;
         input.round = state.completedRound + 1;
@@ -45,6 +49,8 @@ library SquadUnitRules {
                 requiredEnergy += Parameters.unitRule(unit.unitType)[4];
             }
         }
+        // Each side must reject overspending even when validation runs inside a game loop.
+        // forge-lint: disable-next-line(require-revert-in-loop)
         if (requiredEnergy > state.energy[side]) revert SquadCodec.InvalidProtocol();
     }
 

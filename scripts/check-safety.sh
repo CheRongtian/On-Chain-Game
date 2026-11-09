@@ -15,7 +15,7 @@ run_safety_checks() {
     fi
     printf 'Running local contract state-machine, replay, deadline, and legal-game checks...\n'
     if ! run_backend_check forge test --offline --use "$project_root/.local/bin/solc-0.8.30" \
-        --no-match-contract ArenaGasTest -vv; then
+        --no-match-contract 'ArenaGasTest|^SquadRule.*Test$' -vv; then
         printf '{"status":"failed","stage":"contracts"}\n' > "$evidence/acceptance.json"
         return 1
     fi
@@ -40,5 +40,9 @@ run_safety_checks() {
         fi
     done
     printf 'Comparing independent Go/Solidity sequences and collecting measured gas evidence...\n'
-    run_backend_check "$indexer_binary" safety
+    if ! run_backend_check "$indexer_binary" safety; then
+        return 1
+    fi
+    printf 'Running dedicated five-profession rule safety, continuous invariants and pressure Gas checks...\n'
+    run_backend_check node "$project_root/client/scripts/check-squad-safety.mjs"
 }

@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 
-const traceType =
+export const traceType =
   '(uint8[6] positions,uint8[6] supportHp,uint8[6] shields,uint8[6] rawDamage,uint8[6] damageHp,uint16 activeRound)';
+
+export function squadOutputType(config) {
+  return `(${config.types.state} next,${config.types.effects} effects,${traceType} trace,${config.types.state} initial,${config.types.action}[3][2] actions,bytes beforeEncoding,bytes afterEncoding,bytes32 beforeHash,bytes32 stateHash,uint256 resolveGas,uint256 hashGas)`;
+}
 
 function exchanged(values) {
   return values.length === 2 ? [values[1], values[0]] : [...values.slice(3), ...values.slice(0, 3)];
@@ -84,9 +88,7 @@ export function prepareSquadBattles(config, baseline, viem, edges) {
   const inputType = viem.parseAbiParameters(
     `(${config.types.context} context,${config.types.state} state,${config.types.action}[3][2] actions)`,
   );
-  const outputType = viem.parseAbiParameters(
-    `(${config.types.state} next,${config.types.effects} effects,${traceType} trace,${config.types.state} initial,${config.types.action}[3][2] actions,bytes beforeEncoding,bytes afterEncoding,bytes32 beforeHash,bytes32 stateHash,uint256 resolveGas,uint256 hashGas)`,
-  );
+  const outputType = viem.parseAbiParameters(squadOutputType(config));
   const sequenceType = viem.parseAbiParameters(
     `(${config.types.context} context,${config.types.state} state,${config.types.action}[3][2][] steps)`,
   );
