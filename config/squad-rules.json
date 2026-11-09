@@ -1,6 +1,6 @@
 {
   "status": "semantics-frozen",
-  "runtime": "design-only",
+  "runtime": "solidity-data-only",
   "balance": "initial-values-unmeasured",
   "scope": {
     "width": 8,

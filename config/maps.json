@@ -1,6 +1,6 @@
 {
   "status": "geometry-frozen",
-  "runtime": "design-only",
+  "runtime": "solidity-data-only",
   "balance": "unmeasured",
   "selection": {
     "selectedBy": "host",

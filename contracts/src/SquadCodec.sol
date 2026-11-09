@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
+import { SquadParameters as Parameters } from "./SquadParameters.sol";
+
 // These literals define the frozen ABI widths and numeric rule profile.
 // forge-lint: disable-start(literal-instead-of-constant)
 
@@ -121,6 +123,15 @@ library SquadCodec {
         bool[2] revealed;
     }
 
+    // Internal storage only; published getter tuples retain their frozen layouts.
+    struct MatchData {
+        MatchSummary summary;
+        State battle;
+        SquadStatus squad;
+        RoundStatus turn;
+        Action[3][2] revealedActions;
+    }
+
     struct Map {
         uint8 mapId;
         uint8 width;
@@ -149,8 +160,8 @@ library SquadCodec {
     }
 
     function validateSquad(uint8[3] memory types_) internal pure {
-        for (uint256 i = 0; i < 3; ++i) {
-            _require(types_[i] >= 1 && types_[i] <= 5);
+        for (uint256 i = 0; i < Parameters.SQUAD_SIZE; ++i) {
+            _require(types_[i] >= 1 && types_[i] <= Parameters.TYPE_COUNT);
             for (uint256 j = 0; j < i; ++j) {
                 _require(types_[i] != types_[j]);
             }
@@ -169,7 +180,7 @@ library SquadCodec {
     }
 
     function actionEncoding(ActionInput memory input) internal pure returns (bytes memory) {
-        _require(input.round >= 1 && input.round <= 20 && input.side <= 1);
+        _require(input.round >= 1 && input.round <= Parameters.MAX_ROUNDS && input.side <= 1);
         validateSquad(input.unitTypes);
         for (uint256 slot = 0; slot < 3; ++slot) {
             _validateAction(input, slot);
@@ -194,8 +205,7 @@ library SquadCodec {
         bool skill = action.actionType == 3;
         bool moves = action.actionType == 1 || (skill && unitType == 3);
         if (moves) {
-            uint8[5] memory ranges = [uint8(1), 2, 3, 2, 2];
-            uint8 limit = skill ? 4 : ranges[unitType - 1];
+            uint8 limit = skill ? Parameters.skillRules()[2] : Parameters.unitRule(unitType)[1];
             _require(action.targetCell == 255 && action.targetUnit == 255);
             _require(action.pathLength >= 1 && action.pathLength <= limit);
         } else {
@@ -228,7 +238,8 @@ library SquadCodec {
 
     function stateEncoding(StateInput memory input) internal pure returns (bytes memory) {
         State memory state = input.state;
-        _require(state.mapId >= 1 && state.mapId <= 3 && state.completedRound <= 20);
+        uint64 obstacles = Parameters.terrain(state.mapId)[0];
+        _require(state.completedRound <= Parameters.MAX_ROUNDS);
         _require(state.outcome <= 3 && state.reason <= 8);
         _require((state.outcome == 0) == (state.reason == 0));
         if (!state.battleStarted) {
@@ -245,15 +256,15 @@ library SquadCodec {
             }
         } else {
             _require(state.reason <= 6);
-            _require(state.completedRound < 20 || (state.outcome != 0 && state.reason <= 4));
+            _require(
+                state.completedRound < Parameters.MAX_ROUNDS
+                    || (state.outcome != 0 && state.reason <= 4)
+            );
             _require(state.reason < 1 || state.reason > 4 || state.completedRound > 0);
             uint8[3] memory types_;
             uint64 occupied = 0;
-            uint8[5] memory maxHp = [uint8(10), 6, 5, 7, 6];
-            uint64[3] memory obstacles =
-                [uint64(0x0000420000420000), 0x0030002244000c00, 0x0010004422000800];
             for (uint256 p = 0; p < 2; ++p) {
-                _require(state.energy[p] <= 5);
+                _require(state.energy[p] <= Parameters.MAX_ENERGY);
                 for (uint256 slot = 0; slot < 3; ++slot) {
                     types_[slot] = state.units[p * 3 + slot].unitType;
                 }
@@ -261,11 +272,13 @@ library SquadCodec {
             }
             for (uint256 i = 0; i < 6; ++i) {
                 Unit memory unit = state.units[i];
-                _require(unit.hp <= maxHp[unit.unitType - 1] && unit.alive == (unit.hp > 0));
+                _require(
+                    unit.hp <= Parameters.unitRule(unit.unitType)[0] && unit.alive == (unit.hp > 0)
+                );
                 if (unit.alive) {
                     _require(unit.position < 64);
                     uint64 bit = uint64(1) << unit.position;
-                    _require((occupied & bit) == 0 && (obstacles[state.mapId - 1] & bit) == 0);
+                    _require((occupied & bit) == 0 && (obstacles & bit) == 0);
                     occupied |= bit;
                     _require(
                         unit.lockedRound == 0

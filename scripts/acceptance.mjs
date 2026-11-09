@@ -10,6 +10,10 @@ export const acceptanceReports = [
     ".local/design/baseline.json",
   ],
   [
+    "Solidity squad rules, initialization and data isolation",
+    ".local/design/types.json",
+  ],
+  [
     "Anvil operational controls and database restore",
     ".local/operations/anvil.json",
   ],

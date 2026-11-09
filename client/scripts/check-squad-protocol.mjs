@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { readJson, saveJson } from '../../scripts/deployment.mjs';
 import { prepareSquadBaseline } from '../../scripts/squad-baseline.mjs';
+import { prepareSquadTypes } from './squad-types.mjs';
 
 const root = new URL('../../', import.meta.url);
 const path = (name) => fileURLToPath(new URL(name, root));
@@ -21,6 +22,7 @@ const report = {
   startedAt: new Date().toISOString(),
 };
 const baselineReport = { status: 'running', startedAt: report.startedAt };
+const typesReport = { status: 'running', startedAt: report.startedAt };
 const computedEncodings = new Map();
 
 function compare(entry, actual, language) {
@@ -127,6 +129,8 @@ try {
   const generated = loadTypeScript(
     await readFile(path('client/src/generated/squadArena.ts'), 'utf8'),
   );
+  const types = prepareSquadTypes(config, rules, maps, baseline, generated.squadArenaAbi, viem);
+  Object.assign(typesReport, types.report);
   const codec = loadTypeScript(
     await readFile(path('client/src/lib/squadProtocol.ts'), 'utf8'),
     (name) => (name === '../generated/squadArena' ? generated : require(name)),
@@ -418,10 +422,14 @@ try {
   report.currentCase = 'Solidity execution';
   // Keep the EVM fixture working set bounded as the shared catalogue grows.
   const solidityResults = [];
-  for (let offset = 0; offset < cases.length; offset += 96) {
-    const entries = cases
+  const solidityCases = [
+    ...cases.map((entry, index) => ({ kind: entry.kind, payload: inputs[index] })),
+    ...types.cases,
+  ];
+  for (let offset = 0; offset < solidityCases.length; offset += 96) {
+    const entries = solidityCases
       .slice(offset, offset + 96)
-      .map((entry, index) => ({ kind: entry.kind, payload: inputs[offset + index] }));
+      .map((entry) => ({ kind: entry.kind, payload: entry.payload }));
     const batch = viem.encodeAbiParameters(
       viem.parseAbiParameters('(uint8 kind,bytes payload)[]'),
       [entries],
@@ -456,7 +464,23 @@ try {
         .map((line) => JSON.parse(line)),
     );
   }
-  compareBatch(cases, solidityResults, 'Solidity');
+  assert.equal(solidityResults.length, cases.length + types.cases.length);
+  compareBatch(cases, solidityResults.slice(0, cases.length), 'Solidity');
+  for (const [index, entry] of types.cases.entries()) {
+    report.currentCase = entry.name;
+    const actual = solidityResults[cases.length + index];
+    assert.equal(actual.accepted, entry.valid, `${entry.name}: accepted`);
+    if (entry.valid) {
+      assert.equal(
+        actual.encoding,
+        entry.expectedEncoding,
+        `${entry.name}: actual constructed value`,
+      );
+      if (entry.expectedHash)
+        assert.equal(actual.hash, entry.expectedHash, `${entry.name}: ruleset identity`);
+    } else assert.equal(actual.rejection, selector, `${entry.name}: explicit protocol rejection`);
+    assert.deepEqual(actual.topics ?? [], [], `${entry.name}: no lifecycle events`);
+  }
   const artifact = await readJson(
     path('.local/simulation/protocol/artifacts/ISquadArena.sol/ISquadArena.json'),
   );
@@ -517,22 +541,34 @@ try {
   console.log(
     `PASS: squad design baseline: ${baselineReport.initializations} map/side/lineup initializations, ${baselineReport.rounds} complete seven-stage references, ${baselineReport.rejectionReferences} atomic rejection references and ${selections.length} immutable-metadata selections. Resolver execution remains pending implementation.`,
   );
+  Object.assign(typesReport, {
+    status: 'passed',
+    matchStorageIsolation: 'passed',
+    contractStorageIsolation: 'passed',
+  });
+  console.log(
+    `PASS: actual Solidity squad data: ${typesReport.initializations} constructed states and frozen hashes, ${typesReport.initializationRejections} rejected lineups/maps, ${typesReport.unitNormalizations} unit normalization cases, fixed rules/maps and room/contract/context isolation.`,
+  );
 } catch (error) {
   report.status = 'failed';
   report.error = error.message;
   baselineReport.status = 'failed';
   baselineReport.error = error.message;
+  typesReport.status = 'failed';
+  typesReport.error = error.message;
   if (error.expected !== undefined) report.expected = error.expected;
   if (error.actual !== undefined) report.actual = error.actual;
   console.error(
     `FAIL: squad protocol${report.currentCase ? ` (${report.currentCase})` : ''}: ${error.message}`,
   );
-  if (error.stdout) process.stderr.write(error.stdout);
+  if (error.stdout && report.currentCase !== 'Go execution') process.stderr.write(error.stdout);
   if (error.stderr) process.stderr.write(error.stderr);
   process.exitCode = 1;
 } finally {
   report.completedAt = new Date().toISOString();
   baselineReport.completedAt = report.completedAt;
+  typesReport.completedAt = report.completedAt;
   await saveJson(path('.local/design/protocol.json'), report);
   await saveJson(path('.local/design/baseline.json'), baselineReport);
+  await saveJson(path('.local/design/types.json'), typesReport);
 }
