@@ -22,6 +22,10 @@ export const acceptanceReports = [
     ".local/design/battles.json",
   ],
   [
+    "Squad skill lifecycle, runtime state hashes and Gas baseline",
+    ".local/design/edges.json",
+  ],
+  [
     "Anvil operational controls and database restore",
     ".local/operations/anvil.json",
   ],

@@ -9,6 +9,12 @@ import { prepareSquadBaseline } from '../../scripts/squad-baseline.mjs';
 import { prepareSquadTypes } from './squad-types.mjs';
 import { prepareSquadActions } from './squad-actions.mjs';
 import { prepareSquadBattles } from './squad-battles.mjs';
+import {
+  resolvedFrames,
+  runtimeStateCases,
+  stateHashChanges,
+  gasBaseline,
+} from './squad-hashes.mjs';
 
 const root = new URL('../../', import.meta.url);
 const path = (name) => fileURLToPath(new URL(name, root));
@@ -27,6 +33,7 @@ const baselineReport = { status: 'running', startedAt: report.startedAt };
 const typesReport = { status: 'running', startedAt: report.startedAt };
 const actionsReport = { status: 'running', startedAt: report.startedAt };
 const battlesReport = { status: 'running', startedAt: report.startedAt };
+const edgesReport = { status: 'running', startedAt: report.startedAt };
 const computedEncodings = new Map();
 
 function compare(entry, actual, language) {
@@ -185,7 +192,9 @@ try {
   Object.assign(typesReport, types.report);
   const staticActions = prepareSquadActions(config, rules, maps, baseline, viem);
   Object.assign(actionsReport, staticActions.report);
-  const battles = prepareSquadBattles(config, baseline, viem);
+  const edges = await readJson(path('config/squad-skill-vectors.json'));
+  assert.equal(edges.rulesetId, config.rulesetId, 'Supplemental skill ruleset');
+  const battles = prepareSquadBattles(config, baseline, viem, edges);
   Object.assign(battlesReport, battles.report);
   const codec = loadTypeScript(
     await readFile(path('client/src/lib/squadProtocol.ts'), 'utf8'),
@@ -570,10 +579,18 @@ try {
     options,
   );
   assert.equal(battleResults.length, battles.cases.length, 'Resolver result count');
+  const battleOutputs = [];
   for (const [index, entry] of battles.cases.entries()) {
     report.currentCase = entry.name;
     const actual = battles.compare(entry, battleResults[index], selector);
-    if (entry.name.startsWith('reference:')) battlesReport.results.push(actual);
+    if (actual) battleOutputs.push(actual);
+    if (
+      entry.name.startsWith('reference:') ||
+      entry.name.startsWith('edge:') ||
+      entry.sequence ||
+      entry.protocolIsolation
+    )
+      battlesReport.results.push(actual);
   }
   const altered = structuredClone(battles.cases[0]);
   altered.expected.stages.Support.hp[0]++;
@@ -591,7 +608,79 @@ try {
     alteredCheckpointRejected: true,
   });
   console.log(
-    `PASS: actual Solidity seven-stage resolution: ${battlesReport.frozenRounds} frozen rounds, A-first/B-first and ownership-exchange comparisons, ${battlesReport.rejected} explicit rejections; ${battlesReport.cases} cases. All checkpoints, final states and effects match; inputs remain unchanged.`,
+    `PASS: actual Solidity seven-stage resolution: ${battlesReport.frozenRounds} original frozen rounds, ${battlesReport.skillEdgeRounds} supplemental rounds, ${battlesReport.continuousSequences} continuous sequences, order/ownership comparisons and ${battlesReport.rejected} explicit outer rejections; ${battlesReport.cases} cases. State/effect/hash references match; inputs remain unchanged.`,
+  );
+  const frames = resolvedFrames(battleOutputs);
+  const hashCases = runtimeStateCases(frames, config.rulesetId);
+  const changes = stateHashChanges(frames[0], config, viem);
+  report.currentCase = 'Resolved-state field and identity changes';
+  const changedResults = await runSolidityCases(
+    'script/CompareSquadProtocol.s.sol:CompareSquadProtocol',
+    '.local/simulation/hash-changes',
+    changes,
+    viem,
+    options,
+  );
+  assert.equal(changedResults.length, changes.length, 'State-change result count');
+  changes.forEach((entry, index) => {
+    assert.equal(changedResults[index].accepted, true, `${entry.name}: canonical changed state`);
+    entry.expectedEncoding = changedResults[index].encoding;
+    entry.expectedHash = changedResults[index].hash;
+  });
+  assert.equal(
+    new Set([frames[0].stateHash, ...changes.map((entry) => entry.expectedHash)]).size,
+    changes.length + 1,
+    'Each included state/context change must affect its hash',
+  );
+  hashCases.push(...changes);
+  for (const entry of hashCases) {
+    report.currentCase = entry.name;
+    const input = structuredClone(entry.input);
+    input.context.chainId = BigInt(input.context.chainId);
+    input.context.matchId = BigInt(input.context.matchId);
+    const encoding = codec.encodeState(input);
+    compare(entry, { accepted: true, encoding, hash: viem.keccak256(encoding) }, 'TypeScript');
+  }
+  const hashFixture = path('.local/simulation/battles/runtime-states.json');
+  await writeFile(hashFixture, JSON.stringify({ cases: hashCases }));
+  report.currentCase = 'Go execution';
+  const goHashes = await run(
+    'go',
+    ['run', '-mod=readonly', './cmd/arena-server', 'check-protocol', hashFixture],
+    {
+      ...options,
+      cwd: path('server'),
+      env: { ...process.env, GOTOOLCHAIN: 'local', GOPROXY: 'off' },
+    },
+  );
+  const independentHashes = JSON.parse(goHashes.stdout).vectors;
+  assert.equal(independentHashes.length, hashCases.length, 'Independent Go runtime-state count');
+  for (const [index, entry] of hashCases.entries()) {
+    report.currentCase = entry.name;
+    assert.equal(independentHashes[index].name, entry.name, 'Independent state case order');
+    compare(entry, independentHashes[index], 'Go');
+  }
+  const battleArtifact = await readJson(
+    path('.local/simulation/battles/artifacts/CheckSquadBattle.s.sol/SquadBattleProbe.json'),
+  );
+  Object.assign(edgesReport, {
+    status: 'passed',
+    scope:
+      'actual skill/lifecycle resolution, frozen before/after hashes, three-language ABI state encoding, included/excluded hash fields and sampled internal-call Gas',
+    skillRounds: edges.rounds.length,
+    continuousSequences: battlesReport.continuousSequences,
+    expectedSequenceRejections: battlesReport.continuousRejections,
+    runtimeStateEncodings: hashCases.length - changes.length,
+    fieldAndIdentityChanges: changes.map((entry) => entry.name),
+    protocolIsolationMaps: 3,
+    languages: ['Solidity', 'Go', 'TypeScript'],
+    gas: gasBaseline(frames, battleArtifact),
+  });
+  console.log(
+    `PASS: skill edges and state hashes: ${edgesReport.skillRounds} supplemental round references, ${edgesReport.continuousSequences} continuous sequences, ${edgesReport.runtimeStateEncodings} actual state encodings in three languages, ${changes.length} state/context changes and three-map protocol-field isolation.`,
+  );
+  console.log(
+    `Measured pure-call Gas baseline: resolve maximum=${edgesReport.gas.summary.resolve.maximum}; hashState maximum=${edgesReport.gas.summary.hash.maximum}. This excludes transaction storage/events and is not a full settlement Gas claim.`,
   );
   delete report.currentCase;
   Object.assign(report, {
@@ -649,6 +738,10 @@ try {
   battlesReport.error = error.message;
   if (report.currentCase) battlesReport.currentCase = report.currentCase;
   if (error.difference) battlesReport.difference = error.difference;
+  edgesReport.status = 'failed';
+  edgesReport.error = error.message;
+  if (report.currentCase) edgesReport.currentCase = report.currentCase;
+  if (error.difference) edgesReport.difference = error.difference;
   if (error.expected !== undefined) report.expected = error.expected;
   if (error.actual !== undefined) report.actual = error.actual;
   console.error(
@@ -663,9 +756,11 @@ try {
   typesReport.completedAt = report.completedAt;
   actionsReport.completedAt = report.completedAt;
   battlesReport.completedAt = report.completedAt;
+  edgesReport.completedAt = report.completedAt;
   await saveJson(path('.local/design/protocol.json'), report);
   await saveJson(path('.local/design/baseline.json'), baselineReport);
   await saveJson(path('.local/design/types.json'), typesReport);
   await saveJson(path('.local/design/actions.json'), actionsReport);
   await saveJson(path('.local/design/battles.json'), battlesReport);
+  await saveJson(path('.local/design/edges.json'), edgesReport);
 }
