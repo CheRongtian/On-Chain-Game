@@ -77,6 +77,8 @@ library SquadRules {
         returns (SquadCodec.Unit memory)
     {
         uint8 maxHp = Parameters.unitRule(unit.unitType)[0];
+        // Each unit must retain its HP guard when normalization runs inside settlement loops.
+        // forge-lint: disable-next-line(require-revert-in-loop)
         if (unit.hp > maxHp) revert SquadCodec.InvalidProtocol();
         if (unit.hp == 0) {
             unit.position = Parameters.UNUSED_CELL;
@@ -86,6 +88,8 @@ library SquadRules {
             !unit.alive || unit.position >= Parameters.CELL_COUNT
                 || unit.lockedRound > Parameters.MAX_ROUNDS + 1
         ) {
+            // Invalid live-unit fields must reject even when this helper is called in a loop.
+            // forge-lint: disable-next-line(require-revert-in-loop)
             revert SquadCodec.InvalidProtocol();
         }
         return unit;

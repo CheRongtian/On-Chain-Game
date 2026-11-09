@@ -18,6 +18,10 @@ export const acceptanceReports = [
     ".local/design/actions.json",
   ],
   [
+    "Solidity seven-stage squad battle resolution",
+    ".local/design/battles.json",
+  ],
+  [
     "Anvil operational controls and database restore",
     ".local/operations/anvil.json",
   ],

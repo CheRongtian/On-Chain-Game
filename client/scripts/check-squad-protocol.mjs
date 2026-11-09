@@ -8,6 +8,7 @@ import { readJson, saveJson } from '../../scripts/deployment.mjs';
 import { prepareSquadBaseline } from '../../scripts/squad-baseline.mjs';
 import { prepareSquadTypes } from './squad-types.mjs';
 import { prepareSquadActions } from './squad-actions.mjs';
+import { prepareSquadBattles } from './squad-battles.mjs';
 
 const root = new URL('../../', import.meta.url);
 const path = (name) => fileURLToPath(new URL(name, root));
@@ -25,6 +26,7 @@ const report = {
 const baselineReport = { status: 'running', startedAt: report.startedAt };
 const typesReport = { status: 'running', startedAt: report.startedAt };
 const actionsReport = { status: 'running', startedAt: report.startedAt };
+const battlesReport = { status: 'running', startedAt: report.startedAt };
 const computedEncodings = new Map();
 
 function compare(entry, actual, language) {
@@ -183,6 +185,8 @@ try {
   Object.assign(typesReport, types.report);
   const staticActions = prepareSquadActions(config, rules, maps, baseline, viem);
   Object.assign(actionsReport, staticActions.report);
+  const battles = prepareSquadBattles(config, baseline, viem);
+  Object.assign(battlesReport, battles.report);
   const codec = loadTypeScript(
     await readFile(path('client/src/lib/squadProtocol.ts'), 'utf8'),
     (name) => (name === '../generated/squadArena' ? generated : require(name)),
@@ -557,6 +561,38 @@ try {
   console.log(
     `PASS: actual Solidity static validation: ${actionsReport.cases} terrain, coordinate, ray and complete-bundle cases; ${actionsReport.legalReferenceBundles} legal reference bundles and ${actionsReport.rejectionReferenceBundles} rejected references. Required costs match and accepted inputs remain unchanged.`,
   );
+  report.currentCase = 'Solidity seven-stage resolution';
+  const battleResults = await runSolidityCases(
+    'script/CheckSquadBattle.s.sol:CheckSquadBattle',
+    '.local/simulation/battles',
+    battles.cases,
+    viem,
+    options,
+  );
+  assert.equal(battleResults.length, battles.cases.length, 'Resolver result count');
+  for (const [index, entry] of battles.cases.entries()) {
+    report.currentCase = entry.name;
+    const actual = battles.compare(entry, battleResults[index], selector);
+    if (entry.name.startsWith('reference:')) battlesReport.results.push(actual);
+  }
+  const altered = structuredClone(battles.cases[0]);
+  altered.expected.stages.Support.hp[0]++;
+  assert.throws(
+    () => battles.compare(altered, battleResults[0], selector),
+    (error) => error.difference?.field === `${altered.name}.stages.Support.hp.0`,
+    'Altered stage expectation must fail at the affected unit',
+  );
+  Object.assign(battlesReport, {
+    status: 'passed',
+    inputPreservation: 'passed',
+    arrivalOrder: 'passed',
+    ownershipExchange: 'passed',
+    invalidBundlesAtomic: 'passed',
+    alteredCheckpointRejected: true,
+  });
+  console.log(
+    `PASS: actual Solidity seven-stage resolution: ${battlesReport.frozenRounds} frozen rounds, A-first/B-first and ownership-exchange comparisons, ${battlesReport.rejected} explicit rejections; ${battlesReport.cases} cases. All checkpoints, final states and effects match; inputs remain unchanged.`,
+  );
   delete report.currentCase;
   Object.assign(report, {
     status: 'passed',
@@ -572,16 +608,24 @@ try {
     alteredExpectationRejected: true,
   });
   console.log(
-    `PASS: squad protocol: ${squads.length} ordered squads, ${events.length} event schemas, isolated secret keys and deadline boundary data. Phase transactions and gameplay remain later implementation work.`,
+    `PASS: squad protocol: ${squads.length} ordered squads, ${events.length} event schemas, isolated secret keys and deadline boundary data. Live phase transactions and Go gameplay remain later implementation work.`,
   );
   Object.assign(baselineReport, {
     status: 'passed',
     combinedCodecCases: cases.length,
     combinedProtocolLanguages: report.languages,
     metadataSelections: selections.length,
+    scope:
+      'frozen references, codec agreement, metadata selection and actual Solidity seven-stage reference execution',
+    resolverExecution: {
+      status: 'passed',
+      language: 'Solidity',
+      frozenRounds: battlesReport.frozenRounds,
+      frozenRejections: battlesReport.frozenRejections,
+    },
   });
   console.log(
-    `PASS: squad design baseline: ${baselineReport.initializations} map/side/lineup initializations, ${baselineReport.rounds} complete seven-stage references, ${baselineReport.rejectionReferences} atomic rejection references and ${selections.length} immutable-metadata selections. Resolver execution remains pending implementation.`,
+    `PASS: squad design baseline: ${baselineReport.initializations} map/side/lineup initializations, ${baselineReport.rounds} complete seven-stage references executed by Solidity, ${baselineReport.rejectionReferences} atomic rejection references and ${selections.length} immutable-metadata selections. Independent Go resolution remains later work.`,
   );
   Object.assign(typesReport, {
     status: 'passed',
@@ -601,6 +645,10 @@ try {
   actionsReport.status = 'failed';
   actionsReport.error = error.message;
   if (report.currentCase) actionsReport.currentCase = report.currentCase;
+  battlesReport.status = 'failed';
+  battlesReport.error = error.message;
+  if (report.currentCase) battlesReport.currentCase = report.currentCase;
+  if (error.difference) battlesReport.difference = error.difference;
   if (error.expected !== undefined) report.expected = error.expected;
   if (error.actual !== undefined) report.actual = error.actual;
   console.error(
@@ -614,8 +662,10 @@ try {
   baselineReport.completedAt = report.completedAt;
   typesReport.completedAt = report.completedAt;
   actionsReport.completedAt = report.completedAt;
+  battlesReport.completedAt = report.completedAt;
   await saveJson(path('.local/design/protocol.json'), report);
   await saveJson(path('.local/design/baseline.json'), baselineReport);
   await saveJson(path('.local/design/types.json'), typesReport);
   await saveJson(path('.local/design/actions.json'), actionsReport);
+  await saveJson(path('.local/design/battles.json'), battlesReport);
 }
