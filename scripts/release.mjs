@@ -393,6 +393,7 @@ export async function retainRelease(workspace, root) {
       ".local/safety/squad-gas.snapshot",
       ".local/safety/squad-tests.json",
       ".local/safety/squad-gas-tests.json",
+      ".local/safety/squad-room-tests.json",
       ".local/safety/toolchain.txt",
       ".local/chain/deployment.json",
       ".local/archive/deployment.json",

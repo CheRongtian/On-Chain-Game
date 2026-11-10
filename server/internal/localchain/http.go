@@ -2,6 +2,7 @@ package localchain
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -77,16 +78,27 @@ func (c *Chain) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON-RPC request", http.StatusBadRequest)
 		return
 	}
+	evmCallsOnly := true
 	for _, request := range calls {
 		if !strings.HasPrefix(request.Method, "eth_") && !strings.HasPrefix(request.Method, "net_") &&
 			!strings.HasPrefix(request.Method, "web3_") && request.Method != "arena_checkpoint" && request.Method != "arena_advanceClock" {
 			writeFailure(w, calls, batch, -32601, "This local node exposes eth, net, web3, and Arena persistence methods.")
 			return
 		}
+		evmCallsOnly = evmCallsOnly && request.Method == "eth_call"
 	}
 	// No successful chain response escapes before its block and receipts are durable.
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if evmCallsOnly {
+		if r.Context().Err() != nil {
+			return
+		}
+		// Finish accepted reads within Geth's existing deadline when a page reload disconnects.
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), c.backend.APIBackend.RPCEVMTimeout())
+		defer cancel()
+		r = r.WithContext(ctx)
+	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	response := &bufferedResponse{header: make(http.Header), status: http.StatusOK}
 	c.handler.ServeHTTP(response, r)

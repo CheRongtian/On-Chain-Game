@@ -63,6 +63,7 @@ run_backend_tests() {
     run_backend_check node "$project_root/scripts/client-contract.mjs" check-sources
     source "$project_root/scripts/check-safety.sh"
     run_safety_checks
+    run_backend_check node "$project_root/client/scripts/check-squad-rooms.mjs"
     run_indexer_checks keeper
     run_operational_checks
     run_frontend_checks
@@ -76,6 +77,7 @@ run_backend_tests() {
     deploy_local_arena
     start_go_indexer
     wait_for_backend_ready "$indexer_pid"
+    run_backend_check node "$project_root/client/scripts/check-squad-rooms.mjs"
     run_indexer_checks demo
     run_operational_checks
     printf 'Repeating the complete browser gameplay acceptance on Geth...\n'

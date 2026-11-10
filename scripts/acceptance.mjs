@@ -39,6 +39,10 @@ export const acceptanceReports = [
     ".local/safety/squad.json",
   ],
   [
+    "Squad rooms, manual host start and immutable signed commits on both engines",
+    ".local/safety/squad-rooms.json",
+  ],
+  [
     "Anvil indexing, Keeper and controlled branch faults",
     ".local/indexer/anvil-acceptance.json",
   ],
