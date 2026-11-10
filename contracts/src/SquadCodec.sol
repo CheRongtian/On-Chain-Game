@@ -156,6 +156,8 @@ library SquadCodec {
         if (index == 1) return SQUAD_DOMAIN;
         if (index == 2) return ACTION_DOMAIN;
         if (index == 3) return STATE_DOMAIN;
+        // Invalid domain indices must reject when callers enumerate protocol commitments.
+        // forge-lint: disable-next-line(require-revert-in-loop)
         revert InvalidProtocol();
     }
 

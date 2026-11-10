@@ -11,6 +11,24 @@ import type { Address, ContractFunctionReturnType, TransactionReceipt } from 'vi
 import { mnemonicToAccount } from 'viem/accounts';
 import { arenaAbi } from '../generated/arena';
 
+// Stop old-document reads before WebKit starts replacing the page.
+let pageReads = new AbortController();
+window.addEventListener('beforeunload', () => pageReads.abort());
+window.addEventListener('pagehide', () => pageReads.abort());
+window.addEventListener('pageshow', () => {
+  if (pageReads.signal.aborted) pageReads = new AbortController();
+});
+
+function readForPage(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const lifetime = pageReads.signal;
+  lifetime.throwIfAborted();
+  const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+  return fetch(input, {
+    ...init,
+    signal: signal ? AbortSignal.any([lifetime, signal]) : lifetime,
+  });
+}
+
 // Public development seed shared by the local chain processes.
 const localWallets = [0, 1].map((addressIndex) =>
   mnemonicToAccount('test test test test test test test test test test test junk', {
@@ -78,7 +96,11 @@ export function publicClient(deployment: Deployment) {
   return createPublicClient({
     chain: localChain,
     pollingInterval: 1_000,
-    transport: http(deployment.rpcUrl, { retryCount: 0, timeout: 8_000 }),
+    transport: http(deployment.rpcUrl, {
+      retryCount: 0,
+      timeout: 8_000,
+      fetchFn: readForPage,
+    }),
   });
 }
 
@@ -93,7 +115,7 @@ export function accountClient(deployment: Deployment, address: Address) {
 }
 
 export async function readConnection(): Promise<Connection> {
-  const response = await fetch('/deployment.json', { cache: 'no-store' });
+  const response = await readForPage('/deployment.json', { cache: 'no-store' });
   if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
     throw new Error('Start the backend and wait for the local Arena to be ready.');
   }

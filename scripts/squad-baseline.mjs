@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { access } from "node:fs/promises";
 import { readJson } from "./deployment.mjs";
 
-function initialState(row, rules, maps) {
+export function initialState(row, rules, maps) {
   const map = maps.find((value) => value.mapId === row.mapId);
   const squads =
     row.side === 0 ? [row.squad, row.opponent] : [row.opponent, row.squad];

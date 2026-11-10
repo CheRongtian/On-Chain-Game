@@ -50,6 +50,10 @@ contract SquadArena is ISquadEvents {
         SquadProtocol.commit(_requireMatch(matchId), matchId, commitment);
     }
 
+    function revealSquad(uint256 matchId, uint8[3] calldata unitTypes, bytes32 salt) external {
+        SquadProtocol.reveal(_requireMatch(matchId), matchId, unitTypes, salt);
+    }
+
     function getRulesetId() external view returns (bytes32) {
         return RULESET_ID;
     }

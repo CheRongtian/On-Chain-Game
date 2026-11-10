@@ -80,6 +80,8 @@ const report = {
   },
   replayChecks: { attempted: 0, verified: 0 },
   errors: [],
+  pageErrors: [],
+  rpcFailures: [],
   screenshots: [],
   startedAt: new Date().toISOString(),
 };
@@ -198,6 +200,30 @@ async function createPlayer(index, account) {
     writes: [],
     receiptReads: [],
   };
+  const diagnostic = () => ({
+    at: new Date().toISOString(),
+    player: index,
+    url: player.page?.url(),
+    scenario: { ...report.scenario },
+    faults: {
+      offline: player.offline,
+      wrongChain: player.wrongChain,
+      receiptBlocked: player.receiptBlocked,
+      blockReveal: player.blockReveal,
+      failSends: player.failSends,
+      snapshotHeld: player.snapshotHeld,
+    },
+  });
+  context.on('requestfailed', (request) => {
+    if (new URL(request.url()).href !== rpcEndpoint) return;
+    report.rpcFailures.push({
+      ...diagnostic(),
+      endpoint: request.url(),
+      httpMethod: request.method(),
+      rpcMethod: request.method() === 'POST' ? request.postDataJSON()?.method : undefined,
+      error: request.failure()?.errorText,
+    });
+  });
   await context.route(deployment.rpcUrl, async (route) => {
     const request = route.request();
     if (request.method() !== 'POST') return route.continue();
@@ -272,7 +298,17 @@ async function createPlayer(index, account) {
   });
   player.page = await context.newPage();
   player.page.setDefaultTimeout(35_000);
-  player.page.on('pageerror', (error) => report.errors.push(error.message));
+  player.page.on('pageerror', (error) => {
+    report.errors.push(error.toString());
+    const detail = {
+      ...diagnostic(),
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+    report.pageErrors.push(detail);
+    console.error(`${browserName} gameplay page error: ${JSON.stringify(detail)}`);
+  });
   players.push(player);
   await lobby(player);
   return player;
