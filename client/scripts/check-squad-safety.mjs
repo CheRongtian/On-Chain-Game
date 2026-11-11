@@ -20,7 +20,7 @@ const report = {
   status: 'running',
   startedAt: new Date().toISOString(),
   scope:
-    'new pure squad rules: native unit/fuzz/stateful invariants, fixed vectors, generated games, state encoding and measured kernel Gas; phase/storage transactions and independent Go resolution remain later work',
+    'pure squad rules: native unit/fuzz/stateful invariants, fixed vectors, generated games, state encoding and measured kernel Gas; authoritative phase/storage transactions and their Gas are checked separately by the room/battle driver; independent Go resolution is outside this pure suite',
   seed: '0x20261109',
 };
 const options = { maxBuffer: 16 * 1024 * 1024, signal: abort.signal };
@@ -144,7 +144,7 @@ try {
   ]);
   report.stage = 'native-rule-gas';
   console.log(
-    'Recording isolated squad kernel pressure snapshots; complete protocol transaction Gas remains later work...',
+    'Recording isolated squad kernel pressure snapshots; the room/battle driver checks complete transaction Gas separately...',
   );
   await forge([
     'snapshot',
@@ -355,7 +355,7 @@ try {
   assert.equal(previous.status, 'passed', 'Skill/lifecycle/hash baseline must pass');
   report.gas = {
     scope:
-      'isolated kernel fixture calls and separate internal resolve/hash windows; fixture calls include ABI dispatch/encoding and extra proof hashes. The initial 2M target gates internal resolve+hash as a necessary kernel condition only. Complete settlement transaction intrinsic Gas, authoritative storage and production events remain pending protocol integration. These are sampled pressure maxima, not exhaustive upper bounds.',
+      'isolated kernel fixture calls and separate internal resolve/hash windows; fixture calls include ABI dispatch/encoding and extra proof hashes. The initial 2M target gates internal resolve+hash as a necessary kernel condition only. Complete transaction intrinsic Gas, authoritative storage and production events are measured separately by the room/battle driver. These are sampled pressure maxima, not exhaustive upper bounds.',
     compiler: previous.gas.compiler,
     optimizer: previous.gas.optimizer,
     evmVersion: previous.gas.evmVersion,
@@ -380,7 +380,7 @@ try {
     `PASS: new squad rule safety: ${tests.length} native tests, ${report.native.fuzzRuns} fuzz cases, ${invariant.calls} stateful calls with zero handler reverts, ${games.length} complete generated games/${frames.length} rounds and ${gas.length} isolated pressure snapshots.`,
   );
   console.log(
-    `PASS: generated state encodings/hashes agree in three languages for ${hashCases.length} states; pressure fixture maximum=${maxima.fixtureCallGas.value}, pure resolve maximum=${maxima.resolveGas.value}, hash maximum=${maxima.hashGas.value} Gas. Complete protocol transaction Gas remains later work.`,
+    `PASS: generated state encodings/hashes agree in three languages for ${hashCases.length} states; pressure fixture maximum=${maxima.fixtureCallGas.value}, pure resolve maximum=${maxima.resolveGas.value}, hash maximum=${maxima.hashGas.value} Gas. The room/battle driver checks complete transaction Gas separately.`,
   );
 } catch (error) {
   report.status = 'failed';

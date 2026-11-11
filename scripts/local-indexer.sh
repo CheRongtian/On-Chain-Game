@@ -165,7 +165,7 @@ stop_backend() {
             node "$project_root/scripts/baseline.mjs" retain || backend_status=1
         fi
         if [[ "$backend_status" == 0 && -f "$project_root/.local/acceptance.json" ]]; then
-            printf 'PASS: complete automated acceptance, squad rules, map geometry, protocol encoding, shared compatibility baseline, actual Solidity data, static actions, seven-stage resolution, skill lifecycle, runtime hashes, native rule fuzz/invariants/pressure Gas, signed Squad Commit/Reveal and initialization on both engines, browser-engine coverage, operational recovery, all four Geth archive requirements and service cleanup. The local release still requires the recorded manual walkthrough.\n'
+            printf 'PASS: complete automated acceptance, squad rules, map geometry, protocol encoding, shared compatibility baseline, actual Solidity data, static actions, seven-stage resolution, skill lifecycle, runtime hashes, native rule fuzz/invariants/pressure Gas, signed Squad Commit/Reveal, initialization and complete battle rounds/effects on both engines, browser-engine coverage, operational recovery, all four Geth archive requirements and service cleanup. The local release still requires the recorded manual walkthrough.\n'
         else
             backend_status=1
             printf '{"status":"failed","exitCode":%d}\n' "$backend_status" > "$project_root/.local/acceptance.json"

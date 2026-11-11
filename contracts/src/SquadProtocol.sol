@@ -19,11 +19,15 @@ library SquadProtocol {
     error AlreadyCommitted(address player);
     error AlreadyRevealed(address player);
     error CommitmentMismatch();
+    error StaleRound(uint16 expected, uint16 actual);
 
     uint8 internal constant WAITING = 1;
     uint8 internal constant SQUAD_COMMIT = 2;
     uint8 internal constant SQUAD_REVEAL = 3;
     uint8 internal constant ROUND_COMMIT = 4;
+    uint8 internal constant ROUND_REVEAL = 5;
+    uint8 internal constant RESOLVABLE = 6;
+    uint8 internal constant FINISHED = 7;
 
     function join(SquadCodec.MatchSummary storage summary, uint256 matchId) internal {
         requirePhase(summary, WAITING);
@@ -47,7 +51,7 @@ library SquadProtocol {
     {
         SquadCodec.MatchSummary storage summary = matchData.summary;
         requirePhase(summary, SQUAD_COMMIT);
-        uint8 side = _playerIndex(summary);
+        uint8 side = playerIndex(summary);
         requireTimely(summary.phaseDeadline);
         SquadCodec.SquadStatus storage status = matchData.squad;
         if (status.committed[side]) revert AlreadyCommitted(msg.sender);
@@ -67,7 +71,7 @@ library SquadProtocol {
     ) internal {
         SquadCodec.MatchSummary storage summary = matchData.summary;
         requirePhase(summary, SQUAD_REVEAL);
-        uint8 side = _playerIndex(summary);
+        uint8 side = playerIndex(summary);
         requireTimely(summary.phaseDeadline);
         SquadCodec.SquadStatus storage status = matchData.squad;
         if (status.revealed[side]) revert AlreadyRevealed(msg.sender);
@@ -85,7 +89,7 @@ library SquadProtocol {
         if (status.revealed[0] && status.revealed[1]) {
             SquadCodec.State memory initial =
                 SquadRules.initialize(summary.mapId, status.unitTypes[0], status.unitTypes[1]);
-            _storeBattle(matchData.battle, initial);
+            storeBattle(matchData.battle, initial);
             // The initializer validates both lineups; encode its canonical output with the bound ruleset.
             summary.stateHash =
                 keccak256(abi.encode(SquadCodec.domain(3), context, summary.rulesetId, initial));
@@ -95,13 +99,13 @@ library SquadProtocol {
         }
     }
 
-    function _playerIndex(SquadCodec.MatchSummary storage summary) private view returns (uint8) {
+    function playerIndex(SquadCodec.MatchSummary storage summary) internal view returns (uint8) {
         if (msg.sender == summary.players[0]) return 0;
         if (msg.sender == summary.players[1]) return 1;
         revert NotPlayer(msg.sender);
     }
 
-    function _storeBattle(SquadCodec.State storage target, SquadCodec.State memory source) private {
+    function storeBattle(SquadCodec.State storage target, SquadCodec.State memory source) internal {
         // Copy individual units to retain the frozen non-IR compiler pipeline.
         target.mapId = source.mapId;
         target.battleStarted = source.battleStarted;
@@ -136,7 +140,7 @@ library SquadProtocol {
         uint256 matchId,
         uint8 next,
         uint64 deadline
-    ) private {
+    ) internal {
         uint8 previous = summary.phase;
         summary.phase = next;
         summary.phaseDeadline = deadline;

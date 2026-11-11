@@ -39,7 +39,7 @@ export const acceptanceReports = [
     ".local/safety/squad.json",
   ],
   [
-    "Squad rooms, signed Commit/Reveal and authoritative initialization on both engines",
+    "Squad rooms, signed battle Commit/Reveal, initialization and full-round settlement on both engines",
     ".local/safety/squad-rooms.json",
   ],
   [

@@ -697,7 +697,7 @@ try {
     alteredExpectationRejected: true,
   });
   console.log(
-    `PASS: squad protocol: ${squads.length} ordered squads, ${events.length} event schemas, isolated secret keys and deadline boundary data. Live phase transactions and Go gameplay remain later implementation work.`,
+    `PASS: squad protocol: ${squads.length} ordered squads, ${events.length} event schemas, isolated secret keys and deadline boundary data. The room/battle driver checks live transactions separately; independent Go resolution is outside this codec suite.`,
   );
   Object.assign(baselineReport, {
     status: 'passed',

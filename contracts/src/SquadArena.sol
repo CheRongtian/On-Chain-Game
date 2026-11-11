@@ -5,6 +5,7 @@ import { SquadCodec } from "./SquadCodec.sol";
 import { SquadParameters as Parameters } from "./SquadParameters.sol";
 import { SquadRules } from "./SquadRules.sol";
 import { SquadProtocol } from "./SquadProtocol.sol";
+import { SquadTurns } from "./SquadTurns.sol";
 import { ISquadEvents } from "./ISquadArena.sol";
 
 contract SquadArena is ISquadEvents {
@@ -52,6 +53,23 @@ contract SquadArena is ISquadEvents {
 
     function revealSquad(uint256 matchId, uint8[3] calldata unitTypes, bytes32 salt) external {
         SquadProtocol.reveal(_requireMatch(matchId), matchId, unitTypes, salt);
+    }
+
+    function commitActions(uint256 matchId, uint16 round, bytes32 commitment) external {
+        SquadTurns.commit(_requireMatch(matchId), matchId, round, commitment);
+    }
+
+    function revealActions(
+        uint256 matchId,
+        uint16 round,
+        SquadCodec.Action[3] calldata actions,
+        bytes32 salt
+    ) external {
+        SquadTurns.reveal(_requireMatch(matchId), matchId, round, actions, salt);
+    }
+
+    function settleRound(uint256 matchId, uint16 round) external {
+        SquadTurns.settle(_requireMatch(matchId), matchId, round);
     }
 
     function getRulesetId() external view returns (bytes32) {

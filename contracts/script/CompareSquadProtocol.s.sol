@@ -117,7 +117,7 @@ contract SquadProtocolProbe is ISquadEvents {
         matches[1].battle.units[0].hp = 1;
         matches[1].squad.committed[0] = true;
         matches[1].turn.committed[0] = true;
-        matches[1].revealedActions[0][0].targetCell = 42;
+        matches[1].revealedActions[0] = 42;
         SquadCodec.MatchData memory other = this.storedMatch(2);
         SquadCodec.MatchData memory separate = peer.storedMatch(1);
         require(matches[1].battle.units[0].hp == 1, "Fixture mutation did not execute");
@@ -133,8 +133,7 @@ contract SquadProtocolProbe is ISquadEvents {
         require(!other.squad.committed[0] && !separate.squad.committed[0], "Squad flags leaked");
         require(!other.turn.committed[0] && !separate.turn.committed[0], "Round flags leaked");
         require(
-            other.revealedActions[0][0].targetCell == 0
-                && separate.revealedActions[0][0].targetCell == 0,
+            other.revealedActions[0] == 0 && separate.revealedActions[0] == 0,
             "Action storage leaked"
         );
         SquadCodec.State memory state = SquadRules.initialize(1, typesA, typesB);

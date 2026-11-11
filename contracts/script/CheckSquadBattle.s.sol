@@ -117,7 +117,7 @@ contract SquadBattleProbe {
         room.turn.commitments[1] = bytes32(uint256(2));
         room.turn.committed[1] = true;
         room.turn.revealed[1] = true;
-        room.revealedActions[0] = input.actions[0];
+        room.revealedActions[0] = 1;
         return abi.encode(beforeHash, SquadRules.hashState(input.context, room.battle));
     }
 }

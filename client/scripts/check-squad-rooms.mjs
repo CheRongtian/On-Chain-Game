@@ -23,6 +23,7 @@ import { mnemonicToAccount } from 'viem/accounts';
 import { anvil } from 'viem/chains';
 import { readJson, runtimeCode, saveJson } from '../../scripts/deployment.mjs';
 import { initialState } from '../../scripts/squad-baseline.mjs';
+import { checkTurnFixtures, checkSignedTurns } from './squad-turns.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const path = (name) => resolve(root, name);
@@ -219,14 +220,20 @@ try {
       );
     assert.equal(report.nativeGas.budgetMisses.length, 0, 'Native Reveal Gas targets');
     report.nativeGas.status = 'passed';
+    await checkTurnFixtures({ path, run, signal: abort.signal, seed: report.seed, report, config });
   }
   assert.equal(report.native.status, 'passed');
   assert.equal(report.nativeGas.status, 'passed');
+  assert.equal(report.battleNative.status, 'passed');
   const artifact = await readJson(path('contracts/out/SquadArena.sol/SquadArena.json'));
   const frozenInterface = await readJson(path('contracts/out/ISquadArena.sol/ISquadArena.json'));
   const { abi } = artifact;
   const methods = abi.filter((entry) => entry.type === 'function');
-  assert.equal(methods.length, 13, 'Implemented room, Reveal and metadata entries');
+  assert.equal(methods.length, 16, 'Implemented room, squad, battle and metadata entries');
+  assert.ok(
+    (artifact.deployedBytecode.object.length - 2) / 2 <= 24_576,
+    'SquadArena runtime fits EIP-170',
+  );
   for (const method of methods) {
     const frozen = frozenInterface.abi.find(
       (entry) => entry.type === 'function' && entry.name === method.name,
@@ -671,7 +678,20 @@ try {
       `PASS: ${engine} Squad map ${mapId}: manual host start, both signed Commit/Reveal, one-sided privacy, event-derived six-unit initialization and first-round state Hash.`,
     );
   }
-  report.stage = `${engine}:initial-state-encoding`;
+  await checkSignedTurns({
+    path,
+    engine,
+    result,
+    report,
+    config,
+    codec,
+    accounts,
+    read,
+    send,
+    events,
+    hashCases,
+  });
+  report.stage = `${engine}:public-protocol-encoding`;
   const stateFile = resolve(simulation, `initial-states-${engine}.json`);
   await saveJson(stateFile, { cases: hashCases });
   const independent = await run(path('.local/bin/arena-server'), ['check-protocol', stateFile], {
@@ -680,7 +700,21 @@ try {
     maxBuffer: 4 * 1024 * 1024,
   });
   const goStates = JSON.parse(independent.stdout).vectors;
-  assert.equal(goStates.length, 3, 'One independently encoded initial state per map');
+  assert.equal(
+    goStates.length,
+    hashCases.length,
+    'All initial, action and resolved-state encodings',
+  );
+  assert.equal(
+    hashCases.filter((entry) => entry.kind === 3).length,
+    40,
+    'Both public action bundles per round',
+  );
+  assert.equal(
+    hashCases.filter((entry) => entry.kind === 4).length,
+    23,
+    'Three initial states and twenty resolved states',
+  );
   for (const [index, actual] of goStates.entries()) {
     const expected = hashCases[index];
     assert.equal(actual.name, expected.name);
@@ -694,16 +728,18 @@ try {
   }
   result.encoding = {
     status: 'passed',
-    states: goStates.length,
+    states: hashCases.filter((entry) => entry.kind === 4).length,
+    actionBundles: hashCases.filter((entry) => entry.kind === 3).length,
     languages: ['Solidity', 'Go', 'TypeScript'],
-    source: 'Confirmed creation and Squad Reveal events plus the frozen public catalogue.',
+    source:
+      'Confirmed creation, Squad/Action Reveal and RoundResolved events plus the frozen public catalogue. Go checks encoding and Hash, not independent battle resolution.',
   };
   result.budgetMisses = result.gas.filter((sample) => sample.gasUsed >= sample.target);
   for (const sample of result.budgetMisses)
     console.error(
-      `Gas target missed: ${engine} map ${sample.mapId} ${sample.position} Squad ${sample.operation}: ${sample.gasUsed}, target<${sample.target}`,
+      `Gas target missed: ${engine} map ${sample.mapId} ${sample.position} ${sample.scope ?? 'squad'} ${sample.operation}: ${sample.gasUsed}, target<${sample.target}`,
     );
-  assert.equal(result.budgetMisses.length, 0, 'Squad Commit/Reveal Gas target misses');
+  assert.equal(result.budgetMisses.length, 0, 'Squad and battle transaction Gas target misses');
   assert.equal(
     await readFile(publishedFile, 'utf8'),
     published,
@@ -711,24 +747,36 @@ try {
   );
   result.status = 'passed';
   result.completedAt = new Date().toISOString();
-  for (const operation of ['commit', 'reveal']) {
-    const first = result.gas.filter(
-      (sample) => sample.operation === operation && sample.position === 'first',
-    );
-    const second = result.gas.filter(
-      (sample) => sample.operation === operation && sample.position === 'second',
-    );
-    console.log(
-      `PASS: ${engine} Squad ${operation} receipt Gas: first maximum=${Math.max(...first.map((sample) => sample.gasUsed))}, second maximum=${Math.max(...second.map((sample) => sample.gasUsed))}; both targets<${first[0].target}.`,
-    );
-  }
+  for (const scope of ['squad', 'battle'])
+    for (const operation of ['commit', 'reveal']) {
+      const first = result.gas.filter(
+        (sample) =>
+          (sample.scope ?? 'squad') === scope &&
+          sample.operation === operation &&
+          sample.position === 'first',
+      );
+      const second = result.gas.filter(
+        (sample) =>
+          (sample.scope ?? 'squad') === scope &&
+          sample.operation === operation &&
+          sample.position === 'second',
+      );
+      console.log(
+        `PASS: ${engine} ${scope} ${operation} receipt Gas: first maximum=${Math.max(...first.map((sample) => sample.gasUsed))}, second maximum=${Math.max(...second.map((sample) => sample.gasUsed))}; both targets<${first[0].target}.`,
+      );
+    }
+  const settlements = result.gas.filter((sample) => sample.operation === 'settle');
+  assert.equal(settlements.length, 20, 'Every complete battle round has a settlement receipt');
+  console.log(
+    `PASS: ${engine} battle settlement receipt Gas: maximum=${Math.max(...settlements.map((sample) => sample.gasUsed))}; target<1500000.`,
+  );
   if (engine === 'geth') {
     assert.deepEqual(Object.keys(report.engines).sort(), ['anvil', 'geth']);
     assert.ok(Object.values(report.engines).every((entry) => entry.status === 'passed'));
     report.status = 'passed';
     delete report.stage;
     console.log(
-      'PASS: room/Reveal protocol, 360 frozen initializations, both local node engines, six event-reconstructed initial states with three-language Hash agreement, twelve signed Commits and twelve signed Reveals.',
+      'PASS: room and battle protocol, 360 frozen initializations, both local engines, forty signed battle rounds, actual skill/Cover effects and three-language public action/state Hash agreement.',
     );
   }
 } catch (error) {
@@ -750,7 +798,11 @@ try {
   const nativeGas = await readJson(path('.local/safety/squad-reveal-gas-tests.json')).catch(
     () => ({}),
   );
-  await saveJson(path(report.failure), { report, native, nativeGas });
+  const battleNative = await readJson(path('.local/safety/squad-battle-tests.json')).catch(
+    () => ({}),
+  );
+  const turnGas = await readJson(path('.local/safety/squad-turn-gas-tests.json')).catch(() => ({}));
+  await saveJson(path(report.failure), { report, native, nativeGas, battleNative, turnGas });
   console.error(`FAIL: Squad rooms (${report.stage}): ${result.error}`);
   if (error.stdout) process.stderr.write(error.stdout);
   if (error.stderr) process.stderr.write(error.stderr);

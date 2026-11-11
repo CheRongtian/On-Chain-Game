@@ -129,7 +129,8 @@ library SquadCodec {
         State battle;
         SquadStatus squad;
         RoundStatus turn;
-        Action[3][2] revealedActions;
+        // Three validated 64-bit actions fit in one word per player.
+        uint256[2] revealedActions;
     }
 
     struct Map {
