@@ -5,7 +5,7 @@ import { SquadCodec } from "./SquadCodec.sol";
 import { SquadProtocol as Protocol } from "./SquadProtocol.sol";
 import { SquadParameters as Parameters } from "./SquadParameters.sol";
 import { SquadUnitRules } from "./SquadUnitRules.sol";
-import { SquadBattleResolver } from "./SquadBattleResolver.sol";
+import { SquadSettlement } from "./SquadSettlement.sol";
 import { ISquadEvents } from "./ISquadArena.sol";
 
 // Tuple dimensions, domain indices and bit offsets follow the frozen protocol layout.
@@ -73,13 +73,13 @@ library SquadTurns {
     {
         SquadCodec.MatchSummary storage summary = matchData.summary;
         Protocol.requirePhase(summary, Protocol.RESOLVABLE);
-        _requireRound(summary, round);
+        Protocol.requireRound(summary, round);
         SquadCodec.Action[3][2] memory actions;
         actions[0] = _unpack(matchData.revealedActions[0]);
         actions[1] = _unpack(matchData.revealedActions[1]);
         bytes32 beforeHash = summary.stateHash;
-        (SquadCodec.State memory next, SquadCodec.Effects memory effects,) =
-            SquadBattleResolver.resolve(matchData.battle, actions);
+        (SquadCodec.State memory next, SquadCodec.Effects memory effects) =
+            SquadSettlement.resolve(matchData.battle, actions);
         Protocol.storeBattle(matchData.battle, next);
         summary.stateHash = keccak256(
             abi.encode(SquadCodec.domain(3), _context(matchId), summary.rulesetId, next)
@@ -100,20 +100,7 @@ library SquadTurns {
                 Protocol.deadlineAfter(Parameters.windows()[3])
             );
         } else {
-            Protocol.advance(summary, matchId, Protocol.FINISHED, 0);
-            address winner = address(0);
-            if (next.outcome == 1) winner = summary.players[0];
-            else if (next.outcome == 2) winner = summary.players[1];
-            emit ISquadEvents.MatchFinished(
-                matchId,
-                round,
-                winner,
-                next.battleStarted,
-                next.completedRound,
-                next.outcome,
-                next.reason,
-                summary.stateHash
-            );
+            Protocol.finish(matchData, matchId);
         }
     }
 
@@ -123,13 +110,9 @@ library SquadTurns {
         returns (uint8 side)
     {
         Protocol.requirePhase(summary, phase);
-        _requireRound(summary, round);
+        Protocol.requireRound(summary, round);
         side = Protocol.playerIndex(summary);
         Protocol.requireTimely(summary.phaseDeadline);
-    }
-
-    function _requireRound(SquadCodec.MatchSummary storage summary, uint16 round) private view {
-        if (round != summary.activeRound) revert Protocol.StaleRound(summary.activeRound, round);
     }
 
     function _context(uint256 matchId) private view returns (SquadCodec.Context memory) {

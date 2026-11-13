@@ -15,7 +15,7 @@ run_safety_checks() {
     fi
     printf 'Running local contract state-machine, replay, deadline, and legal-game checks...\n'
     if ! run_backend_check forge test --offline --use "$project_root/.local/bin/solc-0.8.30" \
-        --no-match-contract 'ArenaGasTest|^SquadRule.*Test$|^Squad(Room|Reveal|RevealGas|Battle|TurnGas)Test$' -vv; then
+        --no-match-contract 'ArenaGasTest|^SquadRule.*Test$|^Squad(Room|Reveal|RevealGas|Battle|TurnGas|Timeout|TimeoutGas)Test$' -vv; then
         printf '{"status":"failed","stage":"contracts"}\n' > "$evidence/acceptance.json"
         return 1
     fi

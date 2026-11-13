@@ -24,6 +24,8 @@ import { anvil } from 'viem/chains';
 import { readJson, runtimeCode, saveJson } from '../../scripts/deployment.mjs';
 import { initialState } from '../../scripts/squad-baseline.mjs';
 import { checkTurnFixtures, checkSignedTurns } from './squad-turns.mjs';
+import { linkSquadArena, settlementRuntime } from './squad-deployment.mjs';
+import { checkTimeoutFixtures, checkSignedTimeouts } from './squad-timeouts.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const path = (name) => resolve(root, name);
@@ -221,15 +223,17 @@ try {
     assert.equal(report.nativeGas.budgetMisses.length, 0, 'Native Reveal Gas targets');
     report.nativeGas.status = 'passed';
     await checkTurnFixtures({ path, run, signal: abort.signal, seed: report.seed, report, config });
+    await checkTimeoutFixtures({ path, run, signal: abort.signal, report });
   }
   assert.equal(report.native.status, 'passed');
   assert.equal(report.nativeGas.status, 'passed');
   assert.equal(report.battleNative.status, 'passed');
+  assert.equal(report.timeoutNative.status, 'passed');
   const artifact = await readJson(path('contracts/out/SquadArena.sol/SquadArena.json'));
   const frozenInterface = await readJson(path('contracts/out/ISquadArena.sol/ISquadArena.json'));
   const { abi } = artifact;
   const methods = abi.filter((entry) => entry.type === 'function');
-  assert.equal(methods.length, 16, 'Implemented room, squad, battle and metadata entries');
+  assert.equal(methods.length, 19, 'Complete frozen Squad Arena interface');
   assert.ok(
     (artifact.deployedBytecode.object.length - 2) / 2 <= 24_576,
     'SquadArena runtime fits EIP-170',
@@ -265,39 +269,55 @@ try {
       addressIndex,
     }),
   );
-  const wallets = accounts.map((account) =>
+  const signers = [
+    ...accounts,
+    mnemonicToAccount('test test test test test test test test test test test junk', {
+      addressIndex: 2,
+    }),
+  ];
+  const wallets = signers.map((account) =>
     createWalletClient({
       account,
       chain: anvil,
       transport: http(deployment.rpcUrl, { retryCount: 0, fetchOptions: { signal: abort.signal } }),
     }),
   );
-  result.signing = 'Both development accounts sign locally and broadcast eth_sendRawTransaction.';
+  result.signing =
+    'Two development players and an independent public executor sign locally and broadcast eth_sendRawTransaction.';
   result.originalArena = deployment.arenaAddress;
   result.chainId = deployment.chainId;
   report.stage = `${engine}:signed-room-transactions`;
 
-  async function broadcast(side, operation, data, to) {
+  async function prepare(side, operation, data, to, options = {}) {
     abort.signal.throwIfAborted();
-    const request = await wallets[side].prepareTransactionRequest({ data, ...(to ? { to } : {}) });
+    const request = await wallets[side].prepareTransactionRequest({
+      ...options,
+      data,
+      ...(to ? { to } : {}),
+    });
     const serializedTransaction = await wallets[side].signTransaction(request);
     abort.signal.throwIfAborted();
-    const hash = await client.sendRawTransaction({ serializedTransaction });
-    assert.equal(hash, keccak256(serializedTransaction), `${operation}: signed hash`);
+    return { side, operation, data, serializedTransaction, hash: keccak256(serializedTransaction) };
+  }
+
+  async function confirm(signed, expectedStatus = 'success') {
+    const { side, operation, data, hash } = signed;
     const receipt = await client.waitForTransactionReceipt({
       hash,
       timeout: 35_000,
       pollingInterval: 100,
     });
-    assert.equal(receipt.status, 'success', `${operation}: receipt`);
-    assert.equal(getAddress(receipt.from), accounts[side].address, `${operation}: signer`);
+    if (expectedStatus !== null)
+      assert.equal(receipt.status, expectedStatus, `${operation}: receipt`);
+    assert.equal(getAddress(receipt.from), signers[side].address, `${operation}: signer`);
     const transaction = await client.getTransaction({ hash });
     assert.equal(transaction.input, data, `${operation}: actual calldata`);
-    assert.equal(getAddress(transaction.from), accounts[side].address);
+    assert.equal(getAddress(transaction.from), signers[side].address);
     const block = await client.getBlock({ blockNumber: receipt.blockNumber });
     assert.equal(block.hash, receipt.blockHash, `${operation}: canonical receipt source`);
     result.receipts.push({
       operation,
+      status: receipt.status,
       hash,
       from: receipt.from,
       blockNumber: receipt.blockNumber.toString(),
@@ -305,10 +325,47 @@ try {
       gasUsed: Number(receipt.gasUsed),
       input: data,
     });
-    return { receipt, timestamp: block.timestamp };
+    return { receipt, timestamp: block.timestamp, blockGasLimit: block.gasLimit };
   }
 
-  const created = await broadcast(0, 'deploy', artifact.bytecode.object);
+  async function broadcast(side, operation, data, to, options) {
+    const signed = await prepare(side, operation, data, to, options);
+    const hash = await client.sendRawTransaction({
+      serializedTransaction: signed.serializedTransaction,
+    });
+    assert.equal(hash, signed.hash, `${operation}: signed hash`);
+    return confirm(signed);
+  }
+
+  const library = await readJson(path('contracts/out/SquadSettlement.sol/SquadSettlement.json'));
+  assert.ok(
+    (library.deployedBytecode.object.length - 2) / 2 <= 24_576,
+    'Settlement library fits EIP-170',
+  );
+  const libraryDeployment = await broadcast(
+    0,
+    'deploy-settlement-library',
+    library.bytecode.object,
+  );
+  const libraryAddress = libraryDeployment.receipt.contractAddress;
+  assert.ok(libraryAddress, 'Settlement library address');
+  assert.equal(
+    (await client.getCode({ address: libraryAddress })).toLowerCase(),
+    settlementRuntime(library, libraryAddress),
+    'Deployed settlement library runtime',
+  );
+  const linked = linkSquadArena(artifact, libraryAddress);
+  result.settlementLibrary = {
+    address: libraryAddress,
+    transactionHash: libraryDeployment.receipt.transactionHash,
+    blockNumber: libraryDeployment.receipt.blockNumber.toString(),
+    blockHash: libraryDeployment.receipt.blockHash,
+    runtimeBytes: (library.deployedBytecode.object.length - 2) / 2,
+    compiler: library.metadata.compiler.version,
+    settings: library.metadata.settings,
+    linkReferences: artifact.bytecode.linkReferences,
+  };
+  const created = await broadcast(0, 'deploy', linked.bytecode.object);
   const address = created.receipt.contractAddress;
   assert.ok(address, 'Dedicated Squad deployment address');
   assert.notEqual(
@@ -327,12 +384,48 @@ try {
     });
   const send = (side, functionName, args) =>
     broadcast(side, functionName, encodeFunctionData({ abi, functionName, args }), address);
+  async function race(calls) {
+    const signed = await Promise.all(
+      calls.map(({ side, functionName, args }) =>
+        prepare(side, functionName, encodeFunctionData({ abi, functionName, args }), address, {
+          gas: 1_500_000n,
+        }),
+      ),
+    );
+    const sent = await Promise.allSettled(
+      signed.map(async (entry) => {
+        const hash = await client.sendRawTransaction({
+          serializedTransaction: entry.serializedTransaction,
+        });
+        assert.equal(hash, entry.hash, 'Competing signed transaction hash');
+      }),
+    );
+    // A losing automined raw transaction can be reported as an RPC error; its known receipt is authoritative.
+    const confirmed = await Promise.all(signed.map((entry) => confirm(entry, null)));
+    assert.equal(
+      confirmed.filter((entry) => entry.receipt.status === 'success').length,
+      1,
+      'Exactly one competing call succeeds',
+    );
+    assert.equal(
+      confirmed.filter((entry) => entry.receipt.status === 'reverted').length,
+      1,
+      'The competing stale call reverts',
+    );
+    for (const [index, entry] of confirmed.entries()) {
+      if (entry.receipt.status === 'success' && sent[index].status === 'rejected')
+        throw sent[index].reason;
+      if (entry.receipt.status === 'reverted')
+        assert.deepEqual(entry.receipt.logs, [], 'Rejected competitor emits no events');
+    }
+    return confirmed;
+  }
   assert.equal(await read('getRulesetId'), config.rulesetId);
   assert.deepEqual(await read('getSchemaVersions'), config.ruleDefinition.schemas);
   assert.deepEqual(plain(await read('getRules')), config.ruleDefinition);
   assert.equal(
     (await client.getCode({ address })).toLowerCase(),
-    runtimeCode(artifact, config.rulesetId),
+    runtimeCode(linked, config.rulesetId),
     'Actual deployed runtime',
   );
   result.deployment = {
@@ -691,6 +784,28 @@ try {
     events,
     hashCases,
   });
+  if ((await client.getBalance({ address: signers[2].address })) < 1_000_000_000_000_000_000n) {
+    await broadcast(0, 'fund-public-executor', '0x', signers[2].address, {
+      value: 1_000_000_000_000_000_000n,
+    });
+  }
+  await checkSignedTimeouts({
+    engine,
+    result,
+    report,
+    config,
+    codec,
+    accounts,
+    signers,
+    client,
+    abi,
+    address,
+    read,
+    send,
+    events,
+    race,
+    hashCases,
+  });
   report.stage = `${engine}:public-protocol-encoding`;
   const stateFile = resolve(simulation, `initial-states-${engine}.json`);
   await saveJson(stateFile, { cases: hashCases });
@@ -712,8 +827,8 @@ try {
   );
   assert.equal(
     hashCases.filter((entry) => entry.kind === 4).length,
-    23,
-    'Three initial states and twenty resolved states',
+    23 + result.timeouts.hashedStates,
+    'Initial states, resolved states and all timeout/public-progression states',
   );
   for (const [index, actual] of goStates.entries()) {
     const expected = hashCases[index];
@@ -732,7 +847,7 @@ try {
     actionBundles: hashCases.filter((entry) => entry.kind === 3).length,
     languages: ['Solidity', 'Go', 'TypeScript'],
     source:
-      'Confirmed creation, Squad/Action Reveal and RoundResolved events plus the frozen public catalogue. Go checks encoding and Hash, not independent battle resolution.',
+      'Confirmed creation, Squad/Action Reveal, RoundResolved and MatchFinished events plus receipt-pinned terminal states and the frozen public catalogue. Go checks encoding and Hash, not independent battle resolution.',
   };
   result.budgetMisses = result.gas.filter((sample) => sample.gasUsed >= sample.target);
   for (const sample of result.budgetMisses)
@@ -776,7 +891,7 @@ try {
     report.status = 'passed';
     delete report.stage;
     console.log(
-      'PASS: room and battle protocol, 360 frozen initializations, both local engines, forty signed battle rounds, actual skill/Cover effects and three-language public action/state Hash agreement.',
+      'PASS: complete Squad room/battle/timeout protocol, linked settlement libraries, both local engines, forty signed battle rounds, all default outcomes, public/competing progression and three-language state Hash agreement.',
     );
   }
 } catch (error) {
@@ -802,7 +917,21 @@ try {
     () => ({}),
   );
   const turnGas = await readJson(path('.local/safety/squad-turn-gas-tests.json')).catch(() => ({}));
-  await saveJson(path(report.failure), { report, native, nativeGas, battleNative, turnGas });
+  const timeoutNative = await readJson(path('.local/safety/squad-timeout-tests.json')).catch(
+    () => ({}),
+  );
+  const timeoutGas = await readJson(path('.local/safety/squad-timeout-gas-tests.json')).catch(
+    () => ({}),
+  );
+  await saveJson(path(report.failure), {
+    report,
+    native,
+    nativeGas,
+    battleNative,
+    turnGas,
+    timeoutNative,
+    timeoutGas,
+  });
   console.error(`FAIL: Squad rooms (${report.stage}): ${result.error}`);
   if (error.stdout) process.stderr.write(error.stdout);
   if (error.stderr) process.stderr.write(error.stderr);

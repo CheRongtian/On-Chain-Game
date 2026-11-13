@@ -20,6 +20,8 @@ library SquadProtocol {
     error AlreadyRevealed(address player);
     error CommitmentMismatch();
     error StaleRound(uint16 expected, uint16 actual);
+    error DeadlineNotPassed(uint64 deadline);
+    error InvalidTimeoutPhase(uint8 phase);
 
     uint8 internal constant WAITING = 1;
     uint8 internal constant SQUAD_COMMIT = 2;
@@ -28,6 +30,8 @@ library SquadProtocol {
     uint8 internal constant ROUND_REVEAL = 5;
     uint8 internal constant RESOLVABLE = 6;
     uint8 internal constant FINISHED = 7;
+    uint8 internal constant CANCELLED = 8;
+    uint8 internal constant EXPIRED = 9;
 
     function join(SquadCodec.MatchSummary storage summary, uint256 matchId) internal {
         requirePhase(summary, WAITING);
@@ -127,6 +131,34 @@ library SquadProtocol {
         // A submission at the exact chain deadline remains valid.
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp > deadline) revert DeadlinePassed(deadline);
+    }
+
+    function requireExpired(uint64 deadline) internal view {
+        // Expiry starts strictly after the inclusive submission deadline.
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp <= deadline) revert DeadlineNotPassed(deadline);
+    }
+
+    function requireRound(SquadCodec.MatchSummary storage summary, uint16 round) internal view {
+        if (round != summary.activeRound) revert StaleRound(summary.activeRound, round);
+    }
+
+    function finish(SquadCodec.MatchData storage matchData, uint256 matchId) internal {
+        SquadCodec.MatchSummary storage summary = matchData.summary;
+        advance(summary, matchId, FINISHED, 0);
+        address winner = address(0);
+        if (summary.outcome == 1) winner = summary.players[0];
+        else if (summary.outcome == 2) winner = summary.players[1];
+        emit ISquadEvents.MatchFinished(
+            matchId,
+            summary.activeRound,
+            winner,
+            matchData.battle.battleStarted,
+            matchData.battle.completedRound,
+            summary.outcome,
+            summary.reason,
+            summary.stateHash
+        );
     }
 
     function deadlineAfter(uint32 duration) internal view returns (uint64) {

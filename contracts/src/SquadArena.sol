@@ -6,9 +6,10 @@ import { SquadParameters as Parameters } from "./SquadParameters.sol";
 import { SquadRules } from "./SquadRules.sol";
 import { SquadProtocol } from "./SquadProtocol.sol";
 import { SquadTurns } from "./SquadTurns.sol";
-import { ISquadEvents } from "./ISquadArena.sol";
+import { SquadExpiry } from "./SquadExpiry.sol";
+import { ISquadArena, ISquadEvents } from "./ISquadArena.sol";
 
-contract SquadArena is ISquadEvents {
+contract SquadArena is ISquadArena {
     bytes32 private immutable RULESET_ID;
     uint256 private _nextMatchId = 1;
     mapping(uint256 => SquadCodec.MatchData) private _matches;
@@ -45,6 +46,18 @@ contract SquadArena is ISquadEvents {
 
     function startMatch(uint256 matchId) external {
         SquadProtocol.start(_requireMatch(matchId).summary, matchId);
+    }
+
+    function cancelWaitingMatch(uint256 matchId) external {
+        SquadExpiry.cancel(_requireMatch(matchId).summary, matchId);
+    }
+
+    function expireWaitingMatch(uint256 matchId) external {
+        SquadExpiry.expire(_requireMatch(matchId).summary, matchId);
+    }
+
+    function advanceExpiredPhase(uint256 matchId, uint16 round, uint8 expectedPhase) external {
+        SquadExpiry.timeout(_requireMatch(matchId), matchId, round, expectedPhase);
     }
 
     function commitSquad(uint256 matchId, bytes32 commitment) external {
