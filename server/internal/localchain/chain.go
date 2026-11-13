@@ -64,7 +64,7 @@ func Open(root string) (_ *Chain, err error) {
 			return nil, fmt.Errorf("the confirmed archive has no matching Geth database; restore it before starting: %w", err)
 		}
 	}
-	gethlog.SetDefault(gethlog.NewLogger(gethlog.NewTerminalHandlerWithLevel(os.Stderr, slog.LevelWarn, false)))
+	gethlog.SetDefault(gethlog.NewLogger(contractLogHandler{gethlog.NewTerminalHandlerWithLevel(os.Stderr, slog.LevelWarn, false)}))
 	cfg := node.DefaultConfig
 	cfg.Name, cfg.Version, cfg.DataDir = "geth", "1.16.5-arena", dataDir
 	cfg.HTTPHost, cfg.WSHost, cfg.IPCPath = "", "", ""

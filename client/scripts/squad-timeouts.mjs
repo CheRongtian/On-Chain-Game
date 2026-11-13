@@ -17,6 +17,18 @@ const gasNames = [
   'round-reveal',
 ];
 
+export async function advancePastDeadline(client, engine, deadline) {
+  const target = deadline + 1n;
+  const head = await client.getBlock();
+  if (head.timestamp >= target) return;
+  if (engine === 'geth')
+    await client.request({ method: 'arena_advanceClock', params: [`0x${target.toString(16)}`] });
+  else {
+    await client.request({ method: 'evm_setNextBlockTimestamp', params: [Number(target)] });
+    await client.request({ method: 'evm_mine', params: [] });
+  }
+}
+
 export async function checkTimeoutFixtures({ path, run, signal, report }) {
   report.stage = 'native-timeout-protocol';
   report.timeoutNative = { status: 'running' };
@@ -152,23 +164,13 @@ export async function checkSignedTimeouts({
       assert.equal(
         revert?.data?.errorName,
         errorName,
-        `${functionName}: expected ${errorName}, received ${error.shortMessage ?? error.message.split('\n')[0]}`,
+        `${functionName}: expected ${errorName}, received ${revert?.data?.errorName ?? error.shortMessage ?? error.message.split('\n')[0]}`,
       );
       return;
     }
     assert.fail(`${functionName}: expected ${errorName}`);
   }
-  async function clockAfter(deadline) {
-    const target = deadline + 1n;
-    const head = await client.getBlock();
-    if (head.timestamp >= target) return;
-    if (engine === 'geth')
-      await client.request({ method: 'arena_advanceClock', params: [`0x${target.toString(16)}`] });
-    else {
-      await client.request({ method: 'evm_setNextBlockTimestamp', params: [Number(target)] });
-      await client.request({ method: 'evm_mine', params: [] });
-    }
-  }
+  const clockAfter = (deadline) => advancePastDeadline(client, engine, deadline);
   function gas(operation, sent, label) {
     const used = Number(sent.receipt.gasUsed);
     assert.ok(used <= Number(sent.blockGasLimit), `${operation}: Gas fits canonical block`);

@@ -26,7 +26,7 @@ const gasNames = [
   'settle-terminal',
 ];
 
-const frameType = (config) =>
+export const frameType = (config) =>
   `(${config.types.state} initial,${config.types.action}[3][2] actions,${config.types.state} next,${config.types.effects} effects)`;
 
 export async function checkTurnFixtures({ path, run, signal, seed, report, config }) {
@@ -142,8 +142,33 @@ export async function checkTurnFixtures({ path, run, signal, seed, report, confi
   );
 }
 
-export async function checkSignedTurns({
-  path,
+export async function checkSignedTurns(context) {
+  const { path, engine, result, report, config } = context;
+  assert.equal(report.battleNative.status, 'passed', 'Battle native checks must pass first');
+  const framesType = parseAbiParameters(`${frameType(config)}[]`);
+  const [frames] = decodeAbiParameters(
+    framesType,
+    (await readFile(path('.local/simulation/squad-rooms/battle-sequence.abi'), 'utf8')).trim(),
+  );
+  assert.equal(frames.length, 20);
+  const start = result.initializations.find((entry) => entry.state.mapId === 1);
+  assert.ok(start, 'The real map-one room supplies the hidden-squad protocol and initial events');
+  const battle = (result.battle = {});
+  await playSignedRounds({ ...context, start, frames, name: 'battle', battle });
+  assert.equal(battle.rounds[3].state.units[3].lockedRound, 5);
+  assert.equal(battle.rounds[4].effects.moved[3], true);
+  assert.equal(battle.rounds[4].state.units[3].lockedRound, 0);
+  assert.equal(battle.rounds[5].effects.moved[3], true);
+  battle.coverage.lockedNormalMoves = 1;
+  battle.coverage.unlockedDash = 1;
+  for (const [name, count] of Object.entries(battle.coverage))
+    assert.ok(count > 0, `Actual battle effect missing: ${name}`);
+  console.log(
+    `PASS: ${engine} battle: twenty signed rounds from the original hidden-squad room, real Medic/Cover/lock effects, locked normal movement, unlocked Dash, event-derived history, once-only terminal result and receipt-pinned state.`,
+  );
+}
+
+export async function playSignedRounds({
   engine,
   result,
   report,
@@ -154,16 +179,11 @@ export async function checkSignedTurns({
   send,
   events,
   hashCases,
+  start,
+  frames,
+  name,
+  battle,
 }) {
-  assert.equal(report.battleNative.status, 'passed', 'Battle native checks must pass first');
-  const framesType = parseAbiParameters(`${frameType(config)}[]`);
-  const [frames] = decodeAbiParameters(
-    framesType,
-    (await readFile(path('.local/simulation/squad-rooms/battle-sequence.abi'), 'utf8')).trim(),
-  );
-  assert.equal(frames.length, 20);
-  const start = result.initializations.find((entry) => entry.state.mapId === 1);
-  assert.ok(start, 'The real map-one room supplies the hidden-squad protocol and initial events');
   const id = BigInt(start.context.matchId);
   const context = { ...start.context, chainId: BigInt(start.context.chainId), matchId: id };
   const rulesetId = start.rulesetId;
@@ -176,18 +196,16 @@ export async function checkSignedTurns({
     healing: 0,
     cover: 0,
     locks: 0,
-    lockedNormalMoves: 0,
-    unlockedDash: 0,
     deaths: 0,
   };
-  result.battle = {
+  Object.assign(battle, {
     status: 'running',
     matchId: id.toString(),
     initialState: start.state,
     initialHash: start.stateHash,
     rounds: records,
     coverage,
-  };
+  });
 
   async function inspect(
     blockNumber,
@@ -240,7 +258,7 @@ export async function checkSignedTurns({
   }
   for (const [index, frame] of frames.entries()) {
     const round = index + 1;
-    report.stage = `${engine}:battle:round-${round}`;
+    report.stage = `${engine}:${name}:round-${round}`;
     assert.deepEqual(plain(frame.initial), plain(state), 'Actual sequence continuity');
     const beforeHash = stateHash;
     const salts = accounts.map(() => `0x${randomBytes(32).toString('hex')}`);
@@ -335,7 +353,7 @@ export async function checkSignedTurns({
       gas(sent, 'reveal', 250_000, position === 0 ? 'first' : 'second', round);
       // Only successfully published Reveal preimages enter retained evidence.
       hashCases.push({
-        name: `${engine}:battle:${round}:side-${side}`,
+        name: `${engine}:${name}:${round}:side-${side}`,
         kind: 3,
         input: plain(inputs[side]),
         expectedEncoding: encodings[side],
@@ -419,16 +437,6 @@ export async function checkSignedTurns({
     coverage.deaths += state.units.filter(
       (unit, unitId) => unit.alive && !frame.next.units[unitId].alive,
     ).length;
-    if (round === 5) {
-      assert.equal(state.units[3].lockedRound, 5);
-      assert.equal(effects.moved[3], true);
-      assert.equal(frame.next.units[3].lockedRound, 0);
-      coverage.lockedNormalMoves++;
-    }
-    if (round === 6) {
-      assert.equal(effects.moved[3], true);
-      coverage.unlockedDash++;
-    }
     records.push(
       plain({
         round,
@@ -446,7 +454,7 @@ export async function checkSignedTurns({
       }),
     );
     hashCases.push({
-      name: `${engine}:battle:${round}:state`,
+      name: `${engine}:${name}:${round}:state`,
       kind: 4,
       input: plain({ context, rulesetId, state: logs[0].state }),
       expectedEncoding,
@@ -455,12 +463,12 @@ export async function checkSignedTurns({
     state = plain(logs[0].state);
     stateHash = afterHash;
   }
-  for (const [name, count] of Object.entries(coverage))
-    assert.ok(count > 0, `Actual battle effect missing: ${name}`);
-  assert.equal(records.filter((row) => row.finished).length, 1, 'Exactly one terminal result');
-  result.battle.status = 'passed';
-  result.battle.finalStateHash = stateHash;
-  console.log(
-    `PASS: ${engine} battle: twenty signed rounds from the original hidden-squad room, real Medic/Cover/lock effects, locked normal movement, unlocked Dash, event-derived history, once-only terminal result and receipt-pinned state.`,
+  assert.equal(
+    records.filter((row) => row.finished).length,
+    frames.at(-1).next.outcome === 0 ? 0 : 1,
+    'Only the expected final frame can finish the match',
   );
+  battle.status = 'passed';
+  battle.finalStateHash = stateHash;
+  return battle;
 }

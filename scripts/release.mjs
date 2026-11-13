@@ -402,6 +402,7 @@ export async function retainRelease(workspace, root) {
       ".local/safety/squad-timeout-tests.json",
       ".local/safety/squad-timeout-gas-tests.json",
       ".local/safety/squad-timeout-gas.snapshot",
+      ".local/safety/squad-adversarial-tests.json",
       ".local/safety/toolchain.txt",
       ".local/chain/deployment.json",
       ".local/archive/deployment.json",

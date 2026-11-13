@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import {
+  ContractFunctionRevertedError,
   createPublicClient,
   createWalletClient,
   decodeEventLog,
@@ -26,6 +27,7 @@ import { initialState } from '../../scripts/squad-baseline.mjs';
 import { checkTurnFixtures, checkSignedTurns } from './squad-turns.mjs';
 import { linkSquadArena, settlementRuntime } from './squad-deployment.mjs';
 import { checkTimeoutFixtures, checkSignedTimeouts } from './squad-timeouts.mjs';
+import { checkAdversarialFixtures, checkSignedAdversarial } from './squad-adversarial.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const path = (name) => resolve(root, name);
@@ -224,11 +226,13 @@ try {
     report.nativeGas.status = 'passed';
     await checkTurnFixtures({ path, run, signal: abort.signal, seed: report.seed, report, config });
     await checkTimeoutFixtures({ path, run, signal: abort.signal, report });
+    await checkAdversarialFixtures({ path, run, signal: abort.signal, report });
   }
   assert.equal(report.native.status, 'passed');
   assert.equal(report.nativeGas.status, 'passed');
   assert.equal(report.battleNative.status, 'passed');
   assert.equal(report.timeoutNative.status, 'passed');
+  assert.equal(report.adversarialNative.status, 'passed');
   const artifact = await readJson(path('contracts/out/SquadArena.sol/SquadArena.json'));
   const frozenInterface = await readJson(path('contracts/out/ISquadArena.sol/ISquadArena.json'));
   const { abi } = artifact;
@@ -328,13 +332,19 @@ try {
     return { receipt, timestamp: block.timestamp, blockGasLimit: block.gasLimit };
   }
 
-  async function broadcast(side, operation, data, to, options) {
+  async function broadcast(side, operation, data, to, options, expectedStatus = 'success') {
     const signed = await prepare(side, operation, data, to, options);
-    const hash = await client.sendRawTransaction({
-      serializedTransaction: signed.serializedTransaction,
-    });
-    assert.equal(hash, signed.hash, `${operation}: signed hash`);
-    return confirm(signed);
+    let hash;
+    try {
+      hash = await client.sendRawTransaction({
+        serializedTransaction: signed.serializedTransaction,
+      });
+    } catch (error) {
+      // Automining can return a revert error for an included transaction; require its canonical failed receipt.
+      if (expectedStatus !== 'reverted') throw error;
+    }
+    if (hash !== undefined) assert.equal(hash, signed.hash, `${operation}: signed hash`);
+    return confirm(signed, expectedStatus);
   }
 
   const library = await readJson(path('contracts/out/SquadSettlement.sol/SquadSettlement.json'));
@@ -384,6 +394,36 @@ try {
     });
   const send = (side, functionName, args) =>
     broadcast(side, functionName, encodeFunctionData({ abi, functionName, args }), address);
+  async function sendRejected(side, functionName, args, errorName) {
+    const sent = await broadcast(
+      side,
+      functionName,
+      encodeFunctionData({ abi, functionName, args }),
+      address,
+      { gas: 1_500_000n },
+      'reverted',
+    );
+    assert.deepEqual(sent.receipt.logs, [], 'Rejected signed transaction emits no success events');
+    try {
+      await client.simulateContract({
+        address,
+        abi,
+        functionName,
+        args,
+        account: signers[side].address,
+        blockNumber: sent.receipt.blockNumber,
+      });
+    } catch (error) {
+      const reverted = error.walk?.((cause) => cause instanceof ContractFunctionRevertedError);
+      assert.equal(
+        reverted?.data?.errorName,
+        errorName,
+        `${functionName}: expected ${errorName}, received ${reverted?.data?.errorName ?? error.shortMessage ?? error.message.split('\n')[0]}`,
+      );
+      return { ...sent, errorArgs: reverted.data.args ?? [] };
+    }
+    assert.fail(`${functionName}: failed receipt must reproduce ${errorName} on its source block`);
+  }
   async function race(calls) {
     const signed = await Promise.all(
       calls.map(({ side, functionName, args }) =>
@@ -806,6 +846,24 @@ try {
     race,
     hashCases,
   });
+  await checkSignedAdversarial({
+    path,
+    engine,
+    result,
+    report,
+    config,
+    codec,
+    accounts,
+    client,
+    address,
+    read,
+    send,
+    sendRejected,
+    events,
+    hashCases,
+    rules,
+    maps,
+  });
   report.stage = `${engine}:public-protocol-encoding`;
   const stateFile = resolve(simulation, `initial-states-${engine}.json`);
   await saveJson(stateFile, { cases: hashCases });
@@ -822,12 +880,12 @@ try {
   );
   assert.equal(
     hashCases.filter((entry) => entry.kind === 3).length,
-    40,
+    40 + result.adversarial.actionBundles,
     'Both public action bundles per round',
   );
   assert.equal(
     hashCases.filter((entry) => entry.kind === 4).length,
-    23 + result.timeouts.hashedStates,
+    23 + result.timeouts.hashedStates + result.adversarial.hashedStates,
     'Initial states, resolved states and all timeout/public-progression states',
   );
   for (const [index, actual] of goStates.entries()) {
@@ -881,7 +939,15 @@ try {
       );
     }
   const settlements = result.gas.filter((sample) => sample.operation === 'settle');
-  assert.equal(settlements.length, 20, 'Every complete battle round has a settlement receipt');
+  assert.equal(
+    settlements.length,
+    20 +
+      [...result.adversarial.games, ...result.adversarial.prefixes].reduce(
+        (sum, game) => sum + game.rounds.length,
+        0,
+      ),
+    'Every witness, complete victory and adversarial prefix round has a settlement receipt',
+  );
   console.log(
     `PASS: ${engine} battle settlement receipt Gas: maximum=${Math.max(...settlements.map((sample) => sample.gasUsed))}; target<1500000.`,
   );
@@ -891,7 +957,7 @@ try {
     report.status = 'passed';
     delete report.stage;
     console.log(
-      'PASS: complete Squad room/battle/timeout protocol, linked settlement libraries, both local engines, forty signed battle rounds, all default outcomes, public/competing progression and three-language state Hash agreement.',
+      'PASS: complete Squad protocol on both local engines: linked settlement, signed skill/VP/elimination games, all defaults, public competing progression, actual rejected attacks, terminal immutability and three-language state Hash agreement.',
     );
   }
 } catch (error) {
@@ -923,6 +989,9 @@ try {
   const timeoutGas = await readJson(path('.local/safety/squad-timeout-gas-tests.json')).catch(
     () => ({}),
   );
+  const adversarialNative = await readJson(
+    path('.local/safety/squad-adversarial-tests.json'),
+  ).catch(() => ({}));
   await saveJson(path(report.failure), {
     report,
     native,
@@ -931,6 +1000,7 @@ try {
     turnGas,
     timeoutNative,
     timeoutGas,
+    adversarialNative,
   });
   console.error(`FAIL: Squad rooms (${report.stage}): ${result.error}`);
   if (error.stdout) process.stderr.write(error.stdout);
